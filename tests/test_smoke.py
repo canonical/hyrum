@@ -1,4 +1,4 @@
-"""Smoke test: the package imports and the CLI stub runs."""
+"""Smoke test: package imports and CLI registers."""
 
 from click.testing import CliRunner
 
@@ -11,8 +11,15 @@ def test_version_string():
     assert __version__
 
 
-def test_cli_runs():
-    runner = CliRunner()
-    result = runner.invoke(main, [])
+def test_cli_help_runs():
+    result = CliRunner().invoke(main, ["--help"])
     assert result.exit_code == 0
-    assert "super-tox" in result.output
+    assert "--cache-folder" in result.output
+    assert "--target" in result.output
+    assert "--runner" in result.output
+
+
+def test_cli_requires_target():
+    result = CliRunner().invoke(main, [])
+    assert result.exit_code != 0
+    assert "--target" in result.output or "Missing option" in result.output
