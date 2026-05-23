@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.11
+      - name: Install
+        run: uv pip install --system -e ".[dev]"
+      - name: Lint
+        run: ruff check src tests
+
+  test:
+    name: pytest (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Set up Python ${{ matrix.python }}
+        run: uv python install ${{ matrix.python }}
+      - name: Install
+        run: uv pip install --system --python ${{ matrix.python }} -e ".[dev]"
+      - name: Run unit tests
+        run: pytest -q
