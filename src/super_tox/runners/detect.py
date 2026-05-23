@@ -1,0 +1,78 @@
+"""Pick the right runner for a given charm."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from enum import StrEnum
+from pathlib import Path
+
+from super_tox.runners.base import Runner, RunResult, RunStatus
+from super_tox.runners.make_runner import MakeRunner
+from super_tox.runners.tox import ToxRunner
+
+
+class RunnerChoice(StrEnum):
+    AUTO = "auto"
+    TOX = "tox"
+    MAKE = "make"
+
+
+def by_name(name: str) -> type[Runner]:
+    mapping: dict[str, type[Runner]] = {"tox": ToxRunner, "make": MakeRunner}
+    try:
+        return mapping[name]
+    except KeyError as exc:
+        raise ValueError(f"unknown runner {name!r}") from exc
+
+
+class AutoRunner:
+    """Picks a runner per repo and falls back if the target is not present.
+
+    Order: prefer tox where ``tox.ini`` exists, otherwise make. If the
+    primary runner reports ``no_target``, the secondary is tried so that
+    a charm with both files but the target only on the other side still
+    runs.
+    """
+
+    name = "auto"
+
+    def __init__(self, runners: Sequence[Runner]):
+        self._runners = list(runners)
+
+    @classmethod
+    def detect(cls, repo: Path) -> bool:
+        return ToxRunner.detect(repo) or MakeRunner.detect(repo)
+
+    async def run(self, repo: Path, target: str) -> RunResult:
+        applicable = [r for r in self._runners if type(r).detect(repo)]
+        if not applicable:
+            return RunResult(
+                repo=repo,
+                runner=self.name,
+                target=target,
+                status=RunStatus.NO_TARGET,
+                returncode=None,
+                duration_s=0.0,
+            )
+        last: RunResult | None = None
+        for runner in applicable:
+            last = await runner.run(repo, target)
+            if last.status is not RunStatus.NO_TARGET:
+                return last
+        assert last is not None
+        return last
+
+
+def auto(
+    *,
+    tox_executable: str | Sequence[str] = "tox",
+    make_executable: str | Sequence[str] = "make",
+    timeout: int = 1800,
+    prefer: Sequence[str] = ("tox", "make"),
+) -> AutoRunner:
+    available: dict[str, Runner] = {
+        "tox": ToxRunner(executable=tox_executable, timeout=timeout),
+        "make": MakeRunner(executable=make_executable, timeout=timeout),
+    }
+    ordered = [available[name] for name in prefer if name in available]
+    return AutoRunner(ordered)
