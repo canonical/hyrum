@@ -38,8 +38,66 @@ tests are explicitly out of scope.
 
 ## Usage
 
-Skeleton — the CLI is being ported module-by-module. See
-`PLAN.md` in the parent work-queue tree for the productisation plan.
+```bash
+# Install (editable, with dev extras for ruff + pytest)
+uv pip install -e ".[dev]"
+
+# Run `tox -e unit` across every charm in ~/charms, with ops swapped
+# to the `fix/X` branch of canonical/operator:
+super-tox \
+    --cache-folder ~/charms \
+    --target unit \
+    --workers 8 \
+    --ops-source-branch fix/X
+
+# Force the make runner (default is auto-detect: tox.ini -> tox,
+# Makefile -> make, fall back to the other if the target is missing):
+super-tox --cache-folder ~/charms --target unit --runner make
+
+# Skip the dependency swap; just check how the charms behave as-pinned:
+super-tox --cache-folder ~/charms --target unit --no-patch
+
+# Only run for charms that use the Scenario testing framework:
+super-tox --cache-folder ~/charms --target unit --filter scenario
+
+# Exit non-zero if any charm fails, times out, or hits a patcher error:
+super-tox --cache-folder ~/charms --target unit --fail-on-regression
+```
+
+Output statuses:
+
+| status          | meaning                                                                |
+|-----------------|------------------------------------------------------------------------|
+| `passed`        | the runner exited 0                                                    |
+| `failed`        | the runner exited non-zero                                             |
+| `no_target`     | tox env / make target not present in this charm (skipped, not failed)  |
+| `timeout`       | killed after `--timeout` seconds                                       |
+| `patcher_error` | the dependency swap could not be applied (distinct from a tox failure) |
+| `skipped`       | filtered out before the run (regex, ignore-list, no runnable target, …)|
+
+## Dependency-swap scope
+
+Today only the `ops` family (with optional `testing` / `tracing`
+extras → `ops-scenario` / `ops-tracing`) is handled by the built-in
+patcher. The patcher layer is a `Patcher` protocol so a future
+charm-library patcher (vendored `lib/charms/…/v<n>/<file>.py` swapped
+from a git source) can plug in without changes elsewhere.
+
+## Configuration
+
+`super-tox.toml` (path overridable via `-c`) supports an `[ignore]`
+table that maps a category to a list of repo paths to skip. Categories
+are free-form; their name shows up in the run output as the skip
+reason. Example:
+
+```toml
+[ignore]
+expensive = ["argo-operators", "mysql-router-k8s"]
+manual    = ["opensearch-operator"]
+```
+
+See `PLAN.md` in the parent work-queue tree for the broader
+productisation plan.
 
 ## License
 
