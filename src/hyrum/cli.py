@@ -1,4 +1,4 @@
-"""super-tox CLI."""
+"""hyrum CLI."""
 
 from __future__ import annotations
 
@@ -11,18 +11,18 @@ from pathlib import Path
 import click
 import rich.logging
 
-from super_tox import config as config_loader
-from super_tox import enumerate as enum_mod
-from super_tox import filters as filt
-from super_tox.frameworks import supported_frameworks, uses_framework
-from super_tox.patchers import NullPatcher, OpsSource, OpsSourcePatcher, PatcherStack
-from super_tox.pool import Outcome, add_skipped, passed, run_pool
-from super_tox.report import render
-from super_tox.runners import RunnerChoice, auto
-from super_tox.runners.make_runner import MakeRunner
-from super_tox.runners.tox import ToxRunner
+from hyrum import config as config_loader
+from hyrum import enumerate as enum_mod
+from hyrum import filters as filt
+from hyrum.frameworks import supported_frameworks, uses_framework
+from hyrum.patchers import NullPatcher, OpsSource, OpsSourcePatcher, PatcherStack
+from hyrum.pool import Outcome, add_skipped, passed, run_pool
+from hyrum.report import render
+from hyrum.runners import RunnerChoice, auto
+from hyrum.runners.make_runner import MakeRunner
+from hyrum.runners.tox import ToxRunner
 
-logger = logging.getLogger('super_tox')
+logger = logging.getLogger('hyrum')
 
 
 def _configure_logging(level: str) -> None:
@@ -122,7 +122,7 @@ def _select_repos(
     '--config',
     'config_path',
     type=click.Path(dir_okay=False, path_type=Path),
-    default=Path('super-tox.toml'),
+    default=Path('hyrum.toml'),
     show_default=True,
     help='TOML config file (only the [ignore] table is read today).',
 )

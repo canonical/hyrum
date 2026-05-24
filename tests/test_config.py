@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from super_tox.config import load
+from hyrum.config import load
 
 
 def test_missing_returns_empty(tmp_path: Path):
@@ -13,7 +13,7 @@ def test_missing_returns_empty(tmp_path: Path):
 
 
 def test_loads_ignore_categories(tmp_path: Path):
-    p = tmp_path / 'super-tox.toml'
+    p = tmp_path / 'hyrum.toml'
     p.write_text('[ignore]\nexpensive = ["argo-operators"]\nmanual = ["opensearch-operator"]\n')
     cfg = load(p)
     assert cfg.ignore['expensive'] == ['argo-operators']
@@ -21,7 +21,7 @@ def test_loads_ignore_categories(tmp_path: Path):
 
 
 def test_bad_ignore_shape_raises(tmp_path: Path):
-    p = tmp_path / 'super-tox.toml'
+    p = tmp_path / 'hyrum.toml'
     p.write_text('[ignore]\nexpensive = "argo"\n')
     with pytest.raises(ValueError):
         load(p)

@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from super_tox.patchers import NullPatcher, PatcherError
-from super_tox.pool import Outcome, add_skipped, passed, run_one, run_pool
-from super_tox.runners import RunResult, RunStatus
+from hyrum.patchers import NullPatcher, PatcherError
+from hyrum.pool import Outcome, add_skipped, passed, run_one, run_pool
+from hyrum.runners import RunResult, RunStatus
 
 
 class StubRunner:

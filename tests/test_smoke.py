@@ -2,8 +2,8 @@
 
 from click.testing import CliRunner
 
-from super_tox import __version__
-from super_tox.cli import main
+from hyrum import __version__
+from hyrum.cli import main
 
 
 def test_version_string():

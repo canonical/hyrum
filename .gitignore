@@ -24,7 +24,7 @@ htmlcov/
 .DS_Store
 
 # Tool output
-.super-tox-logs/
+.hyrum-logs/
 results-*.json
 
 # uv

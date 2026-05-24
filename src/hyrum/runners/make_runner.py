@@ -21,7 +21,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from super_tox.runners.base import RunResult, RunStatus, split_executable
+from hyrum.runners.base import RunResult, RunStatus, split_executable
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from super_tox.patchers import (
+from hyrum.patchers import (
     NullPatcher,
     OpsSource,
     OpsSourcePatcher,
@@ -171,7 +171,7 @@ def test_pyproject_poetry_injects_git_under_dependencies(
     tmp_path: Path, ops_branch: OpsSource, monkeypatch
 ):
     # Skip the poetry lock subprocess for unit tests.
-    monkeypatch.setattr('super_tox.patchers.ops_source._run_lock', lambda *a, **kw: None)
+    monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         '[tool.poetry]\nname = "c"\nversion = "0"\ndescription = ""\n'
@@ -186,7 +186,7 @@ def test_pyproject_poetry_injects_git_under_dependencies(
 
 
 def test_pyproject_poetry_with_testing_extra(tmp_path: Path, ops_main: OpsSource, monkeypatch):
-    monkeypatch.setattr('super_tox.patchers.ops_source._run_lock', lambda *a, **kw: None)
+    monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         '[tool.poetry]\nname = "c"\nversion = "0"\ndescription = ""\n'
@@ -216,7 +216,7 @@ def test_unrecognised_pyproject_raises(tmp_path: Path, ops_main: OpsSource):
 
 
 def test_lockfile_snapshots_restored(tmp_path: Path, ops_branch: OpsSource, monkeypatch):
-    monkeypatch.setattr('super_tox.patchers.ops_source._run_lock', lambda *a, **kw: None)
+    monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
@@ -236,7 +236,7 @@ def test_lockfile_created_during_patch_is_removed_on_exit(
     def fake_lock(repo, cmd, timeout, **kw):
         (repo / 'uv.lock').write_text('# generated mid-patch\n')
 
-    monkeypatch.setattr('super_tox.patchers.ops_source._run_lock', fake_lock)
+    monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'

@@ -1,8 +1,9 @@
-# super-tox
+# hyrum
 
-> **Note:** `super-tox` is a placeholder name; the project may be renamed before
-> its first stable release. The Python package is `super_tox` and the console
-> script is `super-tox`. Both are intended to be easy to rename.
+> Named after [Hyrum's law](https://www.hyrumslaw.com/): once you have enough
+> users, every observable behaviour of your code is depended on by somebody.
+> This tool exists to find out who that "somebody" is — by running a proposed
+> dependency change against a fleet of consumer repos before you ship it.
 
 Bulk-run a check (typically lint or unit tests) across many charm
 repositories, optionally swapping out one of their dependencies first —
@@ -31,7 +32,7 @@ tests are explicitly out of scope.
 
 ## Non-goals
 
-- Cloning or curating the charm collection. `super-tox` assumes a folder
+- Cloning or curating the charm collection. `hyrum` assumes a folder
   of already-cloned charm repos is provided.
 - Running integration tests.
 - Acting as a general-purpose CI orchestrator.
@@ -44,7 +45,7 @@ uv pip install -e ".[dev]"
 
 # Run `tox -e unit` across every charm in ~/charms, with ops swapped
 # to the `fix/X` branch of canonical/operator:
-super-tox \
+hyrum \
     --cache-folder ~/charms \
     --target unit \
     --workers 8 \
@@ -52,16 +53,16 @@ super-tox \
 
 # Force the make runner (default is auto-detect: tox.ini -> tox,
 # Makefile -> make, fall back to the other if the target is missing):
-super-tox --cache-folder ~/charms --target unit --runner make
+hyrum --cache-folder ~/charms --target unit --runner make
 
 # Skip the dependency swap; just check how the charms behave as-pinned:
-super-tox --cache-folder ~/charms --target unit --no-patch
+hyrum --cache-folder ~/charms --target unit --no-patch
 
 # Only run for charms that use the Scenario testing framework:
-super-tox --cache-folder ~/charms --target unit --filter scenario
+hyrum --cache-folder ~/charms --target unit --filter scenario
 
 # Exit non-zero if any charm fails, times out, or hits a patcher error:
-super-tox --cache-folder ~/charms --target unit --fail-on-regression
+hyrum --cache-folder ~/charms --target unit --fail-on-regression
 ```
 
 Output statuses:
@@ -85,7 +86,7 @@ from a git source) can plug in without changes elsewhere.
 
 ## Configuration
 
-`super-tox.toml` (path overridable via `-c`) supports an `[ignore]`
+`hyrum.toml` (path overridable via `-c`) supports an `[ignore]`
 table that maps a category to a list of repo paths to skip. Categories
 are free-form; their name shows up in the run output as the skip
 reason. Example:

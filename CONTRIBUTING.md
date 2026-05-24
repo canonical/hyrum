@@ -1,10 +1,10 @@
-We welcome contributions to super-tox!
+We welcome contributions to hyrum!
 
-Before working on changes, please consider [opening an issue](https://github.com/canonical/super-tox/issues) explaining your use case. If you would like to chat with us about your use cases or proposed implementation, you can reach us at [Matrix](https://matrix.to/#/#charmhub-charmdev:ubuntu.com) or [Discourse](https://discourse.charmhub.io/).
+Before working on changes, please consider [opening an issue](https://github.com/canonical/hyrum/issues) explaining your use case. If you would like to chat with us about your use cases or proposed implementation, you can reach us at [Matrix](https://matrix.to/#/#charmhub-charmdev:ubuntu.com) or [Discourse](https://discourse.charmhub.io/).
 
 # Pull requests
 
-Changes are proposed as [pull requests on GitHub](https://github.com/canonical/super-tox/pulls).
+Changes are proposed as [pull requests on GitHub](https://github.com/canonical/hyrum/pulls).
 
 Pull requests should have a short title that follows the [conventional commit style](https://www.conventionalcommits.org/en/) using one of these types:
 

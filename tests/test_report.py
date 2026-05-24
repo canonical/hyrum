@@ -5,8 +5,8 @@ from pathlib import Path
 
 import rich.console
 
-from super_tox.pool import Outcome
-from super_tox.report import render
+from hyrum.pool import Outcome
+from hyrum.report import render
 
 
 def _render(outcomes, *, base: Path, target: str = 'unit', verbose: bool = False):

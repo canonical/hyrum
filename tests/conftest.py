@@ -1,4 +1,4 @@
-"""Shared fixtures for super-tox tests."""
+"""Shared fixtures for hyrum tests."""
 
 from __future__ import annotations
 

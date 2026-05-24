@@ -1,4 +1,4 @@
-"""Load ``super-tox.toml``.
+"""Load ``hyrum.toml``.
 
 Only the ``[ignore]`` table is interpreted here today; other tables are
 preserved as-is so callers can read tool-specific extensions without a
@@ -15,7 +15,7 @@ from typing import Any
 
 @dataclass(frozen=True)
 class Config:
-    """Parsed ``super-tox.toml``: ignore table + the raw mapping for callers."""
+    """Parsed ``hyrum.toml``: ignore table + the raw mapping for callers."""
 
     ignore: dict[str, list[str]] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
