@@ -24,6 +24,7 @@ import contextlib
 import dataclasses
 import itertools
 import logging
+import os
 import pathlib
 import re
 import shlex
@@ -57,6 +58,15 @@ class OpsSource:
     poetry_executable: Sequence[str] = dataclasses.field(default_factory=lambda: ('poetry',))
     uv_executable: Sequence[str] = dataclasses.field(default_factory=lambda: ('uv',))
     lock_timeout: int = 600
+    auto_python: bool = True
+    """If True, run ``poetry lock`` under an interpreter that satisfies the
+    charm's declared Python constraint, via ``uv run --python X.Y``.
+
+    Charms commonly declare a ``requires-python`` higher than hyrum's own
+    interpreter, which causes ``poetry lock`` to abort with "Current Python
+    version (…) is not allowed by the project". Wrapping with ``uv run`` lets
+    uv fetch or select a satisfying interpreter on demand.
+    """
 
     def pep508_url(self) -> str:
         """Return the ``git+<url>[@branch]`` URL for the ops package."""
@@ -143,19 +153,34 @@ class OpsSourcePatcher:
 
             pyproject.write_text(new_text)
 
+            # Re-parse the patched pyproject: ``_patch_pyproject_uv`` bumps
+            # ``requires-python`` from 3.8/3.9 to 3.10 (ops's floor), so the
+            # original parse would tell us to lock under an interpreter the
+            # patched file now rejects.
+            py_version: tuple[int, int] | None = None
+            if self.ops.auto_python:
+                try:
+                    py_version = _min_python_from_pyproject(tomllib.loads(new_text))
+                except tomllib.TOMLDecodeError:
+                    py_version = _min_python_from_pyproject(parsed)
+
             if flavour == 'poetry':
+                base_cmd = (*shlex.split(' '.join(self.ops.poetry_executable)), 'lock')
                 _run_lock(
                     repo,
-                    (*shlex.split(' '.join(self.ops.poetry_executable)), 'lock'),
+                    _wrap_with_uv_python(base_cmd, py_version, self.ops.uv_executable),
                     self.ops.lock_timeout,
                     on_failure_remove=poetry_lock,
                 )
             # Only re-lock when uv.lock is checked in; otherwise the charm
             # regenerates it on demand and our re-lock would be wasted work.
             elif flavour == 'uv' and uv_lock.exists():
+                uv_cmd: tuple[str, ...] = (*self.ops.uv_executable, 'lock')
+                if py_version is not None:
+                    uv_cmd = (*uv_cmd, '--python', f'{py_version[0]}.{py_version[1]}')
                 _run_lock(
                     repo,
-                    (*self.ops.uv_executable, 'lock'),
+                    uv_cmd,
                     self.ops.lock_timeout,
                 )
 
@@ -421,6 +446,75 @@ def _detect_pyproject_flavour(parsed: dict[str, Any], uv_lock_present: bool) -> 
     return 'unknown'
 
 
+_PYTHON_BOUND_RE = re.compile(r'(>=|>|==|~=|~|\^)\s*(\d+)\.(\d+)')
+
+
+def _min_python_from_constraint(constraint: str) -> tuple[int, int] | None:
+    """Return the lowest ``(major, minor)`` Python that satisfies ``constraint``.
+
+    Accepts PEP 440 specifiers (``>=3.12,<4.0``) and Poetry shorthand
+    (``^3.10``, ``~3.10``). Only lower-bound operators are considered;
+    upper bounds (``<``, ``<=``) are ignored because they don't widen the
+    set of acceptable interpreters.
+
+    Returns ``None`` if no lower bound is present.
+    """
+    bounds: list[tuple[int, int]] = []
+    for op, major_s, minor_s in _PYTHON_BOUND_RE.findall(constraint):
+        major, minor = int(major_s), int(minor_s)
+        if op == '>':
+            minor += 1
+        bounds.append((major, minor))
+    if not bounds:
+        return None
+    return max(bounds)
+
+
+def _min_python_from_pyproject(parsed: dict[str, Any]) -> tuple[int, int] | None:
+    """Extract the project's minimum Python from a parsed pyproject.toml."""
+    project: dict[str, Any] = parsed.get('project', {})
+    requires_python = project.get('requires-python')
+    if isinstance(requires_python, str):
+        bound = _min_python_from_constraint(requires_python)
+        if bound is not None:
+            return bound
+    poetry: dict[str, Any] = parsed.get('tool', {}).get('poetry', {})
+    python_dep: Any = poetry.get('dependencies', {}).get('python')
+    if isinstance(python_dep, str):
+        return _min_python_from_constraint(python_dep)
+    if isinstance(python_dep, dict):
+        version = python_dep.get('version')
+        if isinstance(version, str):
+            return _min_python_from_constraint(version)
+    return None
+
+
+def _wrap_with_uv_python(
+    cmd: Sequence[str],
+    py_version: tuple[int, int] | None,
+    uv_executable: Sequence[str],
+) -> tuple[str, ...]:
+    """Prefix ``cmd`` with ``uv run --no-project --python X.Y --`` when ``py_version`` is set.
+
+    ``--no-project`` keeps uv from interpreting the charm's ``pyproject.toml``
+    as a uv project: some charms have a ``[project]`` table without a
+    ``version`` (legal under Poetry's ``package-mode = false``, rejected by
+    uv), which would otherwise abort ``uv run`` before it ever gets to
+    invoke poetry.
+    """
+    if py_version is None:
+        return tuple(cmd)
+    return (
+        *uv_executable,
+        'run',
+        '--no-project',
+        '--python',
+        f'{py_version[0]}.{py_version[1]}',
+        '--',
+        *cmd,
+    )
+
+
 def _run_lock(
     repo: pathlib.Path,
     cmd: Sequence[str],
@@ -434,6 +528,11 @@ def _run_lock(
     ``ops`` source; in that case we just delete the lockfile so the
     runner can install without it.
     """
+    # Strip ``VIRTUAL_ENV`` so the charm's lock isn't pinned to hyrum's own
+    # venv. Poetry in particular reads ``VIRTUAL_ENV`` to decide the project's
+    # "current Python" and rejects ``poetry lock`` if it disagrees with the
+    # project's requires-python — even when we wrap with ``uv run --python``.
+    env = {k: v for k, v in os.environ.items() if k != 'VIRTUAL_ENV'}
     try:
         result = subprocess.run(  # noqa: S603 — cmd built from project config
             list(cmd),
@@ -441,6 +540,7 @@ def _run_lock(
             check=False,
             capture_output=True,
             timeout=timeout,
+            env=env,
         )
     except FileNotFoundError:
         logger.warning('%s not found, skipping lock for %s', cmd[0], repo)
