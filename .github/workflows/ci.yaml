@@ -25,21 +25,7 @@ jobs:
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
         with:
           enable-cache: true
-      - run: uvx --with tox-uv tox -e lint
-
-  static:
-    name: static (pyright)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6.0.2
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
-        with:
-          enable-cache: true
-      - run: uvx --with tox-uv tox -e static
+      - run: make lint
 
   unit:
     name: unit (py${{ matrix.python }})
@@ -58,4 +44,6 @@ jobs:
         with:
           enable-cache: true
       - run: uv python install ${{ matrix.python }}
-      - run: uvx --with tox-uv --python ${{ matrix.python }} tox -e unit
+      - env:
+          UV_PYTHON: ${{ matrix.python }}
+        run: make unit

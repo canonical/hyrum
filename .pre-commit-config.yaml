@@ -1,6 +1,6 @@
 # Pre-commit config aligned with canonical/charm-tech templates/pre-commit-config.yaml.
 # ruff, codespell, and zizmor are local hooks run via uv so they use the same
-# versions as CI and manual `tox -e lint` runs.
+# versions as CI and manual `make lint` runs.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
