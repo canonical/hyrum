@@ -1,18 +1,18 @@
 """Smoke test: package imports and CLI registers."""
 
-from click.testing import CliRunner
+from click import testing
 
-from hyrum import __version__
-from hyrum.cli import main
+import hyrum
+from hyrum import cli
 
 
 def test_version_string():
-    assert isinstance(__version__, str)
-    assert __version__
+    assert isinstance(hyrum.__version__, str)
+    assert hyrum.__version__
 
 
 def test_cli_help_runs():
-    result = CliRunner().invoke(main, ['--help'])
+    result = testing.CliRunner().invoke(cli.main, ['--help'])
     assert result.exit_code == 0
     assert '--cache-folder' in result.output
     assert '--target' in result.output
@@ -20,6 +20,6 @@ def test_cli_help_runs():
 
 
 def test_cli_requires_target():
-    result = CliRunner().invoke(main, [])
+    result = testing.CliRunner().invoke(cli.main, [])
     assert result.exit_code != 0
     assert '--target' in result.output or 'Missing option' in result.output

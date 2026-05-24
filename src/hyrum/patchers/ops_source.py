@@ -21,20 +21,20 @@ places and breaking lockfile assumptions).
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import itertools
 import logging
+import pathlib
 import re
 import shlex
 import subprocess  # noqa: S404 — subprocess is core to running poetry/uv lock
 import tomllib
 from collections.abc import Generator, Sequence
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import packaging.requirements
 
-from hyrum.patchers.base import PatcherError
+from hyrum.patchers import base
 
 logger = logging.getLogger(__name__)
 
@@ -48,14 +48,14 @@ _COMPANION_PACKAGES: dict[str, tuple[str, str]] = {
 }
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class OpsSource:
     """Where to pull ``ops`` from when patching a charm."""
 
     url: str = 'https://github.com/canonical/operator'
     branch: str | None = None
-    poetry_executable: Sequence[str] = field(default_factory=lambda: ('poetry',))
-    uv_executable: Sequence[str] = field(default_factory=lambda: ('uv',))
+    poetry_executable: Sequence[str] = dataclasses.field(default_factory=lambda: ('poetry',))
+    uv_executable: Sequence[str] = dataclasses.field(default_factory=lambda: ('uv',))
     lock_timeout: int = 600
 
     def pep508_url(self) -> str:
@@ -69,14 +69,14 @@ class OpsSource:
         return f'{self.pep508_url()}#subdirectory={subdir}'
 
 
-def _snapshot(path: Path) -> str | None:
+def _snapshot(path: pathlib.Path) -> str | None:
     """Read a file's content, or return ``None`` if it does not exist."""
     if not path.exists():
         return None
     return path.read_text()
 
 
-def _restore(path: Path, original: str | None) -> None:
+def _restore(path: pathlib.Path, original: str | None) -> None:
     if original is None:
         if path.exists():
             path.unlink()
@@ -94,7 +94,7 @@ def _ops_extras_from_pep508_line(line: str) -> set[str]:
     return set(req.extras)
 
 
-def _patch_requirements_file(path: Path, ops: OpsSource) -> None:
+def _patch_requirements_file(path: pathlib.Path, ops: OpsSource) -> None:
     """Rewrite a pip-style requirements file in place.
 
     Removes any existing ``ops`` line, retains any other git-source
@@ -326,11 +326,11 @@ def _detect_pyproject_flavour(parsed: dict[str, Any], uv_lock_present: bool) -> 
 
 
 def _run_lock(
-    repo: Path,
+    repo: pathlib.Path,
     cmd: Sequence[str],
     timeout: int,
     *,
-    on_failure_remove: Path | None = None,
+    on_failure_remove: pathlib.Path | None = None,
 ) -> None:
     """Best-effort regenerate a lockfile. Logs (never raises) on failure.
 
@@ -372,7 +372,7 @@ class OpsSourcePatcher:
         self.ops = ops
 
     @contextlib.contextmanager
-    def apply(self, repo: Path) -> Generator[None, None, None]:
+    def apply(self, repo: pathlib.Path) -> Generator[None, None, None]:
         """Patch ``repo``'s ops dep to ``self.ops``; restore every touched file on exit."""
         requirements = repo / 'requirements.txt'
         pyproject = repo / 'pyproject.toml'
@@ -382,10 +382,12 @@ class OpsSourcePatcher:
         elif pyproject.exists():
             yield from self._apply_pyproject(repo, pyproject)
         else:
-            raise PatcherError(f'{repo} has neither requirements.txt nor pyproject.toml')
+            raise base.PatcherError(f'{repo} has neither requirements.txt nor pyproject.toml')
 
-    def _apply_requirements(self, repo: Path, requirements: Path) -> Generator[None, None, None]:
-        snapshots: dict[Path, str | None] = {requirements: requirements.read_text()}
+    def _apply_requirements(
+        self, repo: pathlib.Path, requirements: pathlib.Path
+    ) -> Generator[None, None, None]:
+        snapshots: dict[pathlib.Path, str | None] = {requirements: requirements.read_text()}
         # Sibling requirements files often pin ops too; patch them all.
         for sibling in itertools.chain(
             repo.glob('requirements-*.txt'),
@@ -403,10 +405,12 @@ class OpsSourcePatcher:
             for path, original in snapshots.items():
                 _restore(path, original)
 
-    def _apply_pyproject(self, repo: Path, pyproject: Path) -> Generator[None, None, None]:
+    def _apply_pyproject(
+        self, repo: pathlib.Path, pyproject: pathlib.Path
+    ) -> Generator[None, None, None]:
         poetry_lock = repo / 'poetry.lock'
         uv_lock = repo / 'uv.lock'
-        snapshots: dict[Path, str | None] = {
+        snapshots: dict[pathlib.Path, str | None] = {
             pyproject: pyproject.read_text(),
             poetry_lock: _snapshot(poetry_lock),
             uv_lock: _snapshot(uv_lock),
@@ -415,7 +419,7 @@ class OpsSourcePatcher:
         try:
             parsed = tomllib.loads(snapshots[pyproject] or '')
         except tomllib.TOMLDecodeError as exc:
-            raise PatcherError(f'could not parse {pyproject}: {exc}') from exc
+            raise base.PatcherError(f'could not parse {pyproject}: {exc}') from exc
 
         try:
             ops_extras = _collect_pyproject_ops_extras(parsed)
@@ -429,7 +433,7 @@ class OpsSourcePatcher:
             elif flavour == 'pep621':
                 new_text = _patch_pyproject_pep621(original_text, self.ops, ops_extras)
             else:
-                raise PatcherError(
+                raise base.PatcherError(
                     f'{pyproject} has no recognisable [project] or [tool.poetry] deps'
                 )
 

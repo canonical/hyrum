@@ -7,21 +7,21 @@ schema change in this module.
 
 from __future__ import annotations
 
+import dataclasses
+import pathlib
 import tomllib
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class Config:
     """Parsed ``hyrum.toml``: ignore table + the raw mapping for callers."""
 
-    ignore: dict[str, list[str]] = field(default_factory=dict)
-    raw: dict[str, Any] = field(default_factory=dict)
+    ignore: dict[str, list[str]] = dataclasses.field(default_factory=dict)
+    raw: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
-def load(path: Path) -> Config:
+def load(path: pathlib.Path) -> Config:
     """Load the config from ``path``; return an empty Config if it doesn't exist."""
     if not path.exists():
         return Config()

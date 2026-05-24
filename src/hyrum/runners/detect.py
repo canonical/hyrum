@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
+import enum
+import pathlib
 from collections.abc import Sequence
-from enum import StrEnum
-from pathlib import Path
 
-from hyrum.runners.base import Runner, RunResult, RunStatus
-from hyrum.runners.make_runner import MakeRunner
-from hyrum.runners.tox import ToxRunner
+from hyrum.runners import base, make_runner, tox
 
 
-class RunnerChoice(StrEnum):
+class RunnerChoice(enum.StrEnum):
     """User-facing ``--runner`` choices."""
 
     AUTO = 'auto'
@@ -19,9 +17,12 @@ class RunnerChoice(StrEnum):
     MAKE = 'make'
 
 
-def by_name(name: str) -> type[Runner]:
+def by_name(name: str) -> type[base.Runner]:
     """Return the Runner class registered under ``name``."""
-    mapping: dict[str, type[Runner]] = {'tox': ToxRunner, 'make': MakeRunner}
+    mapping: dict[str, type[base.Runner]] = {
+        'tox': tox.ToxRunner,
+        'make': make_runner.MakeRunner,
+    }
     try:
         return mapping[name]
     except KeyError as exc:
@@ -39,30 +40,30 @@ class AutoRunner:
 
     name = 'auto'
 
-    def __init__(self, runners: Sequence[Runner]):
+    def __init__(self, runners: Sequence[base.Runner]):
         self._runners = list(runners)
 
     @classmethod
-    def detect(cls, repo: Path) -> bool:
+    def detect(cls, repo: pathlib.Path) -> bool:
         """Return True if any underlying runner could run in ``repo``."""
-        return ToxRunner.detect(repo) or MakeRunner.detect(repo)
+        return tox.ToxRunner.detect(repo) or make_runner.MakeRunner.detect(repo)
 
-    async def run(self, repo: Path, target: str) -> RunResult:
+    async def run(self, repo: pathlib.Path, target: str) -> base.RunResult:
         """Run ``target`` with the first applicable runner; fall back on no_target."""
         applicable = [r for r in self._runners if type(r).detect(repo)]
         if not applicable:
-            return RunResult(
+            return base.RunResult(
                 repo=repo,
                 runner=self.name,
                 target=target,
-                status=RunStatus.NO_TARGET,
+                status=base.RunStatus.NO_TARGET,
                 returncode=None,
                 duration_s=0.0,
             )
-        last: RunResult | None = None
+        last: base.RunResult | None = None
         for runner in applicable:
             last = await runner.run(repo, target)
-            if last.status is not RunStatus.NO_TARGET:
+            if last.status is not base.RunStatus.NO_TARGET:
                 return last
         assert last is not None
         return last
@@ -76,9 +77,9 @@ def auto(
     prefer: Sequence[str] = ('tox', 'make'),
 ) -> AutoRunner:
     """Build an AutoRunner that tries runners in ``prefer`` order."""
-    available: dict[str, Runner] = {
-        'tox': ToxRunner(executable=tox_executable, timeout=timeout),
-        'make': MakeRunner(executable=make_executable, timeout=timeout),
+    available: dict[str, base.Runner] = {
+        'tox': tox.ToxRunner(executable=tox_executable, timeout=timeout),
+        'make': make_runner.MakeRunner(executable=make_executable, timeout=timeout),
     }
     ordered = [available[name] for name in prefer if name in available]
     return AutoRunner(ordered)

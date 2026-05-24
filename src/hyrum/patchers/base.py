@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import contextlib
+import pathlib
 from collections.abc import Generator, Sequence
-from contextlib import AbstractContextManager
-from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 
@@ -21,7 +20,7 @@ class PatcherError(RuntimeError):
 class Patcher(Protocol):
     """A reversible mutation of one charm repo's source tree."""
 
-    def apply(self, repo: Path) -> AbstractContextManager[None]:
+    def apply(self, repo: pathlib.Path) -> contextlib.AbstractContextManager[None]:
         """Apply the patch to ``repo``; restore on context exit.
 
         Implementations must restore every file they touched on exit,
@@ -35,7 +34,7 @@ class NullPatcher:
     """No-op patcher, used when nothing needs swapping out."""
 
     @contextlib.contextmanager
-    def apply(self, repo: Path) -> Generator[None, None, None]:
+    def apply(self, repo: pathlib.Path) -> Generator[None, None, None]:
         """Yield without making any changes."""
         del repo
         yield
@@ -48,7 +47,7 @@ class PatcherStack:
         self._patchers = list(patchers)
 
     @contextlib.contextmanager
-    def apply(self, repo: Path) -> Generator[None, None, None]:
+    def apply(self, repo: pathlib.Path) -> Generator[None, None, None]:
         """Apply each patcher in order; unwind in reverse on exit."""
         with contextlib.ExitStack() as stack:
             for patcher in self._patchers:

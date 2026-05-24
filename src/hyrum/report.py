@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections import Counter
+import collections
+import pathlib
 from collections.abc import Iterable
-from pathlib import Path
 
 import rich.console
 import rich.table
 
-from hyrum.pool import Outcome, outcome_statuses
+from hyrum import pool
 
 _STATUS_STYLES = {
     'passed': 'green',
@@ -21,7 +21,7 @@ _STATUS_STYLES = {
 }
 
 
-def _relative(repo: Path, base: Path) -> str:
+def _relative(repo: pathlib.Path, base: pathlib.Path) -> str:
     try:
         return str(repo.relative_to(base))
     except ValueError:
@@ -29,9 +29,9 @@ def _relative(repo: Path, base: Path) -> str:
 
 
 def render(
-    outcomes: Iterable[Outcome],
+    outcomes: Iterable[pool.Outcome],
     *,
-    base: Path,
+    base: pathlib.Path,
     target: str,
     verbose: bool = False,
     console: rich.console.Console | None = None,
@@ -40,7 +40,7 @@ def render(
     outcomes = list(outcomes)
     console = console or rich.console.Console()
 
-    counts = Counter(o.status for o in outcomes)
+    counts = collections.Counter(o.status for o in outcomes)
     total = len(outcomes)
     ran = sum(counts.get(s, 0) for s in ('passed', 'failed', 'timeout'))
 
@@ -48,7 +48,7 @@ def render(
     table.add_column('status')
     table.add_column('count', justify='right')
     table.add_column('%', justify='right')
-    for status in outcome_statuses():
+    for status in pool.outcome_statuses():
         count = counts.get(status, 0)
         pct = f'{(count / total * 100):.0f}%' if total else '—'
         style = _STATUS_STYLES.get(status, '')

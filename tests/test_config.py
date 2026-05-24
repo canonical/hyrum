@@ -1,27 +1,27 @@
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from hyrum.config import load
+from hyrum import config
 
 
-def test_missing_returns_empty(tmp_path: Path):
-    cfg = load(tmp_path / 'missing.toml')
+def test_missing_returns_empty(tmp_path: pathlib.Path):
+    cfg = config.load(tmp_path / 'missing.toml')
     assert cfg.ignore == {}
 
 
-def test_loads_ignore_categories(tmp_path: Path):
+def test_loads_ignore_categories(tmp_path: pathlib.Path):
     p = tmp_path / 'hyrum.toml'
     p.write_text('[ignore]\nexpensive = ["argo-operators"]\nmanual = ["opensearch-operator"]\n')
-    cfg = load(p)
+    cfg = config.load(p)
     assert cfg.ignore['expensive'] == ['argo-operators']
     assert cfg.ignore['manual'] == ['opensearch-operator']
 
 
-def test_bad_ignore_shape_raises(tmp_path: Path):
+def test_bad_ignore_shape_raises(tmp_path: pathlib.Path):
     p = tmp_path / 'hyrum.toml'
     p.write_text('[ignore]\nexpensive = "argo"\n')
     with pytest.raises(ValueError):
-        load(p)
+        config.load(p)

@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import pathlib
 import time
 from collections.abc import Sequence
-from pathlib import Path
 
-from hyrum.runners.base import RunResult, RunStatus, split_executable
+from hyrum.runners import base
 
 logger = logging.getLogger(__name__)
 
@@ -42,22 +42,22 @@ class MakeRunner:
         executable: str | Sequence[str] = 'make',
         timeout: int = 1800,
     ):
-        self._executable = split_executable(executable)
+        self._executable = base.split_executable(executable)
         self._timeout = timeout
 
     @classmethod
-    def detect(cls, repo: Path) -> bool:
+    def detect(cls, repo: pathlib.Path) -> bool:
         """Return True if ``repo`` has a Makefile (either case)."""
         return (repo / 'Makefile').exists() or (repo / 'makefile').exists()
 
-    async def run(self, repo: Path, target: str) -> RunResult:
+    async def run(self, repo: pathlib.Path, target: str) -> base.RunResult:
         """Probe with ``-nq`` for the target, then invoke make and capture."""
         if await self._target_missing(repo, target):
-            return RunResult(
+            return base.RunResult(
                 repo=repo,
                 runner=self.name,
                 target=target,
-                status=RunStatus.NO_TARGET,
+                status=base.RunStatus.NO_TARGET,
                 returncode=None,
                 duration_s=0.0,
             )
@@ -75,11 +75,11 @@ class MakeRunner:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
         except TimeoutError:
             await _kill_and_drain(proc, repo)
-            return RunResult(
+            return base.RunResult(
                 repo=repo,
                 runner=self.name,
                 target=target,
-                status=RunStatus.TIMEOUT,
+                status=base.RunStatus.TIMEOUT,
                 returncode=None,
                 duration_s=time.monotonic() - started,
             )
@@ -87,12 +87,12 @@ class MakeRunner:
         duration = time.monotonic() - started
         rc = proc.returncode
         if rc == 0:
-            status = RunStatus.PASSED
+            status = base.RunStatus.PASSED
         elif _looks_like_missing_target(stderr):
-            status = RunStatus.NO_TARGET
+            status = base.RunStatus.NO_TARGET
         else:
-            status = RunStatus.FAILED
-        return RunResult(
+            status = base.RunStatus.FAILED
+        return base.RunResult(
             repo=repo,
             runner=self.name,
             target=target,
@@ -103,7 +103,7 @@ class MakeRunner:
             stderr=stderr,
         )
 
-    async def _target_missing(self, repo: Path, target: str) -> bool:
+    async def _target_missing(self, repo: pathlib.Path, target: str) -> bool:
         """Return True if ``make -nq <target>`` reports the target unknown."""
         argv = [*self._executable, '-nq', target]
         try:
@@ -128,7 +128,7 @@ def _looks_like_missing_target(stderr: bytes) -> bool:
     return any(marker in stderr for marker in _NO_RULE_MARKERS)
 
 
-async def _kill_and_drain(proc: asyncio.subprocess.Process, repo: Path) -> None:
+async def _kill_and_drain(proc: asyncio.subprocess.Process, repo: pathlib.Path) -> None:
     try:
         proc.kill()
     except ProcessLookupError:
