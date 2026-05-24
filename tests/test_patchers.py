@@ -130,23 +130,47 @@ def test_pyproject_uv_adds_tool_uv_sources(tmp_path: pathlib.Path, ops_branch: p
         assert 'ops>=2.10' in patched
 
 
-def test_pyproject_uv_with_testing_extra_adds_companion(
-    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+def test_pyproject_uv_always_hoists_all_companions(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
 ):
+    """Companion packages are hoisted even when no ops extra is requested.
+
+    uv refuses transitive URL deps (which the patched ops HEAD has on
+    its workspace siblings) unless they appear at the top-level pyproject.
+    """
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
-        'dependencies = [\n  "ops[testing]>=2.10",\n]\n\n'
-        '[tool.uv]\ndev-dependencies = []\n'
+        'dependencies = [\n  "ops>=2.10",\n]\n\n[tool.uv]\ndev-dependencies = []\n'
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        patched = _read(py)
+        assert '[tool.uv.sources]' in patched
+        assert 'ops-scenario = { git = "https://github.com/canonical/operator"' in patched
+        assert 'subdirectory = "testing"' in patched
+        assert 'ops-tracing = { git = "https://github.com/canonical/operator"' in patched
+        assert 'subdirectory = "tracing"' in patched
+        # Companions appear in [project.dependencies] too so uv accepts the URL source.
+        assert '"ops-scenario"' in patched
+        assert '"ops-tracing"' in patched
+
+
+def test_pyproject_uv_transitive_ops_dep_still_gets_companions(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
+    """A charm that pulls ops only transitively still gets companions hoisted."""
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
+        'dependencies = [\n  "coordinated-workers>=2.2",\n]\n\n[tool.uv]\n'
     )
     with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
         patched = _read(py)
-        assert '[tool.uv.sources]' in patched
-        assert 'ops-scenario' in patched
-        assert 'subdirectory = "testing"' in patched
-        assert 'git = "https://github.com/canonical/operator"' in patched
-        # Companion injected as a direct dep too.
+        # ops itself is hoisted as a source so uv resolves the transitive dep from git.
+        assert 'ops = { git = "https://github.com/canonical/operator" }' in patched
+        # And companions, because the patched ops HEAD has them as workspace URL deps.
         assert '"ops-scenario"' in patched
+        assert '"ops-tracing"' in patched
 
 
 def test_pyproject_uv_bumps_low_requires_python(
