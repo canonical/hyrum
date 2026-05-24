@@ -12,12 +12,12 @@ from super_tox.runners.make_runner import MakeRunner
 from super_tox.runners.tox import ToxRunner
 
 __all__ = [
-    "MakeRunner",
-    "RunResult",
-    "RunStatus",
-    "Runner",
-    "RunnerChoice",
-    "ToxRunner",
-    "auto",
-    "by_name",
+    'MakeRunner',
+    'RunResult',
+    'RunStatus',
+    'Runner',
+    'RunnerChoice',
+    'ToxRunner',
+    'auto',
+    'by_name',
 ]

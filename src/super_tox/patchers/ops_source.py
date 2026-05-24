@@ -25,11 +25,12 @@ import itertools
 import logging
 import re
 import shlex
-import subprocess
+import subprocess  # noqa: S404 — subprocess is core to running poetry/uv lock
 import tomllib
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import packaging.requirements
 
@@ -42,8 +43,8 @@ logger = logging.getLogger(__name__)
 # also live in the operator monorepo. When a charm asks for one of these
 # extras, the companion must be sourced from the same git ref.
 _COMPANION_PACKAGES: dict[str, tuple[str, str]] = {
-    "testing": ("ops-scenario", "testing"),
-    "tracing": ("ops-tracing", "tracing"),
+    'testing': ('ops-scenario', 'testing'),
+    'tracing': ('ops-tracing', 'tracing'),
 }
 
 
@@ -51,19 +52,21 @@ _COMPANION_PACKAGES: dict[str, tuple[str, str]] = {
 class OpsSource:
     """Where to pull ``ops`` from when patching a charm."""
 
-    url: str = "https://github.com/canonical/operator"
+    url: str = 'https://github.com/canonical/operator'
     branch: str | None = None
-    poetry_executable: Sequence[str] = field(default_factory=lambda: ("poetry",))
-    uv_executable: Sequence[str] = field(default_factory=lambda: ("uv",))
+    poetry_executable: Sequence[str] = field(default_factory=lambda: ('poetry',))
+    uv_executable: Sequence[str] = field(default_factory=lambda: ('uv',))
     lock_timeout: int = 600
 
     def pep508_url(self) -> str:
+        """Return the ``git+<url>[@branch]`` URL for the ops package."""
         if self.branch:
-            return f"git+{self.url}@{self.branch}"
-        return f"git+{self.url}"
+            return f'git+{self.url}@{self.branch}'
+        return f'git+{self.url}'
 
     def companion_pep508_url(self, subdir: str) -> str:
-        return f"{self.pep508_url()}#subdirectory={subdir}"
+        """Return the PEP 508 URL for a companion package living in ``subdir``."""
+        return f'{self.pep508_url()}#subdirectory={subdir}'
 
 
 def _snapshot(path: Path) -> str | None:
@@ -86,7 +89,7 @@ def _ops_extras_from_pep508_line(line: str) -> set[str]:
         req = packaging.requirements.Requirement(line)
     except packaging.requirements.InvalidRequirement:
         return set()
-    if req.name != "ops":
+    if req.name != 'ops':
         return set()
     return set(req.extras)
 
@@ -103,17 +106,17 @@ def _patch_requirements_file(path: Path, ops: OpsSource) -> None:
     ops_extras: set[str] = set()
 
     for raw in original_lines:
-        line = raw.split("#", 1)[0].strip()
-        if not line or line.startswith("--hash"):
+        line = raw.split('#', 1)[0].strip()
+        if not line or line.startswith('--hash'):
             kept.append(raw)
             continue
-        if line.startswith("git+https://github.com/canonical/operator"):
+        if line.startswith('git+https://github.com/canonical/operator'):
             # Already an ops git source — drop; we'll re-add ours below.
             continue
-        if line.startswith("git+https://"):
+        if line.startswith('git+https://'):
             kept.append(raw)
             continue
-        if line.startswith("-r "):
+        if line.startswith('-r '):
             # Recursive includes: leave alone; the loop driver patches each
             # requirements*.txt sibling, so transitively-included files
             # are handled when they are themselves enumerated.
@@ -124,7 +127,7 @@ def _patch_requirements_file(path: Path, ops: OpsSource) -> None:
         except packaging.requirements.InvalidRequirement:
             kept.append(raw)
             continue
-        if req.name == "ops":
+        if req.name == 'ops':
             ops_extras.update(req.extras)
             continue
         # Drop companion packages — they'll be re-added from git below.
@@ -132,49 +135,52 @@ def _patch_requirements_file(path: Path, ops: OpsSource) -> None:
             continue
         kept.append(raw)
 
-    extras_str = f"[{','.join(sorted(ops_extras))}]" if ops_extras else ""
-    kept.append(f"ops{extras_str} @ {ops.pep508_url()}")
+    extras_str = f'[{",".join(sorted(ops_extras))}]' if ops_extras else ''
+    kept.append(f'ops{extras_str} @ {ops.pep508_url()}')
     for extra, (pkg, subdir) in _COMPANION_PACKAGES.items():
         if extra in ops_extras:
-            kept.append(f"{pkg} @ {ops.companion_pep508_url(subdir)}")
+            kept.append(f'{pkg} @ {ops.companion_pep508_url(subdir)}')
 
-    path.write_text("\n".join(kept) + "\n")
+    path.write_text('\n'.join(kept) + '\n')
 
 
-def _collect_pyproject_ops_extras(data: dict) -> set[str]:
+def _collect_pyproject_ops_extras(data: dict[str, Any]) -> set[str]:
     extras: set[str] = set()
 
-    poetry = data.get("tool", {}).get("poetry", {})
-    for section in ("dependencies", "dev-dependencies"):
-        deps = poetry.get(section, {})
+    # tomllib returns nested Any; cast each step to a typed view so we can
+    # destructure without lighting up pyright-strict.
+    poetry: dict[str, Any] = data.get('tool', {}).get('poetry', {})
+    for section in ('dependencies', 'dev-dependencies'):
+        deps: Any = poetry.get(section, {})
         if isinstance(deps, dict):
-            dep = deps.get("ops")
-            if isinstance(dep, dict) and "extras" in dep:
-                extras.update(dep["extras"])
-    for group in poetry.get("group", {}).values():
-        deps = group.get("dependencies", {})
-        if isinstance(deps, dict):
-            dep = deps.get("ops")
-            if isinstance(dep, dict) and "extras" in dep:
-                extras.update(dep["extras"])
+            dep: Any = deps.get('ops')
+            if isinstance(dep, dict) and 'extras' in dep:
+                extras.update(str(e) for e in dep['extras'])
+    for group in poetry.get('group', {}).values():
+        group_deps: Any = group.get('dependencies', {})
+        if isinstance(group_deps, dict):
+            dep = group_deps.get('ops')
+            if isinstance(dep, dict) and 'extras' in dep:
+                extras.update(str(e) for e in dep['extras'])
 
-    for dep_str in data.get("project", {}).get("dependencies", []):
-        extras.update(_ops_extras_from_pep508_line(dep_str))
-    for opts in data.get("project", {}).get("optional-dependencies", {}).values():
+    project: dict[str, Any] = data.get('project', {})
+    for dep_str in project.get('dependencies', []):
+        extras.update(_ops_extras_from_pep508_line(str(dep_str)))
+    for opts in project.get('optional-dependencies', {}).values():
         for dep_str in opts:
-            extras.update(_ops_extras_from_pep508_line(dep_str))
+            extras.update(_ops_extras_from_pep508_line(str(dep_str)))
 
     return extras
 
 
-_OPS_LINE_RE = re.compile(r"^ops\s*=")
+_OPS_LINE_RE = re.compile(r'^ops\s*=')
 
 
 def _is_top_level_ops_dep_line(stripped: str) -> bool:
     """Heuristic: does this stripped line declare ``ops`` as a dep?"""
-    if stripped == "ops":
+    if stripped == 'ops':
         return True
-    for prefix in ("ops ", "ops=", "ops>", "ops<", "ops~", "ops["):
+    for prefix in ('ops ', 'ops=', 'ops>', 'ops<', 'ops~', 'ops['):
         if stripped.startswith(prefix):
             return True
     return bool(_OPS_LINE_RE.match(stripped))
@@ -188,36 +194,36 @@ def _strip_ops_declarations(original: str) -> str:
     """
     out_lines: list[str] = []
     for raw in original.splitlines(keepends=True):
-        stripped = raw.split("#", 1)[0].strip().strip('"').strip("'")
+        stripped = raw.split('#', 1)[0].strip().strip('"').strip("'")
         if _is_top_level_ops_dep_line(stripped):
             continue
         out_lines.append(raw)
-    return "".join(out_lines)
+    return ''.join(out_lines)
 
 
 def _strip_companion_declarations(content: str, pkg_name: str) -> str:
     out_lines: list[str] = []
-    pep_re = re.compile(rf"^{re.escape(pkg_name)}\s*=")
+    pep_re = re.compile(rf'^{re.escape(pkg_name)}\s*=')
     for raw in content.splitlines(keepends=True):
-        stripped = raw.split("#", 1)[0].strip().strip('"').strip("'")
+        stripped = raw.split('#', 1)[0].strip().strip('"').strip("'")
         if (
             stripped == pkg_name
-            or stripped.startswith(f"{pkg_name} ")
-            or stripped.startswith(f"{pkg_name}=")
+            or stripped.startswith(f'{pkg_name} ')
+            or stripped.startswith(f'{pkg_name}=')
             or pep_re.match(stripped)
         ):
             continue
         out_lines.append(raw)
-    return "".join(out_lines)
+    return ''.join(out_lines)
 
 
 def _patch_pyproject_pep621(original: str, ops: OpsSource, ops_extras: set[str]) -> str:
     """Patch a PEP 621 ``[project.dependencies]`` pyproject (non-uv)."""
     stripped = _strip_ops_declarations(original)
-    extras_str = f"[{','.join(sorted(ops_extras))}]" if ops_extras else ""
-    ops_pep508 = f"ops{extras_str} @ {ops.pep508_url()}"
+    extras_str = f'[{",".join(sorted(ops_extras))}]' if ops_extras else ''
+    ops_pep508 = f'ops{extras_str} @ {ops.pep508_url()}'
     return stripped.replace(
-        "dependencies = [",
+        'dependencies = [',
         f'dependencies = [\n  "{ops_pep508}",',
         1,
     )
@@ -233,9 +239,7 @@ def _patch_pyproject_uv(original: str, ops: OpsSource, ops_extras: set[str]) -> 
     """
     source_lines: list[str] = []
     if ops.branch:
-        source_lines.append(
-            f'ops = {{ git = "{ops.url}", branch = "{ops.branch}" }}'
-        )
+        source_lines.append(f'ops = {{ git = "{ops.url}", branch = "{ops.branch}" }}')
     else:
         source_lines.append(f'ops = {{ git = "{ops.url}" }}')
 
@@ -249,26 +253,24 @@ def _patch_pyproject_uv(original: str, ops: OpsSource, ops_extras: set[str]) -> 
                 f'branch = "{ops.branch}", subdirectory = "{subdir}" }}'
             )
         else:
-            source_lines.append(
-                f'{pkg} = {{ git = "{ops.url}", subdirectory = "{subdir}" }}'
-            )
+            source_lines.append(f'{pkg} = {{ git = "{ops.url}", subdirectory = "{subdir}" }}')
         companion_direct.append(pkg)
 
-    block = "\n".join(source_lines)
-    if "[tool.uv.sources]" in original:
+    block = '\n'.join(source_lines)
+    if '[tool.uv.sources]' in original:
         out = original.replace(
-            "[tool.uv.sources]",
-            f"[tool.uv.sources]\n{block}",
+            '[tool.uv.sources]',
+            f'[tool.uv.sources]\n{block}',
             1,
         )
     else:
-        out = original.rstrip("\n") + f"\n\n[tool.uv.sources]\n{block}\n"
+        out = original.rstrip('\n') + f'\n\n[tool.uv.sources]\n{block}\n'
 
     if companion_direct:
-        dep_entries = ", ".join(f'"{d}"' for d in companion_direct)
+        dep_entries = ', '.join(f'"{d}"' for d in companion_direct)
         out = out.replace(
-            "dependencies = [",
-            f"dependencies = [\n  {dep_entries},",
+            'dependencies = [',
+            f'dependencies = [\n  {dep_entries},',
             1,
         )
 
@@ -284,14 +286,10 @@ def _patch_pyproject_uv(original: str, ops: OpsSource, ops_extras: set[str]) -> 
 
 def _patch_pyproject_poetry(original: str, ops: OpsSource, ops_extras: set[str]) -> str:
     extras_list = (
-        f', extras = [{", ".join(repr(e) for e in sorted(ops_extras))}]'
-        if ops_extras
-        else ""
+        f', extras = [{", ".join(repr(e) for e in sorted(ops_extras))}]' if ops_extras else ''
     )
     if ops.branch:
-        ops_toml = (
-            f'\nops = {{git = "{ops.url}", branch = "{ops.branch}"{extras_list}}}\n'
-        )
+        ops_toml = f'\nops = {{git = "{ops.url}", branch = "{ops.branch}"{extras_list}}}\n'
     else:
         ops_toml = f'\nops = {{git = "{ops.url}"{extras_list}}}\n'
 
@@ -309,22 +307,22 @@ def _patch_pyproject_poetry(original: str, ops: OpsSource, ops_extras: set[str])
             ops_toml += f'\n{pkg} = {{git = "{ops.url}", subdirectory = "{subdir}"}}\n'
 
     return content.replace(
-        "[tool.poetry.dependencies]",
-        f"[tool.poetry.dependencies]{ops_toml}",
+        '[tool.poetry.dependencies]',
+        f'[tool.poetry.dependencies]{ops_toml}',
         1,
     )
 
 
-def _detect_pyproject_flavour(parsed: dict, uv_lock_present: bool) -> str:
+def _detect_pyproject_flavour(parsed: dict[str, Any], uv_lock_present: bool) -> str:
     """Return ``"uv"`` / ``"poetry"`` / ``"pep621"`` / ``"unknown"``."""
-    has_pep621_deps = "dependencies" in parsed.get("project", {})
-    if has_pep621_deps and (uv_lock_present or "uv" in parsed.get("tool", {})):
-        return "uv"
-    if "poetry" in parsed.get("tool", {}):
-        return "poetry"
+    has_pep621_deps = 'dependencies' in parsed.get('project', {})
+    if has_pep621_deps and (uv_lock_present or 'uv' in parsed.get('tool', {})):
+        return 'uv'
+    if 'poetry' in parsed.get('tool', {}):
+        return 'poetry'
     if has_pep621_deps:
-        return "pep621"
-    return "unknown"
+        return 'pep621'
+    return 'unknown'
 
 
 def _run_lock(
@@ -341,7 +339,7 @@ def _run_lock(
     runner can install without it.
     """
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603 — cmd built from project config
             list(cmd),
             cwd=repo,
             check=False,
@@ -349,19 +347,19 @@ def _run_lock(
             timeout=timeout,
         )
     except FileNotFoundError:
-        logger.warning("%s not found, skipping lock for %s", cmd[0], repo)
+        logger.warning('%s not found, skipping lock for %s', cmd[0], repo)
         return
     except subprocess.TimeoutExpired:
-        logger.warning("%s lock timed out after %ds for %s", cmd[0], timeout, repo)
+        logger.warning('%s lock timed out after %ds for %s', cmd[0], timeout, repo)
         if on_failure_remove and on_failure_remove.exists():
             on_failure_remove.unlink()
         return
     if result.returncode != 0:
         logger.warning(
-            "%s lock failed for %s: %s",
+            '%s lock failed for %s: %s',
             cmd[0],
             repo,
-            result.stderr.decode(errors="replace").strip(),
+            result.stderr.decode(errors='replace').strip(),
         )
         if on_failure_remove and on_failure_remove.exists():
             on_failure_remove.unlink()
@@ -374,28 +372,25 @@ class OpsSourcePatcher:
         self.ops = ops
 
     @contextlib.contextmanager
-    def apply(self, repo: Path) -> Iterator[None]:
-        requirements = repo / "requirements.txt"
-        pyproject = repo / "pyproject.toml"
+    def apply(self, repo: Path) -> Generator[None, None, None]:
+        """Patch ``repo``'s ops dep to ``self.ops``; restore every touched file on exit."""
+        requirements = repo / 'requirements.txt'
+        pyproject = repo / 'pyproject.toml'
 
         if requirements.exists():
             yield from self._apply_requirements(repo, requirements)
         elif pyproject.exists():
             yield from self._apply_pyproject(repo, pyproject)
         else:
-            raise PatcherError(
-                f"{repo} has neither requirements.txt nor pyproject.toml"
-            )
+            raise PatcherError(f'{repo} has neither requirements.txt nor pyproject.toml')
 
-    def _apply_requirements(
-        self, repo: Path, requirements: Path
-    ) -> Iterator[None]:
+    def _apply_requirements(self, repo: Path, requirements: Path) -> Generator[None, None, None]:
         snapshots: dict[Path, str | None] = {requirements: requirements.read_text()}
         # Sibling requirements files often pin ops too; patch them all.
         for sibling in itertools.chain(
-            repo.glob("requirements-*.txt"),
-            repo.glob("*-requirements.txt"),
-            repo.glob("requirements*.in"),
+            repo.glob('requirements-*.txt'),
+            repo.glob('*-requirements.txt'),
+            repo.glob('requirements*.in'),
         ):
             if sibling == requirements:
                 continue
@@ -408,9 +403,9 @@ class OpsSourcePatcher:
             for path, original in snapshots.items():
                 _restore(path, original)
 
-    def _apply_pyproject(self, repo: Path, pyproject: Path) -> Iterator[None]:
-        poetry_lock = repo / "poetry.lock"
-        uv_lock = repo / "uv.lock"
+    def _apply_pyproject(self, repo: Path, pyproject: Path) -> Generator[None, None, None]:
+        poetry_lock = repo / 'poetry.lock'
+        uv_lock = repo / 'uv.lock'
         snapshots: dict[Path, str | None] = {
             pyproject: pyproject.read_text(),
             poetry_lock: _snapshot(poetry_lock),
@@ -418,39 +413,39 @@ class OpsSourcePatcher:
         }
 
         try:
-            parsed = tomllib.loads(snapshots[pyproject] or "")
+            parsed = tomllib.loads(snapshots[pyproject] or '')
         except tomllib.TOMLDecodeError as exc:
-            raise PatcherError(f"could not parse {pyproject}: {exc}") from exc
+            raise PatcherError(f'could not parse {pyproject}: {exc}') from exc
 
         try:
             ops_extras = _collect_pyproject_ops_extras(parsed)
             flavour = _detect_pyproject_flavour(parsed, uv_lock.exists())
-            original_text = snapshots[pyproject] or ""
+            original_text = snapshots[pyproject] or ''
 
-            if flavour == "uv":
+            if flavour == 'uv':
                 new_text = _patch_pyproject_uv(original_text, self.ops, ops_extras)
-            elif flavour == "poetry":
+            elif flavour == 'poetry':
                 new_text = _patch_pyproject_poetry(original_text, self.ops, ops_extras)
-            elif flavour == "pep621":
+            elif flavour == 'pep621':
                 new_text = _patch_pyproject_pep621(original_text, self.ops, ops_extras)
             else:
                 raise PatcherError(
-                    f"{pyproject} has no recognisable [project] or [tool.poetry] deps"
+                    f'{pyproject} has no recognisable [project] or [tool.poetry] deps'
                 )
 
             pyproject.write_text(new_text)
 
-            if flavour == "poetry":
+            if flavour == 'poetry':
                 _run_lock(
                     repo,
-                    (*shlex.split(" ".join(self.ops.poetry_executable)), "lock"),
+                    (*shlex.split(' '.join(self.ops.poetry_executable)), 'lock'),
                     self.ops.lock_timeout,
                     on_failure_remove=poetry_lock,
                 )
-            elif flavour == "uv" and uv_lock.exists():
+            elif flavour == 'uv' and uv_lock.exists():
                 _run_lock(
                     repo,
-                    (*self.ops.uv_executable, "lock"),
+                    (*self.ops.uv_executable, 'lock'),
                     self.ops.lock_timeout,
                 )
 

@@ -5,4 +5,4 @@ renaming `super_tox` → `<new_name>` is a single `git mv` plus
 search-and-replace of the package import string.
 """
 
-__version__ = "0.0.1.dev0"
+__version__ = '0.0.1.dev0'

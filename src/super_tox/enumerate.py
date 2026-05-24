@@ -24,26 +24,26 @@ logger = logging.getLogger(__name__)
 
 
 def _is_charm_dir(path: Path) -> bool:
-    return (path / "charmcraft.yaml").exists() or (path / "metadata.yaml").exists()
+    return (path / 'charmcraft.yaml').exists() or (path / 'metadata.yaml').exists()
 
 
 def _is_bundle_dir(path: Path) -> bool:
-    return (path / "bundle.yaml").exists()
+    return (path / 'bundle.yaml').exists()
 
 
 def _iter_bundle(base: Path) -> Iterator[Path]:
-    charms_dir = base / "charms"
+    charms_dir = base / 'charms'
     if not charms_dir.exists():
-        logger.warning("Bundle %s has no charms/ directory", base)
+        logger.warning('Bundle %s has no charms/ directory', base)
         return
     for child in sorted(charms_dir.iterdir()):
-        if child.is_dir() and not child.name.startswith("."):
+        if child.is_dir() and not child.name.startswith('.'):
             yield child
 
 
 def _iter_monorepo(base: Path) -> Iterator[Path]:
     for child in sorted(base.iterdir()):
-        if not child.is_dir() or child.name.startswith("."):
+        if not child.is_dir() or child.name.startswith('.'):
             continue
         if _is_charm_dir(child):
             yield child
@@ -54,7 +54,7 @@ def _iter_monorepo(base: Path) -> Iterator[Path]:
 def _is_legacy_charm(path: Path) -> bool:
     # Reactive charms have a `reactive/` directory; classic hook charms
     # have a `hooks/` directory. Both predate `ops` and are out of scope.
-    return (path / "reactive").exists() or (path / "hooks").exists()
+    return (path / 'reactive').exists() or (path / 'hooks').exists()
 
 
 def iter_charm_repos(base: Path) -> Iterator[Path]:
@@ -65,12 +65,12 @@ def iter_charm_repos(base: Path) -> Iterator[Path]:
     the per-charm subdirectory for bundles/monorepos).
     """
     if not base.exists():
-        raise FileNotFoundError(f"Cache folder does not exist: {base}")
+        raise FileNotFoundError(f'Cache folder does not exist: {base}')
     if not base.is_dir():
-        raise NotADirectoryError(f"Cache folder is not a directory: {base}")
+        raise NotADirectoryError(f'Cache folder is not a directory: {base}')
 
     for entry in sorted(base.iterdir()):
-        if not entry.is_dir() or entry.name.startswith("."):
+        if not entry.is_dir() or entry.name.startswith('.'):
             continue
         if _is_bundle_dir(entry):
             candidates = _iter_bundle(entry)
@@ -81,6 +81,6 @@ def iter_charm_repos(base: Path) -> Iterator[Path]:
             candidates = _iter_monorepo(entry)
         for candidate in candidates:
             if _is_legacy_charm(candidate):
-                logger.info("Ignoring legacy (reactive/hooks) charm: %s", candidate)
+                logger.info('Ignoring legacy (reactive/hooks) charm: %s', candidate)
                 continue
             yield candidate

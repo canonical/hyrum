@@ -22,14 +22,14 @@ from super_tox.runners import RunnerChoice, auto
 from super_tox.runners.make_runner import MakeRunner
 from super_tox.runners.tox import ToxRunner
 
-logger = logging.getLogger("super_tox")
+logger = logging.getLogger('super_tox')
 
 
 def _configure_logging(level: str) -> None:
     logging.basicConfig(
         level=getattr(logging, level.upper()),
-        format="%(message)s",
-        datefmt="[%X]",
+        format='%(message)s',
+        datefmt='[%X]',
         handlers=[rich.logging.RichHandler(show_path=False)],
     )
 
@@ -88,8 +88,9 @@ def _select_repos(
         filt.has_runnable_target,
     ]
     if framework:
+
         def framework_filter(repo: Path) -> filt.SkipReason:
-            return None if uses_framework(repo, framework) else f"does not use {framework}"
+            return None if uses_framework(repo, framework) else f'does not use {framework}'
 
         chain.append(framework_filter)
 
@@ -111,92 +112,88 @@ def _select_repos(
 
 @click.command()
 @click.option(
-    "--cache-folder",
+    '--cache-folder',
     required=True,
     type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Folder containing pre-cloned charm repositories.",
+    help='Folder containing pre-cloned charm repositories.',
 )
 @click.option(
-    "-c",
-    "--config",
-    "config_path",
+    '-c',
+    '--config',
+    'config_path',
     type=click.Path(dir_okay=False, path_type=Path),
-    default=Path("super-tox.toml"),
+    default=Path('super-tox.toml'),
     show_default=True,
-    help="TOML config file (only the [ignore] table is read today).",
+    help='TOML config file (only the [ignore] table is read today).',
 )
 @click.option(
-    "-t",
-    "--target",
+    '-t',
+    '--target',
     required=True,
-    help="Tox environment or make target (e.g. unit, lint).",
+    help='Tox environment or make target (e.g. unit, lint).',
 )
 @click.option(
-    "--runner",
-    "runner_choice",
+    '--runner',
+    'runner_choice',
     type=click.Choice([c.value for c in RunnerChoice]),
     default=RunnerChoice.AUTO.value,
     show_default=True,
-    help="auto = tox if tox.ini, else make; falls back if the target is missing.",
+    help='auto = tox if tox.ini, else make; falls back if the target is missing.',
 )
-@click.option("--repo", default=".*", show_default=True, help="Regex on the repo name.")
+@click.option('--repo', default='.*', show_default=True, help='Regex on the repo name.')
 @click.option(
-    "--sample",
+    '--sample',
     default=0,
     type=click.IntRange(0),
-    help="Stop after this many charms (0 = all).",
+    help='Stop after this many charms (0 = all).',
 )
 @click.option(
-    "--filter",
-    "framework",
+    '--filter',
+    'framework',
     type=click.Choice(list(supported_frameworks()), case_sensitive=False),
     default=None,
-    help="Only run for charms using this testing framework.",
+    help='Only run for charms using this testing framework.',
 )
-@click.option("--workers", default=1, type=click.IntRange(1), show_default=True)
-@click.option("--executable", default="tox", show_default=True, help="Tox command.")
+@click.option('--workers', default=1, type=click.IntRange(1), show_default=True)
+@click.option('--executable', default='tox', show_default=True, help='Tox command.')
+@click.option('--make-executable', default='make', show_default=True, help='Make command.')
 @click.option(
-    "--make-executable", default="make", show_default=True, help="Make command."
-)
-@click.option(
-    "--timeout",
+    '--timeout',
     default=1800,
     type=click.IntRange(1),
     show_default=True,
-    help="Per-charm timeout in seconds.",
+    help='Per-charm timeout in seconds.',
 )
 @click.option(
-    "--no-patch/--patch",
+    '--no-patch/--patch',
     default=False,
-    help="Skip the dependency-swap; run against whatever the charm already pins.",
+    help='Skip the dependency-swap; run against whatever the charm already pins.',
 )
 @click.option(
-    "--ops-source",
-    default="https://github.com/canonical/operator",
+    '--ops-source',
+    default='https://github.com/canonical/operator',
     show_default=True,
 )
-@click.option("--ops-source-branch", default=None, help="Branch of --ops-source to use.")
-@click.option("--poetry-executable", default="poetry", show_default=True)
-@click.option("--uv-executable", default="uv", show_default=True)
+@click.option('--ops-source-branch', default=None, help='Branch of --ops-source to use.')
+@click.option('--poetry-executable', default='poetry', show_default=True)
+@click.option('--uv-executable', default='uv', show_default=True)
 @click.option(
-    "--lock-timeout",
+    '--lock-timeout',
     default=600,
     type=click.IntRange(1),
     show_default=True,
-    help="Timeout for poetry/uv lock during patching.",
+    help='Timeout for poetry/uv lock during patching.',
 )
 @click.option(
-    "--log-level",
-    default="info",
-    type=click.Choice(
-        ["debug", "info", "warning", "error", "critical"], case_sensitive=False
-    ),
+    '--log-level',
+    default='info',
+    type=click.Choice(['debug', 'info', 'warning', 'error', 'critical'], case_sensitive=False),
 )
-@click.option("--verbose/--no-verbose", default=False)
+@click.option('--verbose/--no-verbose', default=False)
 @click.option(
-    "--fail-on-regression/--no-fail-on-regression",
+    '--fail-on-regression/--no-fail-on-regression',
     default=False,
-    help="Exit non-zero if any charm failed, timed out, or hit a patcher error.",
+    help='Exit non-zero if any charm failed, timed out, or hit a patcher error.',
 )
 def main(
     cache_folder: Path,
@@ -231,7 +228,7 @@ def main(
         sample=sample,
         framework=framework,
     )
-    logger.info("Selected %d charm(s); skipping %d up-front.", len(repos), len(skipped))
+    logger.info('Selected %d charm(s); skipping %d up-front.', len(repos), len(skipped))
 
     patcher = _build_patcher(
         no_patch=no_patch,

@@ -18,12 +18,14 @@ _TOX_NO_ENV_RETURNCODE = 254
 
 
 class ToxRunner:
-    name = "tox"
+    """Run a target via ``tox -e <target>``."""
+
+    name = 'tox'
 
     def __init__(
         self,
         *,
-        executable: str | Sequence[str] = "tox",
+        executable: str | Sequence[str] = 'tox',
         timeout: int = 1800,
     ):
         self._executable = split_executable(executable)
@@ -31,11 +33,13 @@ class ToxRunner:
 
     @classmethod
     def detect(cls, repo: Path) -> bool:
-        return (repo / "tox.ini").exists()
+        """Return True if ``repo`` has a ``tox.ini``."""
+        return (repo / 'tox.ini').exists()
 
     async def run(self, repo: Path, target: str) -> RunResult:
-        argv = [*self._executable, "-e", target]
-        logger.info("tox %s in %s", target, repo)
+        """Invoke ``tox -e <target>`` in ``repo`` and capture the result."""
+        argv = [*self._executable, '-e', target]
+        logger.info('tox %s in %s', target, repo)
         started = time.monotonic()
         proc = await asyncio.create_subprocess_exec(
             *argv,
@@ -44,9 +48,7 @@ class ToxRunner:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=self._timeout
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
         except TimeoutError:
             await _kill_and_drain(proc, repo)
             return RunResult(
@@ -86,4 +88,4 @@ async def _kill_and_drain(proc: asyncio.subprocess.Process, repo: Path) -> None:
     try:
         await asyncio.wait_for(proc.communicate(), timeout=30)
     except TimeoutError:
-        logger.error("tox in %s did not exit after kill()", repo)
+        logger.error('tox in %s did not exit after kill()', repo)

@@ -1,0 +1,12 @@
+# zizmor policy for super-tox. The team convention (per the canonical/charm-tech
+# estate audit) is: SHA-pin all third-party actions, and accept ref pins only
+# for actions owned by GitHub or PyPA. We additionally allow ref-pin for
+# astral-sh/setup-uv to match the practice in charmlibs.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "actions/*": ref-pin
+        "github/*": ref-pin
+        "pypa/*": ref-pin
+        "astral-sh/setup-uv": ref-pin

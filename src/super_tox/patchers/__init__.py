@@ -22,10 +22,10 @@ from super_tox.patchers.base import (
 from super_tox.patchers.ops_source import OpsSource, OpsSourcePatcher
 
 __all__ = [
-    "NullPatcher",
-    "OpsSource",
-    "OpsSourcePatcher",
-    "Patcher",
-    "PatcherError",
-    "PatcherStack",
+    'NullPatcher',
+    'OpsSource',
+    'OpsSourcePatcher',
+    'Patcher',
+    'PatcherError',
+    'PatcherStack',
 ]

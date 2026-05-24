@@ -26,18 +26,20 @@ from super_tox.runners.base import RunResult, RunStatus, split_executable
 logger = logging.getLogger(__name__)
 
 _NO_RULE_MARKERS = (
-    b"No rule to make target",
-    b"no rule to make target",
+    b'No rule to make target',
+    b'no rule to make target',
 )
 
 
 class MakeRunner:
-    name = "make"
+    """Run a target via ``make <target>``."""
+
+    name = 'make'
 
     def __init__(
         self,
         *,
-        executable: str | Sequence[str] = "make",
+        executable: str | Sequence[str] = 'make',
         timeout: int = 1800,
     ):
         self._executable = split_executable(executable)
@@ -45,9 +47,11 @@ class MakeRunner:
 
     @classmethod
     def detect(cls, repo: Path) -> bool:
-        return (repo / "Makefile").exists() or (repo / "makefile").exists()
+        """Return True if ``repo`` has a Makefile (either case)."""
+        return (repo / 'Makefile').exists() or (repo / 'makefile').exists()
 
     async def run(self, repo: Path, target: str) -> RunResult:
+        """Probe with ``-nq`` for the target, then invoke make and capture."""
         if await self._target_missing(repo, target):
             return RunResult(
                 repo=repo,
@@ -59,7 +63,7 @@ class MakeRunner:
             )
 
         argv = [*self._executable, target]
-        logger.info("make %s in %s", target, repo)
+        logger.info('make %s in %s', target, repo)
         started = time.monotonic()
         proc = await asyncio.create_subprocess_exec(
             *argv,
@@ -68,9 +72,7 @@ class MakeRunner:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=self._timeout
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
         except TimeoutError:
             await _kill_and_drain(proc, repo)
             return RunResult(
@@ -103,7 +105,7 @@ class MakeRunner:
 
     async def _target_missing(self, repo: Path, target: str) -> bool:
         """Return True if ``make -nq <target>`` reports the target unknown."""
-        argv = [*self._executable, "-nq", target]
+        argv = [*self._executable, '-nq', target]
         try:
             proc = await asyncio.create_subprocess_exec(
                 *argv,
@@ -134,4 +136,4 @@ async def _kill_and_drain(proc: asyncio.subprocess.Process, repo: Path) -> None:
     try:
         await asyncio.wait_for(proc.communicate(), timeout=30)
     except TimeoutError:
-        logger.error("make in %s did not exit after kill()", repo)
+        logger.error('make in %s did not exit after kill()', repo)
