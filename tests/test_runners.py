@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from super_tox.runners import MakeRunner, RunStatus, ToxRunner, auto, by_name
+from hyrum.runners import MakeRunner, RunStatus, ToxRunner, auto, by_name
 
 # ---- fake asyncio subprocess plumbing ----------------------------------------
 

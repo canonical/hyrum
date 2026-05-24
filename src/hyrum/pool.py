@@ -10,7 +10,7 @@ NOTE: the patcher's ``apply()`` is currently synchronous and can shell
 out to ``poetry lock`` / ``uv lock`` (in the seconds-to-minutes range).
 While a worker is patching it blocks the event loop, throttling the
 other workers. Moving that subprocess to ``asyncio.subprocess`` is a
-worthwhile follow-up but matches existing super-tox behaviour for now.
+worthwhile follow-up but matches existing hyrum behaviour for now.
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from super_tox.patchers import Patcher, PatcherError
-from super_tox.runners import Runner, RunResult, RunStatus
+from hyrum.patchers import Patcher, PatcherError
+from hyrum.runners import Runner, RunResult, RunStatus
 
 logger = logging.getLogger(__name__)
 

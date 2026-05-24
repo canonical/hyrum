@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from super_tox.frameworks import supported_frameworks, uses_framework
+from hyrum.frameworks import supported_frameworks, uses_framework
 
 
 def _make_minimal_charm(root: Path) -> Path:

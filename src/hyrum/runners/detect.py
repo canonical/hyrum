@@ -6,9 +6,9 @@ from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
 
-from super_tox.runners.base import Runner, RunResult, RunStatus
-from super_tox.runners.make_runner import MakeRunner
-from super_tox.runners.tox import ToxRunner
+from hyrum.runners.base import Runner, RunResult, RunStatus
+from hyrum.runners.make_runner import MakeRunner
+from hyrum.runners.tox import ToxRunner
 
 
 class RunnerChoice(StrEnum):

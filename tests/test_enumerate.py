@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from super_tox.enumerate import iter_charm_repos
+from hyrum.enumerate import iter_charm_repos
 
 
 def test_flat_layout(charm_cache: Path, make_charm):

@@ -1,4 +1,4 @@
-"""Rich-formatted summary of a super-tox run."""
+"""Rich-formatted summary of a hyrum run."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 import rich.console
 import rich.table
 
-from super_tox.pool import Outcome, outcome_statuses
+from hyrum.pool import Outcome, outcome_statuses
 
 _STATUS_STYLES = {
     'passed': 'green',
@@ -44,7 +44,7 @@ def render(
     total = len(outcomes)
     ran = sum(counts.get(s, 0) for s in ('passed', 'failed', 'timeout'))
 
-    table = rich.table.Table(title=f'super-tox: {target}', show_lines=False)
+    table = rich.table.Table(title=f'hyrum: {target}', show_lines=False)
     table.add_column('status')
     table.add_column('count', justify='right')
     table.add_column('%', justify='right')

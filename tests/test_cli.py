@@ -4,7 +4,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from super_tox.cli import main
+from hyrum.cli import main
 
 
 def _make_charm(root: Path, *, tox: bool = True) -> Path:
@@ -24,8 +24,8 @@ def test_cli_end_to_end_with_stubbed_runner(monkeypatch, tmp_path: Path):
     _make_charm(cache / 'beta')
 
     # Stub the actual subprocess so we don't shell out to tox.
-    from super_tox.runners import RunResult, RunStatus
-    from super_tox.runners import tox as tox_mod
+    from hyrum.runners import RunResult, RunStatus
+    from hyrum.runners import tox as tox_mod
 
     async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
         return RunResult(
@@ -60,8 +60,8 @@ def test_cli_fail_on_regression_exits_nonzero(monkeypatch, tmp_path: Path):
     cache.mkdir()
     _make_charm(cache / 'alpha')
 
-    from super_tox.runners import RunResult, RunStatus
-    from super_tox.runners import tox as tox_mod
+    from hyrum.runners import RunResult, RunStatus
+    from hyrum.runners import tox as tox_mod
 
     async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
         return RunResult(

@@ -4,15 +4,16 @@ This file provides guidance to AI agents when working with code in this reposito
 
 ## Project Overview
 
-`super-tox` bulk-runs a check (typically lint or unit tests) across many charm
+`hyrum` bulk-runs a check (typically lint or unit tests) across many charm
 repositories, optionally swapping out one of their dependencies first — for
 example, pointing every charm's `ops` dependency at a development branch of
 the [operator](https://github.com/canonical/operator) repo to see which charms
 it breaks. The runner backend is either `tox` or `make`, auto-detected per
 charm.
 
-The project is a placeholder name; both the Python package (`super_tox`) and
-the console script (`super-tox`) are intentionally easy to rename.
+Named for [Hyrum's law](https://www.hyrumslaw.com/): the tool exists to
+surface the consumers who depend on observable behaviour of an upstream
+dependency before that behaviour changes.
 
 ## Common Commands
 
@@ -45,7 +46,7 @@ above.
 
 ## Architecture
 
-- Entry point: `super_tox.cli:main` (a single Click command).
+- Entry point: `hyrum.cli:main` (a single Click command).
 - `enumerate` / `filters` / `frameworks` / `config` — repo selection. Charm
   collection curation is **out of scope**; the tool expects a pre-populated
   cache folder.
@@ -66,7 +67,7 @@ integration-test support.
 
 ## Testing
 
-- Unit tests live in `tests/` and follow the layout of `src/super_tox/`.
+- Unit tests live in `tests/` and follow the layout of `src/hyrum/`.
 - Subprocess-driven runners are tested with a `FakeProc` / `FakeSpawner`
   pair (see `tests/test_runners.py`) that monkeypatches
   `asyncio.create_subprocess_exec` — no real subprocesses are spawned in

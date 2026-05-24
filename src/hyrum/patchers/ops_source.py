@@ -11,7 +11,7 @@ The patch is applied in a context manager and reversed on exit so the
 cache folder stays clean across runs.
 
 This module preserves the substantive behaviour of the original
-``charm-analysis/tools/super-tox.py::patch_ops`` while splitting it into
+``charm-analysis/tools/hyrum.py::patch_ops`` while splitting it into
 smaller helpers. The string-based rewriting of pyproject.toml is
 intentional: the stdlib only reads TOML, and a third-party round-trip
 writer would alter the file's formatting (changing diffs in unrelated
@@ -34,7 +34,7 @@ from typing import Any
 
 import packaging.requirements
 
-from super_tox.patchers.base import PatcherError
+from hyrum.patchers.base import PatcherError
 
 logger = logging.getLogger(__name__)
 

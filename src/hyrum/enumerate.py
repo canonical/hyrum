@@ -6,7 +6,7 @@ Handles:
   * monorepos heuristically detected by the presence of `charmcraft.yaml`
     or `metadata.yaml` in a subdirectory.
 
-Reactive and classic hook-based charms are filtered out — `super-tox`
+Reactive and classic hook-based charms are filtered out — `hyrum`
 targets `ops`-based charms.
 
 Charm-collection curation is out of scope for this tool. The cache

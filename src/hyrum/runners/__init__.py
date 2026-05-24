@@ -6,10 +6,10 @@ files are present, with an explicit ``--runner`` flag overriding the
 choice.
 """
 
-from super_tox.runners.base import Runner, RunResult, RunStatus
-from super_tox.runners.detect import RunnerChoice, auto, by_name
-from super_tox.runners.make_runner import MakeRunner
-from super_tox.runners.tox import ToxRunner
+from hyrum.runners.base import Runner, RunResult, RunStatus
+from hyrum.runners.detect import RunnerChoice, auto, by_name
+from hyrum.runners.make_runner import MakeRunner
+from hyrum.runners.tox import ToxRunner
 
 __all__ = [
     'MakeRunner',

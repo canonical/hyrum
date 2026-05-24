@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from super_tox.filters import has_runnable_target, ignore_filter, regex_filter
+from hyrum.filters import has_runnable_target, ignore_filter, regex_filter
 
 
 def test_regex_filter_keeps_matching(tmp_path: Path):

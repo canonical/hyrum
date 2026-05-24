@@ -132,6 +132,53 @@ wheels = [
 ]
 
 [[package]]
+name = "hyrum"
+version = "0.0.1.dev0"
+source = { editable = "." }
+dependencies = [
+    { name = "click" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+    { name = "rich" },
+]
+
+[package.dev-dependencies]
+lint = [
+    { name = "codespell" },
+    { name = "ruff" },
+    { name = "zizmor" },
+]
+static = [
+    { name = "pyright" },
+]
+unit = [
+    { name = "coverage" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1.7" },
+    { name = "packaging", specifier = ">=24.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "rich", specifier = ">=13.7" },
+]
+
+[package.metadata.requires-dev]
+lint = [
+    { name = "codespell", specifier = ">=2.2" },
+    { name = "ruff", specifier = ">=0.6" },
+    { name = "zizmor", specifier = ">=1.11" },
+]
+static = [{ name = "pyright", specifier = ">=1.1.380" }]
+unit = [
+    { name = "coverage", specifier = ">=7" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "pytest-asyncio", specifier = ">=0.23" },
+]
+
+[[package]]
 name = "iniconfig"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -330,53 +377,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/36/38/012bf76752e1f89ed50b77b99532d90f3a3e287bc7918e1fc0948ac866ac/ruff-0.15.14-py3-none-win32.whl", hash = "sha256:6d0c1ad2a0ab718d39b6d8fd2217981ce4d625cd96a720095f798fb47d8b13e6", size = 10805548, upload-time = "2026-05-21T14:34:33.453Z" },
     { url = "https://files.pythonhosted.org/packages/d1/b7/4ea2c170f10ad760fff2a5250beb18897719dc8b52b53a24cddbb9dd3f19/ruff-0.15.14-py3-none-win_amd64.whl", hash = "sha256:802342981e056db3851a7836e5b070f8f15f67d4a685ae2a6160939d364b2902", size = 11939523, upload-time = "2026-05-21T14:34:18.077Z" },
     { url = "https://files.pythonhosted.org/packages/62/d5/bc97ff895ec35cf3925d4bd60f3b39d822f377a446906ec9bcc87405e59b/ruff-0.15.14-py3-none-win_arm64.whl", hash = "sha256:ff47b90a9ef6a40c9e2f3b479c1fb78531adf055b94c1eba0a7ba04b31951826", size = 11208607, upload-time = "2026-05-21T14:34:26.525Z" },
-]
-
-[[package]]
-name = "super-tox"
-version = "0.0.1.dev0"
-source = { editable = "." }
-dependencies = [
-    { name = "click" },
-    { name = "packaging" },
-    { name = "pyyaml" },
-    { name = "rich" },
-]
-
-[package.dev-dependencies]
-lint = [
-    { name = "codespell" },
-    { name = "ruff" },
-    { name = "zizmor" },
-]
-static = [
-    { name = "pyright" },
-]
-unit = [
-    { name = "coverage" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "click", specifier = ">=8.1.7" },
-    { name = "packaging", specifier = ">=24.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "rich", specifier = ">=13.7" },
-]
-
-[package.metadata.requires-dev]
-lint = [
-    { name = "codespell", specifier = ">=2.2" },
-    { name = "ruff", specifier = ">=0.6" },
-    { name = "zizmor", specifier = ">=1.11" },
-]
-static = [{ name = "pyright", specifier = ">=1.1.380" }]
-unit = [
-    { name = "coverage", specifier = ">=7" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-asyncio", specifier = ">=0.23" },
 ]
 
 [[package]]
