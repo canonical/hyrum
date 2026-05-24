@@ -40,8 +40,9 @@ tests are explicitly out of scope.
 ## Usage
 
 ```bash
-# Install (editable, with dev extras for ruff + pytest)
-uv pip install -e ".[dev]"
+# Install (editable, with the lint/static/unit dependency groups for
+# ruff, pyright, pytest, …):
+uv sync --all-groups
 
 # Run `tox -e unit` across every charm in ~/charms, with ops swapped
 # to the `fix/X` branch of canonical/operator:
