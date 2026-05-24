@@ -8,19 +8,19 @@ non-``None`` reason and recording it alongside the skipped path.
 
 from __future__ import annotations
 
+import pathlib
 import re
 from collections.abc import Callable
-from pathlib import Path
 
 SkipReason = str | None
-Filter = Callable[[Path], SkipReason]
+Filter = Callable[[pathlib.Path], SkipReason]
 
 
 def regex_filter(pattern: str) -> Filter:
     """Skip charms whose folder name does not match ``pattern`` (case-insensitive)."""
     compiled = re.compile(pattern, re.IGNORECASE)
 
-    def _filter(repo: Path) -> SkipReason:
+    def _filter(repo: pathlib.Path) -> SkipReason:
         if compiled.match(repo.name):
             return None
         return f'name does not match {pattern!r}'
@@ -28,7 +28,7 @@ def regex_filter(pattern: str) -> Filter:
     return _filter
 
 
-def ignore_filter(ignore: dict[str, list[str]], *, base: Path) -> Filter:
+def ignore_filter(ignore: dict[str, list[str]], *, base: pathlib.Path) -> Filter:
     """Skip charms listed in the TOML ``[ignore]`` table.
 
     ``ignore`` maps category -> list of charm paths (relative to ``base``).
@@ -40,7 +40,7 @@ def ignore_filter(ignore: dict[str, list[str]], *, base: Path) -> Filter:
         for item in items:
             by_path[item] = category
 
-    def _filter(repo: Path) -> SkipReason:
+    def _filter(repo: pathlib.Path) -> SkipReason:
         try:
             rel = str(repo.relative_to(base))
         except ValueError:
@@ -53,7 +53,7 @@ def ignore_filter(ignore: dict[str, list[str]], *, base: Path) -> Filter:
     return _filter
 
 
-def has_runnable_target(repo: Path) -> SkipReason:
+def has_runnable_target(repo: pathlib.Path) -> SkipReason:
     """Skip charms with neither ``tox.ini`` nor ``Makefile``.
 
     The runner layer will refine this further (e.g. detecting a specific

@@ -1,45 +1,39 @@
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
 import pytest
 
-from hyrum.patchers import (
-    NullPatcher,
-    OpsSource,
-    OpsSourcePatcher,
-    PatcherError,
-    PatcherStack,
-)
+from hyrum import patchers
 
 
 @pytest.fixture
-def ops_main() -> OpsSource:
-    return OpsSource(url='https://github.com/canonical/operator', branch=None)
+def ops_main() -> patchers.OpsSource:
+    return patchers.OpsSource(url='https://github.com/canonical/operator', branch=None)
 
 
 @pytest.fixture
-def ops_branch() -> OpsSource:
-    return OpsSource(branch='fix/X')
+def ops_branch() -> patchers.OpsSource:
+    return patchers.OpsSource(branch='fix/X')
 
 
-def _read(path: Path) -> str:
+def _read(path: pathlib.Path) -> str:
     return path.read_text()
 
 
 # ---- NullPatcher / PatcherStack ----------------------------------------------
 
 
-def test_null_patcher_makes_no_changes(tmp_path: Path):
+def test_null_patcher_makes_no_changes(tmp_path: pathlib.Path):
     (tmp_path / 'requirements.txt').write_text('ops==2.0\n')
-    with NullPatcher().apply(tmp_path):
+    with patchers.NullPatcher().apply(tmp_path):
         pass
     assert _read(tmp_path / 'requirements.txt') == 'ops==2.0\n'
 
 
-def test_patcher_stack_applies_and_restores(tmp_path: Path, ops_main: OpsSource):
+def test_patcher_stack_applies_and_restores(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):
     (tmp_path / 'requirements.txt').write_text('ops==2.0\n')
-    stack = PatcherStack([NullPatcher(), OpsSourcePatcher(ops_main)])
+    stack = patchers.PatcherStack([patchers.NullPatcher(), patchers.OpsSourcePatcher(ops_main)])
     with stack.apply(tmp_path):
         assert 'git+https://github.com/canonical/operator' in _read(tmp_path / 'requirements.txt')
     assert _read(tmp_path / 'requirements.txt') == 'ops==2.0\n'
@@ -48,10 +42,10 @@ def test_patcher_stack_applies_and_restores(tmp_path: Path, ops_main: OpsSource)
 # ---- requirements.txt --------------------------------------------------------
 
 
-def test_requirements_swap_pins_to_git(tmp_path: Path, ops_branch: OpsSource):
+def test_requirements_swap_pins_to_git(tmp_path: pathlib.Path, ops_branch: patchers.OpsSource):
     req = tmp_path / 'requirements.txt'
     req.write_text('ops>=2.10\nrequests==2.32\n')
-    with OpsSourcePatcher(ops_branch).apply(tmp_path):
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         patched = _read(req)
         assert 'ops @ git+https://github.com/canonical/operator@fix/X' in patched
         assert 'requests==2.32' in patched
@@ -59,10 +53,10 @@ def test_requirements_swap_pins_to_git(tmp_path: Path, ops_branch: OpsSource):
     assert _read(req) == 'ops>=2.10\nrequests==2.32\n'
 
 
-def test_requirements_ops_extras_propagate(tmp_path: Path, ops_main: OpsSource):
+def test_requirements_ops_extras_propagate(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):
     req = tmp_path / 'requirements.txt'
     req.write_text('ops[testing,tracing]\n')
-    with OpsSourcePatcher(ops_main).apply(tmp_path):
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
         patched = _read(req)
         assert 'ops[testing,tracing] @ git+' in patched
         assert 'ops-scenario @ git+' in patched
@@ -71,32 +65,32 @@ def test_requirements_ops_extras_propagate(tmp_path: Path, ops_main: OpsSource):
         assert 'subdirectory=tracing' in patched
 
 
-def test_requirements_sibling_files_patched(tmp_path: Path, ops_main: OpsSource):
+def test_requirements_sibling_files_patched(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):
     (tmp_path / 'requirements.txt').write_text('ops>=2.10\n')
     sibling = tmp_path / 'requirements-unit.txt'
     sibling.write_text('ops>=2.10\npytest>=8\n')
-    with OpsSourcePatcher(ops_main).apply(tmp_path):
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
         assert 'git+' in _read(sibling)
         assert 'pytest>=8' in _read(sibling)
     assert _read(sibling) == 'ops>=2.10\npytest>=8\n'
 
 
-def test_existing_git_ops_line_dropped(tmp_path: Path, ops_main: OpsSource):
+def test_existing_git_ops_line_dropped(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):
     req = tmp_path / 'requirements.txt'
     req.write_text('ops @ git+https://github.com/canonical/operator@old\n')
-    with OpsSourcePatcher(ops_main).apply(tmp_path):
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
         patched = _read(req)
         # Old git line gone, new one appended (no @branch here).
         assert 'ops @ git+https://github.com/canonical/operator\n' in patched
         assert '@old' not in patched
 
 
-def test_restore_on_exception(tmp_path: Path, ops_main: OpsSource):
+def test_restore_on_exception(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):
     req = tmp_path / 'requirements.txt'
     req.write_text('ops>=2.10\n')
     with (
         pytest.raises(RuntimeError, match='boom'),
-        OpsSourcePatcher(ops_main).apply(tmp_path),
+        patchers.OpsSourcePatcher(ops_main).apply(tmp_path),
     ):
         raise RuntimeError('boom')
     assert _read(req) == 'ops>=2.10\n'
@@ -105,13 +99,13 @@ def test_restore_on_exception(tmp_path: Path, ops_main: OpsSource):
 # ---- pyproject.toml: PEP 621 (no uv, no poetry) ------------------------------
 
 
-def test_pyproject_pep621_injects_git_dep(tmp_path: Path, ops_branch: OpsSource):
+def test_pyproject_pep621_injects_git_dep(tmp_path: pathlib.Path, ops_branch: patchers.OpsSource):
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         '[project]\nname = "c"\nversion = "0"\n'
         'dependencies = [\n  "ops>=2.10",\n  "requests",\n]\n'
     )
-    with OpsSourcePatcher(ops_branch).apply(tmp_path):
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         patched = _read(py)
         assert '"ops @ git+https://github.com/canonical/operator@fix/X"' in patched
         assert 'ops>=2.10' not in patched
@@ -121,13 +115,13 @@ def test_pyproject_pep621_injects_git_dep(tmp_path: Path, ops_branch: OpsSource)
 # ---- pyproject.toml: uv ------------------------------------------------------
 
 
-def test_pyproject_uv_adds_tool_uv_sources(tmp_path: Path, ops_branch: OpsSource):
+def test_pyproject_uv_adds_tool_uv_sources(tmp_path: pathlib.Path, ops_branch: patchers.OpsSource):
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
         'dependencies = [\n  "ops>=2.10",\n]\n\n[tool.uv]\ndev-dependencies = []\n'
     )
-    with OpsSourcePatcher(ops_branch).apply(tmp_path):
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         patched = _read(py)
         assert '[tool.uv.sources]' in patched
         assert 'ops = { git = "https://github.com/canonical/operator"' in patched
@@ -136,14 +130,16 @@ def test_pyproject_uv_adds_tool_uv_sources(tmp_path: Path, ops_branch: OpsSource
         assert 'ops>=2.10' in patched
 
 
-def test_pyproject_uv_with_testing_extra_adds_companion(tmp_path: Path, ops_main: OpsSource):
+def test_pyproject_uv_with_testing_extra_adds_companion(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
         'dependencies = [\n  "ops[testing]>=2.10",\n]\n\n'
         '[tool.uv]\ndev-dependencies = []\n'
     )
-    with OpsSourcePatcher(ops_main).apply(tmp_path):
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
         patched = _read(py)
         assert '[tool.uv.sources]' in patched
         assert 'ops-scenario' in patched
@@ -153,13 +149,15 @@ def test_pyproject_uv_with_testing_extra_adds_companion(tmp_path: Path, ops_main
         assert '"ops-scenario"' in patched
 
 
-def test_pyproject_uv_bumps_low_requires_python(tmp_path: Path, ops_main: OpsSource):
+def test_pyproject_uv_bumps_low_requires_python(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.8"\n'
         'dependencies = [\n  "ops>=2.10",\n]\n\n[tool.uv]\n'
     )
-    with OpsSourcePatcher(ops_main).apply(tmp_path):
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
         patched = _read(py)
         assert 'requires-python = ">=3.10"' in patched
 
@@ -168,7 +166,7 @@ def test_pyproject_uv_bumps_low_requires_python(tmp_path: Path, ops_main: OpsSou
 
 
 def test_pyproject_poetry_injects_git_under_dependencies(
-    tmp_path: Path, ops_branch: OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
 ):
     # Skip the poetry lock subprocess for unit tests.
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
@@ -178,14 +176,16 @@ def test_pyproject_poetry_injects_git_under_dependencies(
         'authors = ["x <x@x>"]\n\n[tool.poetry.dependencies]\npython = "^3.10"\n'
         'ops = "^2.10"\n'
     )
-    with OpsSourcePatcher(ops_branch).apply(tmp_path):
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         patched = _read(py)
         assert 'ops = {git = "https://github.com/canonical/operator", branch = "fix/X"}' in patched
         # Old poetry-style entry gone.
         assert 'ops = "^2.10"' not in patched
 
 
-def test_pyproject_poetry_with_testing_extra(tmp_path: Path, ops_main: OpsSource, monkeypatch):
+def test_pyproject_poetry_with_testing_extra(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch
+):
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
@@ -193,7 +193,7 @@ def test_pyproject_poetry_with_testing_extra(tmp_path: Path, ops_main: OpsSource
         'authors = ["x <x@x>"]\n\n[tool.poetry.dependencies]\npython = "^3.10"\n'
         'ops = { version = "^2.10", extras = ["testing"] }\n'
     )
-    with OpsSourcePatcher(ops_main).apply(tmp_path):
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
         patched = _read(py)
         assert 'ops = {git = "https://github.com/canonical/operator"' in patched
         assert "extras = ['testing']" in patched
@@ -204,18 +204,26 @@ def test_pyproject_poetry_with_testing_extra(tmp_path: Path, ops_main: OpsSource
 # ---- error paths -------------------------------------------------------------
 
 
-def test_no_requirements_or_pyproject_raises(tmp_path: Path, ops_main: OpsSource):
-    with pytest.raises(PatcherError), OpsSourcePatcher(ops_main).apply(tmp_path):
+def test_no_requirements_or_pyproject_raises(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):
+    with (
+        pytest.raises(patchers.PatcherError),
+        patchers.OpsSourcePatcher(ops_main).apply(tmp_path),
+    ):
         pass
 
 
-def test_unrecognised_pyproject_raises(tmp_path: Path, ops_main: OpsSource):
+def test_unrecognised_pyproject_raises(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):
     (tmp_path / 'pyproject.toml').write_text('[build-system]\nrequires = []\n')
-    with pytest.raises(PatcherError), OpsSourcePatcher(ops_main).apply(tmp_path):
+    with (
+        pytest.raises(patchers.PatcherError),
+        patchers.OpsSourcePatcher(ops_main).apply(tmp_path),
+    ):
         pass
 
 
-def test_lockfile_snapshots_restored(tmp_path: Path, ops_branch: OpsSource, monkeypatch):
+def test_lockfile_snapshots_restored(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
@@ -224,13 +232,13 @@ def test_lockfile_snapshots_restored(tmp_path: Path, ops_branch: OpsSource, monk
     )
     lock = tmp_path / 'uv.lock'
     lock.write_text('# original lock\n')
-    with OpsSourcePatcher(ops_branch).apply(tmp_path):
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         pass
     assert _read(lock) == '# original lock\n'
 
 
 def test_lockfile_created_during_patch_is_removed_on_exit(
-    tmp_path: Path, ops_branch: OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
 ):
     # No lockfile pre-existing; simulate _run_lock creating one.
     def fake_lock(repo, cmd, timeout, **kw):
@@ -242,7 +250,7 @@ def test_lockfile_created_during_patch_is_removed_on_exit(
         '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
         'dependencies = [\n  "ops>=2.10",\n]\n\n[tool.uv]\n'
     )
-    with OpsSourcePatcher(ops_branch).apply(tmp_path):
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         # _run_lock is only called when uv.lock already existed; here it
         # won't run, so no cleanup necessary in this case.
         pass

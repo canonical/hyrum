@@ -1,46 +1,43 @@
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 
-from click.testing import CliRunner
+from click import testing
 
-from hyrum.cli import main
+from hyrum import cli, runners
+from hyrum.runners import tox
 
 
-def _make_charm(root: Path, *, tox: bool = True) -> Path:
+def _make_charm(root: pathlib.Path, *, tox_ini: bool = True) -> pathlib.Path:
     root.mkdir(parents=True, exist_ok=True)
     (root / 'charmcraft.yaml').write_text('type: charm\n')
-    if tox:
+    if tox_ini:
         (root / 'tox.ini').write_text('[tox]\nenvlist = unit\n')
     (root / 'requirements.txt').write_text('ops>=2.10\n')
     return root
 
 
-def test_cli_end_to_end_with_stubbed_runner(monkeypatch, tmp_path: Path):
+def test_cli_end_to_end_with_stubbed_runner(monkeypatch, tmp_path: pathlib.Path):
     """Drives the full CLI: enumerate -> patch -> stub runner -> render."""
     cache = tmp_path / 'cache'
     cache.mkdir()
     _make_charm(cache / 'alpha')
     _make_charm(cache / 'beta')
 
-    # Stub the actual subprocess so we don't shell out to tox.
-    from hyrum.runners import RunResult, RunStatus
-    from hyrum.runners import tox as tox_mod
-
     async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
-        return RunResult(
+        return runners.RunResult(
             repo=repo,
             runner=self.name,
             target=target,
-            status=RunStatus.PASSED,
+            status=runners.RunStatus.PASSED,
             returncode=0,
             duration_s=0.01,
         )
 
-    monkeypatch.setattr(tox_mod.ToxRunner, 'run', fake_run)
+    monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
 
-    result = CliRunner().invoke(
-        main,
+    result = testing.CliRunner().invoke(
+        cli.main,
         [
             '--cache-folder',
             str(cache),
@@ -55,28 +52,25 @@ def test_cli_end_to_end_with_stubbed_runner(monkeypatch, tmp_path: Path):
     assert 'passed' in result.output
 
 
-def test_cli_fail_on_regression_exits_nonzero(monkeypatch, tmp_path: Path):
+def test_cli_fail_on_regression_exits_nonzero(monkeypatch, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
     _make_charm(cache / 'alpha')
 
-    from hyrum.runners import RunResult, RunStatus
-    from hyrum.runners import tox as tox_mod
-
     async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
-        return RunResult(
+        return runners.RunResult(
             repo=repo,
             runner=self.name,
             target=target,
-            status=RunStatus.FAILED,
+            status=runners.RunStatus.FAILED,
             returncode=1,
             duration_s=0.01,
         )
 
-    monkeypatch.setattr(tox_mod.ToxRunner, 'run', fake_run)
+    monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
 
-    result = CliRunner().invoke(
-        main,
+    result = testing.CliRunner().invoke(
+        cli.main,
         [
             '--cache-folder',
             str(cache),

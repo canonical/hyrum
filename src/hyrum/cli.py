@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import itertools
 import logging
+import pathlib
 import sys
-from pathlib import Path
 
 import click
 import rich.logging
@@ -14,13 +14,8 @@ import rich.logging
 from hyrum import config as config_loader
 from hyrum import enumerate as enum_mod
 from hyrum import filters as filt
-from hyrum.frameworks import supported_frameworks, uses_framework
-from hyrum.patchers import NullPatcher, OpsSource, OpsSourcePatcher, PatcherStack
-from hyrum.pool import Outcome, add_skipped, passed, run_pool
-from hyrum.report import render
-from hyrum.runners import RunnerChoice, auto
-from hyrum.runners.make_runner import MakeRunner
-from hyrum.runners.tox import ToxRunner
+from hyrum import frameworks, patchers, pool, report, runners
+from hyrum.runners import make_runner, tox
 
 logger = logging.getLogger('hyrum')
 
@@ -44,29 +39,29 @@ def _build_patcher(
     lock_timeout: int,
 ):
     if no_patch:
-        return NullPatcher()
-    ops = OpsSource(
+        return patchers.NullPatcher()
+    ops = patchers.OpsSource(
         url=ops_source,
         branch=ops_source_branch,
         poetry_executable=tuple(poetry_executable.split()),
         uv_executable=tuple(uv_executable.split()),
         lock_timeout=lock_timeout,
     )
-    return PatcherStack([OpsSourcePatcher(ops)])
+    return patchers.PatcherStack([patchers.OpsSourcePatcher(ops)])
 
 
 def _build_runner(
     *,
-    choice: RunnerChoice,
+    choice: runners.RunnerChoice,
     executable: str,
     make_executable: str,
     timeout: int,
 ):
-    if choice is RunnerChoice.TOX:
-        return ToxRunner(executable=executable, timeout=timeout)
-    if choice is RunnerChoice.MAKE:
-        return MakeRunner(executable=make_executable, timeout=timeout)
-    return auto(
+    if choice is runners.RunnerChoice.TOX:
+        return tox.ToxRunner(executable=executable, timeout=timeout)
+    if choice is runners.RunnerChoice.MAKE:
+        return make_runner.MakeRunner(executable=make_executable, timeout=timeout)
+    return runners.auto(
         tox_executable=executable,
         make_executable=make_executable,
         timeout=timeout,
@@ -74,13 +69,13 @@ def _build_runner(
 
 
 def _select_repos(
-    cache: Path,
+    cache: pathlib.Path,
     *,
     config: config_loader.Config,
     repo_re: str,
     sample: int,
     framework: str | None,
-) -> tuple[list[Path], list[tuple[Path, str]]]:
+) -> tuple[list[pathlib.Path], list[tuple[pathlib.Path, str]]]:
     """Return (repos to run, list of (repo, skip-reason) pairs)."""
     chain: list[filt.Filter] = [
         filt.regex_filter(repo_re),
@@ -89,13 +84,15 @@ def _select_repos(
     ]
     if framework:
 
-        def framework_filter(repo: Path) -> filt.SkipReason:
-            return None if uses_framework(repo, framework) else f'does not use {framework}'
+        def framework_filter(repo: pathlib.Path) -> filt.SkipReason:
+            return (
+                None if frameworks.uses_framework(repo, framework) else f'does not use {framework}'
+            )
 
         chain.append(framework_filter)
 
-    repos: list[Path] = []
-    skipped: list[tuple[Path, str]] = []
+    repos: list[pathlib.Path] = []
+    skipped: list[tuple[pathlib.Path, str]] = []
     raw = enum_mod.iter_charm_repos(cache)
     if sample > 0:
         raw = itertools.islice(raw, sample)
@@ -114,15 +111,15 @@ def _select_repos(
 @click.option(
     '--cache-folder',
     required=True,
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    type=click.Path(exists=True, file_okay=False, path_type=pathlib.Path),
     help='Folder containing pre-cloned charm repositories.',
 )
 @click.option(
     '-c',
     '--config',
     'config_path',
-    type=click.Path(dir_okay=False, path_type=Path),
-    default=Path('hyrum.toml'),
+    type=click.Path(dir_okay=False, path_type=pathlib.Path),
+    default=pathlib.Path('hyrum.toml'),
     show_default=True,
     help='TOML config file (only the [ignore] table is read today).',
 )
@@ -135,8 +132,8 @@ def _select_repos(
 @click.option(
     '--runner',
     'runner_choice',
-    type=click.Choice([c.value for c in RunnerChoice]),
-    default=RunnerChoice.AUTO.value,
+    type=click.Choice([c.value for c in runners.RunnerChoice]),
+    default=runners.RunnerChoice.AUTO.value,
     show_default=True,
     help='auto = tox if tox.ini, else make; falls back if the target is missing.',
 )
@@ -150,7 +147,7 @@ def _select_repos(
 @click.option(
     '--filter',
     'framework',
-    type=click.Choice(list(supported_frameworks()), case_sensitive=False),
+    type=click.Choice(list(frameworks.supported_frameworks()), case_sensitive=False),
     default=None,
     help='Only run for charms using this testing framework.',
 )
@@ -196,8 +193,8 @@ def _select_repos(
     help='Exit non-zero if any charm failed, timed out, or hit a patcher error.',
 )
 def main(
-    cache_folder: Path,
-    config_path: Path,
+    cache_folder: pathlib.Path,
+    config_path: pathlib.Path,
     target: str,
     runner_choice: str,
     repo: str,
@@ -239,19 +236,19 @@ def main(
         lock_timeout=lock_timeout,
     )
     runner = _build_runner(
-        choice=RunnerChoice(runner_choice),
+        choice=runners.RunnerChoice(runner_choice),
         executable=executable,
         make_executable=make_executable,
         timeout=timeout,
     )
 
-    results: list[Outcome] = asyncio.run(
-        run_pool(repos, patcher=patcher, runner=runner, target=target, workers=workers)
+    results: list[pool.Outcome] = asyncio.run(
+        pool.run_pool(repos, patcher=patcher, runner=runner, target=target, workers=workers)
     )
-    add_skipped(results, skipped)
+    pool.add_skipped(results, skipped)
     results.sort(key=lambda o: str(o.repo))
 
-    render(results, base=cache_folder, target=target, verbose=verbose)
+    report.render(results, base=cache_folder, target=target, verbose=verbose)
 
-    if fail_on_regression and not passed(results):
+    if fail_on_regression and not pool.passed(results):
         sys.exit(1)

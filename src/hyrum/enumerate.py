@@ -17,21 +17,21 @@ folder is assumed to be pre-populated (e.g. by ``get-charms`` or
 from __future__ import annotations
 
 import logging
+import pathlib
 from collections.abc import Iterator
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
-def _is_charm_dir(path: Path) -> bool:
+def _is_charm_dir(path: pathlib.Path) -> bool:
     return (path / 'charmcraft.yaml').exists() or (path / 'metadata.yaml').exists()
 
 
-def _is_bundle_dir(path: Path) -> bool:
+def _is_bundle_dir(path: pathlib.Path) -> bool:
     return (path / 'bundle.yaml').exists()
 
 
-def _iter_bundle(base: Path) -> Iterator[Path]:
+def _iter_bundle(base: pathlib.Path) -> Iterator[pathlib.Path]:
     charms_dir = base / 'charms'
     if not charms_dir.exists():
         logger.warning('Bundle %s has no charms/ directory', base)
@@ -41,7 +41,7 @@ def _iter_bundle(base: Path) -> Iterator[Path]:
             yield child
 
 
-def _iter_monorepo(base: Path) -> Iterator[Path]:
+def _iter_monorepo(base: pathlib.Path) -> Iterator[pathlib.Path]:
     for child in sorted(base.iterdir()):
         if not child.is_dir() or child.name.startswith('.'):
             continue
@@ -51,13 +51,13 @@ def _iter_monorepo(base: Path) -> Iterator[Path]:
             yield from _iter_bundle(child)
 
 
-def _is_legacy_charm(path: Path) -> bool:
+def _is_legacy_charm(path: pathlib.Path) -> bool:
     # Reactive charms have a `reactive/` directory; classic hook charms
     # have a `hooks/` directory. Both predate `ops` and are out of scope.
     return (path / 'reactive').exists() or (path / 'hooks').exists()
 
 
-def iter_charm_repos(base: Path) -> Iterator[Path]:
+def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
     """Yield each charm repository under ``base``.
 
     Each yielded path is the charm's root (the directory containing

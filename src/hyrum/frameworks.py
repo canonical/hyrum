@@ -19,9 +19,9 @@ from __future__ import annotations
 import ast
 import itertools
 import logging
+import pathlib
 import tomllib
 from collections.abc import Iterator
-from pathlib import Path
 
 import packaging.requirements
 
@@ -60,7 +60,7 @@ def supported_frameworks() -> tuple[str, ...]:
     return tuple(_FRAMEWORK_IMPORTS)
 
 
-def _iter_test_files(tests_dir: Path) -> Iterator[Path]:
+def _iter_test_files(tests_dir: pathlib.Path) -> Iterator[pathlib.Path]:
     if not tests_dir.exists():
         return
     for entry in tests_dir.iterdir():
@@ -72,7 +72,7 @@ def _iter_test_files(tests_dir: Path) -> Iterator[Path]:
             yield entry
 
 
-def _has_import(repo: Path, framework: str) -> bool:
+def _has_import(repo: pathlib.Path, framework: str) -> bool:
     targets = _FRAMEWORK_IMPORTS.get(framework, set())
     for py_file in _iter_test_files(repo / 'tests'):
         try:
@@ -101,7 +101,7 @@ def _req_matches(req: packaging.requirements.Requirement, framework: str) -> boo
     return framework == 'scenario' and req.name == 'ops' and 'testing' in req.extras
 
 
-def _has_dep_in_requirements(req_path: Path, framework: str) -> bool:
+def _has_dep_in_requirements(req_path: pathlib.Path, framework: str) -> bool:
     try:
         text = req_path.read_text()
     except (OSError, UnicodeDecodeError):
@@ -119,7 +119,7 @@ def _has_dep_in_requirements(req_path: Path, framework: str) -> bool:
     return False
 
 
-def _has_dep_in_pyproject(pyproject_path: Path, framework: str) -> bool:
+def _has_dep_in_pyproject(pyproject_path: pathlib.Path, framework: str) -> bool:
     try:
         data = tomllib.loads(pyproject_path.read_text())
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
@@ -143,7 +143,7 @@ def _has_dep_in_pyproject(pyproject_path: Path, framework: str) -> bool:
     return False
 
 
-def uses_framework(repo: Path, framework: str) -> bool:
+def uses_framework(repo: pathlib.Path, framework: str) -> bool:
     """Return True if ``repo``'s test suite uses ``framework``."""
     if framework not in _FRAMEWORK_IMPORTS:
         raise ValueError(

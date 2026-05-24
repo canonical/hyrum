@@ -1,6 +1,6 @@
 """Allow ``python -m hyrum`` to invoke the CLI."""
 
-from hyrum.cli import main
+from hyrum import cli
 
 if __name__ == '__main__':
-    main()
+    cli.main()

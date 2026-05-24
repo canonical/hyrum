@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import pathlib
 import time
 from collections.abc import Sequence
-from pathlib import Path
 
-from hyrum.runners.base import RunResult, RunStatus, split_executable
+from hyrum.runners import base
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +28,15 @@ class ToxRunner:
         executable: str | Sequence[str] = 'tox',
         timeout: int = 1800,
     ):
-        self._executable = split_executable(executable)
+        self._executable = base.split_executable(executable)
         self._timeout = timeout
 
     @classmethod
-    def detect(cls, repo: Path) -> bool:
+    def detect(cls, repo: pathlib.Path) -> bool:
         """Return True if ``repo`` has a ``tox.ini``."""
         return (repo / 'tox.ini').exists()
 
-    async def run(self, repo: Path, target: str) -> RunResult:
+    async def run(self, repo: pathlib.Path, target: str) -> base.RunResult:
         """Invoke ``tox -e <target>`` in ``repo`` and capture the result."""
         argv = [*self._executable, '-e', target]
         logger.info('tox %s in %s', target, repo)
@@ -51,11 +51,11 @@ class ToxRunner:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
         except TimeoutError:
             await _kill_and_drain(proc, repo)
-            return RunResult(
+            return base.RunResult(
                 repo=repo,
                 runner=self.name,
                 target=target,
-                status=RunStatus.TIMEOUT,
+                status=base.RunStatus.TIMEOUT,
                 returncode=None,
                 duration_s=time.monotonic() - started,
             )
@@ -63,12 +63,12 @@ class ToxRunner:
         duration = time.monotonic() - started
         rc = proc.returncode
         if rc == 0:
-            status = RunStatus.PASSED
+            status = base.RunStatus.PASSED
         elif rc == _TOX_NO_ENV_RETURNCODE:
-            status = RunStatus.NO_TARGET
+            status = base.RunStatus.NO_TARGET
         else:
-            status = RunStatus.FAILED
-        return RunResult(
+            status = base.RunStatus.FAILED
+        return base.RunResult(
             repo=repo,
             runner=self.name,
             target=target,
@@ -80,7 +80,7 @@ class ToxRunner:
         )
 
 
-async def _kill_and_drain(proc: asyncio.subprocess.Process, repo: Path) -> None:
+async def _kill_and_drain(proc: asyncio.subprocess.Process, repo: pathlib.Path) -> None:
     try:
         proc.kill()
     except ProcessLookupError:

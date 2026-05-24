@@ -9,14 +9,15 @@ and the captured streams so callers can persist them if they wish.
 
 from __future__ import annotations
 
+import dataclasses
+import enum
+import pathlib
+import shlex
 from collections.abc import Sequence
-from dataclasses import dataclass
-from enum import StrEnum
-from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 
-class RunStatus(StrEnum):
+class RunStatus(enum.StrEnum):
     """Outcome of one runner invocation in one charm."""
 
     PASSED = 'passed'
@@ -25,11 +26,11 @@ class RunStatus(StrEnum):
     TIMEOUT = 'timeout'
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class RunResult:
     """Structured result of running one target in one charm repo."""
 
-    repo: Path
+    repo: pathlib.Path
     runner: str
     target: str
     status: RunStatus
@@ -51,11 +52,11 @@ class Runner(Protocol):
     name: str
 
     @classmethod
-    def detect(cls, repo: Path) -> bool:
+    def detect(cls, repo: pathlib.Path) -> bool:
         """Return ``True`` if this runner can potentially run in ``repo``."""
         ...
 
-    async def run(self, repo: Path, target: str) -> RunResult:
+    async def run(self, repo: pathlib.Path, target: str) -> RunResult:
         """Run ``target`` in ``repo`` and return the structured result."""
         ...
 
@@ -63,7 +64,5 @@ class Runner(Protocol):
 def split_executable(executable: str | Sequence[str]) -> list[str]:
     """Accept either a shell-quoted string (``'uvx tox'``) or a list."""
     if isinstance(executable, str):
-        import shlex
-
         return shlex.split(executable)
     return list(executable)
