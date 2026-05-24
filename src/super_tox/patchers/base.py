@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Sequence
 from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -28,13 +28,15 @@ class Patcher(Protocol):
         whether the body completed normally or raised — the cache must
         not be polluted across repos.
         """
+        ...
 
 
 class NullPatcher:
     """No-op patcher, used when nothing needs swapping out."""
 
     @contextlib.contextmanager
-    def apply(self, repo: Path) -> Iterator[None]:
+    def apply(self, repo: Path) -> Generator[None, None, None]:
+        """Yield without making any changes."""
         del repo
         yield
 
@@ -46,7 +48,8 @@ class PatcherStack:
         self._patchers = list(patchers)
 
     @contextlib.contextmanager
-    def apply(self, repo: Path) -> Iterator[None]:
+    def apply(self, repo: Path) -> Generator[None, None, None]:
+        """Apply each patcher in order; unwind in reverse on exit."""
         with contextlib.ExitStack() as stack:
             for patcher in self._patchers:
                 stack.enter_context(patcher.apply(repo))

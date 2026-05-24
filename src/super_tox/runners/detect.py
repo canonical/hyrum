@@ -12,17 +12,20 @@ from super_tox.runners.tox import ToxRunner
 
 
 class RunnerChoice(StrEnum):
-    AUTO = "auto"
-    TOX = "tox"
-    MAKE = "make"
+    """User-facing ``--runner`` choices."""
+
+    AUTO = 'auto'
+    TOX = 'tox'
+    MAKE = 'make'
 
 
 def by_name(name: str) -> type[Runner]:
-    mapping: dict[str, type[Runner]] = {"tox": ToxRunner, "make": MakeRunner}
+    """Return the Runner class registered under ``name``."""
+    mapping: dict[str, type[Runner]] = {'tox': ToxRunner, 'make': MakeRunner}
     try:
         return mapping[name]
     except KeyError as exc:
-        raise ValueError(f"unknown runner {name!r}") from exc
+        raise ValueError(f'unknown runner {name!r}') from exc
 
 
 class AutoRunner:
@@ -34,16 +37,18 @@ class AutoRunner:
     runs.
     """
 
-    name = "auto"
+    name = 'auto'
 
     def __init__(self, runners: Sequence[Runner]):
         self._runners = list(runners)
 
     @classmethod
     def detect(cls, repo: Path) -> bool:
+        """Return True if any underlying runner could run in ``repo``."""
         return ToxRunner.detect(repo) or MakeRunner.detect(repo)
 
     async def run(self, repo: Path, target: str) -> RunResult:
+        """Run ``target`` with the first applicable runner; fall back on no_target."""
         applicable = [r for r in self._runners if type(r).detect(repo)]
         if not applicable:
             return RunResult(
@@ -65,14 +70,15 @@ class AutoRunner:
 
 def auto(
     *,
-    tox_executable: str | Sequence[str] = "tox",
-    make_executable: str | Sequence[str] = "make",
+    tox_executable: str | Sequence[str] = 'tox',
+    make_executable: str | Sequence[str] = 'make',
     timeout: int = 1800,
-    prefer: Sequence[str] = ("tox", "make"),
+    prefer: Sequence[str] = ('tox', 'make'),
 ) -> AutoRunner:
+    """Build an AutoRunner that tries runners in ``prefer`` order."""
     available: dict[str, Runner] = {
-        "tox": ToxRunner(executable=tox_executable, timeout=timeout),
-        "make": MakeRunner(executable=make_executable, timeout=timeout),
+        'tox': ToxRunner(executable=tox_executable, timeout=timeout),
+        'make': MakeRunner(executable=make_executable, timeout=timeout),
     }
     ordered = [available[name] for name in prefer if name in available]
     return AutoRunner(ordered)

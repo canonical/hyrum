@@ -28,28 +28,31 @@ logger = logging.getLogger(__name__)
 
 
 _OUTCOME_STATUSES: tuple[str, ...] = (
-    "passed",
-    "failed",
-    "no_target",
-    "timeout",
-    "patcher_error",
-    "skipped",
+    'passed',
+    'failed',
+    'no_target',
+    'timeout',
+    'patcher_error',
+    'skipped',
 )
 
 
 @dataclass(frozen=True)
 class Outcome:
+    """One charm's result, normalised across run / skip / error paths."""
+
     repo: Path
     status: str
-    runner: str = ""
-    target: str = ""
+    runner: str = ''
+    target: str = ''
     duration_s: float = 0.0
     returncode: int | None = None
-    skip_reason: str = ""
-    error: str = ""
+    skip_reason: str = ''
+    error: str = ''
 
     @classmethod
     def from_run_result(cls, result: RunResult) -> Outcome:
+        """Build an Outcome from a successful runner invocation."""
         return cls(
             repo=result.repo,
             status=result.status.value,
@@ -61,14 +64,17 @@ class Outcome:
 
     @classmethod
     def skipped(cls, repo: Path, reason: str) -> Outcome:
-        return cls(repo=repo, status="skipped", skip_reason=reason)
+        """Build a skipped outcome with a human-readable reason."""
+        return cls(repo=repo, status='skipped', skip_reason=reason)
 
     @classmethod
     def patcher_error(cls, repo: Path, target: str, message: str) -> Outcome:
-        return cls(repo=repo, status="patcher_error", target=target, error=message)
+        """Build an outcome for a patcher failure (distinct from a run failure)."""
+        return cls(repo=repo, status='patcher_error', target=target, error=message)
 
 
 def outcome_statuses() -> tuple[str, ...]:
+    """Return the full set of statuses an Outcome may carry, in display order."""
     return _OUTCOME_STATUSES
 
 
@@ -79,11 +85,12 @@ async def run_one(
     patcher: Patcher,
     runner: Runner,
 ) -> Outcome:
+    """Apply ``patcher`` to ``repo`` and invoke ``runner`` once."""
     try:
         with patcher.apply(repo):
             result = await runner.run(repo, target)
     except PatcherError as exc:
-        logger.warning("patcher error in %s: %s", repo, exc)
+        logger.warning('patcher error in %s: %s', repo, exc)
         return Outcome.patcher_error(repo, target, str(exc))
     return Outcome.from_run_result(result)
 
@@ -96,6 +103,7 @@ async def run_pool(
     target: str,
     workers: int,
 ) -> list[Outcome]:
+    """Run ``target`` across ``repos`` concurrently with ``workers`` workers."""
     queue: asyncio.Queue[Path] = asyncio.Queue()
     for repo in repos:
         queue.put_nowait(repo)
@@ -108,16 +116,14 @@ async def run_pool(
             except asyncio.QueueEmpty:
                 return
             try:
-                outcome = await run_one(
-                    repo, target, patcher=patcher, runner=runner
-                )
-            except Exception as exc:  # noqa: BLE001 — last-resort barrier
-                logger.exception("unexpected error in %s", repo)
+                outcome = await run_one(repo, target, patcher=patcher, runner=runner)
+            except Exception as exc:
+                logger.exception('unexpected error in %s', repo)
                 outcome = Outcome(
                     repo=repo,
-                    status="patcher_error",
+                    status='patcher_error',
                     target=target,
-                    error=f"{type(exc).__name__}: {exc}",
+                    error=f'{type(exc).__name__}: {exc}',
                 )
             results.append(outcome)
             queue.task_done()
@@ -139,6 +145,6 @@ def add_skipped(
 def passed(results: Iterable[Outcome]) -> bool:
     """Did every non-skipped charm pass?"""
     for outcome in results:
-        if outcome.status in {RunStatus.FAILED.value, RunStatus.TIMEOUT.value, "patcher_error"}:
+        if outcome.status in {RunStatus.FAILED.value, RunStatus.TIMEOUT.value, 'patcher_error'}:
             return False
     return True

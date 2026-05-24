@@ -4,9 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: ["**"]
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -14,35 +14,48 @@ concurrency:
 
 jobs:
   lint:
-    name: ruff
+    name: lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba  # v6.3.1
         with:
           enable-cache: true
-      - name: Set up Python
-        run: uv python install 3.11
-      - name: Install
-        run: uv pip install --system -e ".[dev]"
-      - name: Lint
-        run: ruff check src tests
+      - run: uvx --with tox-uv tox -e lint
 
-  test:
-    name: pytest (py${{ matrix.python }})
+  static:
+    name: static (pyright)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba  # v6.3.1
+        with:
+          enable-cache: true
+      - run: uvx --with tox-uv tox -e static
+
+  unit:
+    name: unit (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         python: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba  # v6.3.1
         with:
           enable-cache: true
-      - name: Set up Python ${{ matrix.python }}
-        run: uv python install ${{ matrix.python }}
-      - name: Install
-        run: uv pip install --system --python ${{ matrix.python }} -e ".[dev]"
-      - name: Run unit tests
-        run: pytest -q
+      - run: uv python install ${{ matrix.python }}
+      - run: uvx --with tox-uv --python ${{ matrix.python }} tox -e unit

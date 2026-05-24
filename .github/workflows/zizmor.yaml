@@ -1,0 +1,21 @@
+# Caller for the canonical/charm-tech reusable zizmor workflow.
+#
+# Pinned to a commit SHA, not @main, so a change in canonical/charm-tech can't
+# silently alter this repo's CI. The pinned SHA below points at the tip of
+# canonical/charm-tech PR #2 (initial-scaffolding) — once that PR squash-merges
+# to main, retarget to the resulting commit on main.
+name: Workflow static checks
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["**"]
+
+permissions: {}
+
+jobs:
+  zizmor:
+    uses: canonical/charm-tech/.github/workflows/zizmor.yaml@98bbae0fc022a7da50f9b3fcc02b54a87de26d42  # PR #2 tip
+    permissions:
+      security-events: write

@@ -17,25 +17,30 @@ from typing import Protocol, runtime_checkable
 
 
 class RunStatus(StrEnum):
-    PASSED = "passed"
-    FAILED = "failed"
-    NO_TARGET = "no_target"  # tox env or make target does not exist
-    TIMEOUT = "timeout"
+    """Outcome of one runner invocation in one charm."""
+
+    PASSED = 'passed'
+    FAILED = 'failed'
+    NO_TARGET = 'no_target'  # tox env or make target does not exist
+    TIMEOUT = 'timeout'
 
 
 @dataclass(frozen=True)
 class RunResult:
+    """Structured result of running one target in one charm repo."""
+
     repo: Path
     runner: str
     target: str
     status: RunStatus
     returncode: int | None
     duration_s: float
-    stdout: bytes = b""
-    stderr: bytes = b""
+    stdout: bytes = b''
+    stderr: bytes = b''
 
     @property
     def passed(self) -> bool:
+        """Return True if the runner exited cleanly."""
         return self.status is RunStatus.PASSED
 
 
@@ -48,9 +53,11 @@ class Runner(Protocol):
     @classmethod
     def detect(cls, repo: Path) -> bool:
         """Return ``True`` if this runner can potentially run in ``repo``."""
+        ...
 
     async def run(self, repo: Path, target: str) -> RunResult:
         """Run ``target`` in ``repo`` and return the structured result."""
+        ...
 
 
 def split_executable(executable: str | Sequence[str]) -> list[str]:

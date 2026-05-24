@@ -9,11 +9,11 @@ import pytest
 
 def _make_charm(root: Path, *, tox: bool = True, makefile: bool = False) -> Path:
     root.mkdir(parents=True, exist_ok=True)
-    (root / "charmcraft.yaml").write_text("type: charm\n")
+    (root / 'charmcraft.yaml').write_text('type: charm\n')
     if tox:
-        (root / "tox.ini").write_text("[tox]\nenvlist = unit\n")
+        (root / 'tox.ini').write_text('[tox]\nenvlist = unit\n')
     if makefile:
-        (root / "Makefile").write_text("unit:\n\techo ok\n")
+        (root / 'Makefile').write_text('unit:\n\techo ok\n')
     return root
 
 
@@ -24,6 +24,6 @@ def make_charm():
 
 @pytest.fixture
 def charm_cache(tmp_path: Path):
-    cache = tmp_path / "cache"
+    cache = tmp_path / 'cache'
     cache.mkdir()
     return cache

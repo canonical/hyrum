@@ -23,7 +23,7 @@ def regex_filter(pattern: str) -> Filter:
     def _filter(repo: Path) -> SkipReason:
         if compiled.match(repo.name):
             return None
-        return f"name does not match {pattern!r}"
+        return f'name does not match {pattern!r}'
 
     return _filter
 
@@ -48,7 +48,7 @@ def ignore_filter(ignore: dict[str, list[str]], *, base: Path) -> Filter:
         category = by_path.get(rel) or by_path.get(repo.name)
         if category is None:
             return None
-        return f"ignored ({category})"
+        return f'ignored ({category})'
 
     return _filter
 
@@ -60,6 +60,6 @@ def has_runnable_target(repo: Path) -> SkipReason:
     tox env or make target), but this catches charms that obviously
     cannot be driven by any supported runner.
     """
-    if (repo / "tox.ini").exists() or (repo / "Makefile").exists():
+    if (repo / 'tox.ini').exists() or (repo / 'Makefile').exists():
         return None
-    return "no tox.ini or Makefile"
+    return 'no tox.ini or Makefile'
