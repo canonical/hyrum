@@ -1,7 +1,6 @@
 # zizmor policy for hyrum. The team convention (per the canonical/charm-tech
 # estate audit) is: SHA-pin all third-party actions, and accept ref pins only
-# for actions owned by GitHub or PyPA. We additionally allow ref-pin for
-# astral-sh/setup-uv to match the practice in charmlibs.
+# for actions owned by GitHub or PyPA.
 rules:
   unpinned-uses:
     config:
@@ -9,4 +8,3 @@ rules:
         "actions/*": ref-pin
         "github/*": ref-pin
         "pypa/*": ref-pin
-        "astral-sh/setup-uv": ref-pin
