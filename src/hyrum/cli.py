@@ -53,16 +53,16 @@ def _build_patcher(
 def _build_runner(
     *,
     choice: runners.RunnerChoice,
-    executable: str,
+    tox_executable: str,
     make_executable: str,
     timeout: int,
 ):
     if choice is runners.RunnerChoice.TOX:
-        return tox.ToxRunner(executable=executable, timeout=timeout)
+        return tox.ToxRunner(executable=tox_executable, timeout=timeout)
     if choice is runners.RunnerChoice.MAKE:
         return make_runner.MakeRunner(executable=make_executable, timeout=timeout)
     return runners.auto(
-        tox_executable=executable,
+        tox_executable=tox_executable,
         make_executable=make_executable,
         timeout=timeout,
     )
@@ -152,7 +152,7 @@ def _select_repos(
     help='Only run for charms using this testing framework.',
 )
 @click.option('--workers', default=1, type=click.IntRange(1), show_default=True)
-@click.option('--executable', default='tox', show_default=True, help='Tox command.')
+@click.option('--tox-executable', default='tox', show_default=True, help='Tox command.')
 @click.option('--make-executable', default='make', show_default=True, help='Make command.')
 @click.option(
     '--timeout',
@@ -201,7 +201,7 @@ def main(
     sample: int,
     framework: str | None,
     workers: int,
-    executable: str,
+    tox_executable: str,
     make_executable: str,
     timeout: int,
     no_patch: bool,
@@ -237,7 +237,7 @@ def main(
     )
     runner = _build_runner(
         choice=runners.RunnerChoice(runner_choice),
-        executable=executable,
+        tox_executable=tox_executable,
         make_executable=make_executable,
         timeout=timeout,
     )
