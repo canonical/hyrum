@@ -6,11 +6,12 @@ problems (e.g. the dependency patcher couldn't parse a pyproject.toml)
 apart from genuine tox/make failures. The research doc calls this out
 as a precondition for sensible run-to-run comparison later.
 
-NOTE: the patcher's ``apply()`` is currently synchronous and can shell
-out to ``poetry lock`` / ``uv lock`` (in the seconds-to-minutes range).
-While a worker is patching it blocks the event loop, throttling the
-other workers. Moving that subprocess to ``asyncio.subprocess`` is a
-worthwhile follow-up but matches existing hyrum behaviour for now.
+Patchers remain synchronous context managers (the ``Patcher`` protocol
+is dirt-simple and we want third-party patchers to stay that way), but
+their setup and teardown — which can take seconds-to-minutes when
+shelling out to ``poetry lock`` / ``uv lock`` — run in worker threads
+via :func:`asyncio.to_thread` so concurrent workers actually overlap
+their lock subprocesses instead of taking turns on the event loop.
 """
 
 from __future__ import annotations
@@ -81,13 +82,24 @@ async def run_one(
     patcher: patchers.Patcher,
     runner: runners.Runner,
 ) -> Outcome:
-    """Apply ``patcher`` to ``repo`` and invoke ``runner`` once."""
+    """Apply ``patcher`` to ``repo`` and invoke ``runner`` once.
+
+    The patcher's ``apply`` is a synchronous context manager that may shell
+    out to ``poetry lock`` / ``uv lock`` (seconds-to-minutes) on entry,
+    which would otherwise block the event loop and serialise every worker.
+    Enter and exit in a thread so concurrent workers can overlap their lock
+    subprocesses; the runner call is already asyncio-native.
+    """
     try:
-        with patcher.apply(repo):
-            result = await runner.run(repo, target)
+        cm = patcher.apply(repo)
+        await asyncio.to_thread(cm.__enter__)
     except patchers.PatcherError as exc:
         logger.warning('patcher error in %s: %s', repo, exc)
         return Outcome.patcher_error(repo, target, str(exc))
+    try:
+        result = await runner.run(repo, target)
+    finally:
+        await asyncio.to_thread(cm.__exit__, None, None, None)
     return Outcome.from_run_result(result)
 
 
