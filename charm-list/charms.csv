@@ -1,0 +1,237 @@
+Team,Charm Name,Repository,Key Charm for this Team,Branch (if not the default),Notes
+BootStack,apt-mirror,https://github.com/canonical/charm-apt-mirror,FALSE,,
+BootStack,hardware-observer,https://github.com/canonical/hardware-observer-operator,FALSE,,
+BootStack,nginx,https://github.com/canonical/charm-nginx,FALSE,,
+BootStack,simple-streams,https://github.com/canonical/charm-simple-streams,FALSE,,
+Charm-Tech,exim-operator,https://github.com/tonyandrewmeyer/exim-operator,FALSE,,
+Charm-Tech,snappass,https://github.com/benhoyt/snappass-test,FALSE,,
+Charm-Tech,takahe-operator,https://github.com/tonyandrewmeyer/takahe-operator,FALSE,,
+Charm-Tech,webapp (example charm),https://github.com/benhoyt/test-charms/,FALSE,,
+Commercial Systems,certbot,https://github.com/canonical/certbot-charm,FALSE,,
+Commercial Systems,ranger-k8s,https://github.com/canonical/ranger-k8s-operator,FALSE,,
+Commercial Systems,superset-k8s,https://github.com/canonical/superset-k8s-operator,FALSE,,
+Commercial Systems,temporal-admin-k8s,https://github.com/canonical/temporal-admin-k8s-operator,FALSE,,
+Commercial Systems,temporal-k8s,https://github.com/canonical/temporal-k8s-operator,FALSE,,
+Commercial Systems,temporal-ui-k8s,https://github.com/canonical/temporal-ui-k8s-operator,FALSE,,
+Commercial Systems,temporal-worker-k8s,https://github.com/canonical/temporal-worker-k8s-operator,FALSE,,
+Commercial Systems,timescaledb,https://github.com/canonical/timescaledb-charm,FALSE,,
+Commercial Systems,trino-k8s,https://github.com/canonical/trino-k8s-operator,FALSE,,
+Data,kafka,https://github.com/canonical/kafka-operator,FALSE,,
+Data,kafka-broker-rack-awareness,https://github.com/canonical/kafka-broker-rack-awareness-operator,FALSE,,
+Data,kafka-k8s,https://github.com/canonical/kafka-k8s-operator,FALSE,,
+Data,mongodb,https://github.com/canonical/mongodb-operator,FALSE,,
+Data,mongodb-k8s,https://github.com/canonical/mongodb-k8s-operator,FALSE,,
+Data,mysql,https://github.com/canonical/mysql-operator,FALSE,,
+Data,mysql-k8s,https://github.com/canonical/mysql-k8s-operator,FALSE,,
+Data,mysql-router,https://github.com/canonical/mysql-router-operator,FALSE,,
+Data,mysql-router-k8s,https://github.com/canonical/mysql-router-k8s-operator,FALSE,,
+Data,opensearch,https://github.com/canonical/opensearch-operator,FALSE,,
+Data,pgbouncer,https://github.com/canonical/pgbouncer-operator,FALSE,,
+Data,pgbouncer-k8s,https://github.com/canonical/pgbouncer-k8s-operator,FALSE,,
+Data,postgresql,https://github.com/canonical/postgresql-operator,FALSE,,
+Data,postgresql-k8s,https://github.com/canonical/postgresql-k8s-operator,FALSE,,
+Data,redis,https://github.com/canonical/redis-operator,FALSE,,
+Data,redis-k8s,https://github.com/canonical/redis-k8s-operator,FALSE,,
+Data,spark-history-server-k8s,https://github.com/canonical/spark-history-server-k8s-operator,FALSE,,
+Data,zookeeper,https://github.com/canonical/zookeeper-operator,FALSE,,
+Data,zookeeper-k8s,https://github.com/canonical/zookeeper-k8s-operator,FALSE,,
+Identity,GLAuth,https://github.com/canonical/glauth-operator,FALSE,,
+Identity,GLAuth-K8s,https://github.com/canonical/glauth-k8s-operator,FALSE,,
+Identity,Hydra,https://github.com/canonical/hydra-operator,TRUE,,
+Identity,Identity Platform Admin Ui,https://github.com/canonical/identity-platform-admin-ui-operator,FALSE,,
+Identity,Identity Platform Login Ui,https://github.com/canonical/identity-platform-login-ui-operator,TRUE,,
+Identity,Kratos,https://github.com/canonical/kratos-operator,TRUE,,
+Identity,Kratos External IDP Integrator,https://github.com/canonical/kratos-external-idp-integrator,TRUE,,
+Identity,Oathkeeper,https://github.com/canonical/oathkeeper-operator/,TRUE,,
+Identity,OpenFGA,https://github.com/canonical/openfga-operator,FALSE,,
+Identity,sssd,https://github.com/canonical/sssd-operator,FALSE,,
+IS,apt-stresstest,https://git.launchpad.net/apt-stresstest-charm,FALSE,,
+IS,autocert,https://git.launchpad.net/autocert-charm,FALSE,,
+IS,bind-resolver,https://git.launchpad.net/bind-resolver-charm,FALSE,,
+IS,cloudflared,https://github.com/canonical/cloudflared-operator,FALSE,,"unlisted, but available at: https://charmhub.io/cloudflared"
+IS,container-log-archive,https://git.launchpad.net/container-log-archive-charm,FALSE,,
+IS,content-cache,https://github.com/canonical/content-cache-operator,FALSE,,
+IS,content-cache,https://git.launchpad.net/content-cache-charm,FALSE,,
+IS,content-cache-k8s,https://github.com/canonical/content-cache-k8s-operator,FALSE,,
+IS,discourse-k8s,https://github.com/canonical/discourse-k8s-operator,TRUE,,
+IS,hockeypuck,https://github.com/canonical/hockeypuck-k8s-operator,FALSE,,
+IS,indico,https://github.com/canonical/indico-operator,TRUE,,
+IS,internal-proxy,https://git.launchpad.net/internal-proxy-charm,FALSE,,
+IS,jenkins-agent,https://github.com/canonical/jenkins-agent-operator,FALSE,,
+IS,jenkins-agent-k8s,https://github.com/canonical/jenkins-agent-k8s-operator,FALSE,,
+IS,jenkins-k8s,https://github.com/canonical/jenkins-k8s-operator,TRUE,,
+IS,juju-introspection-proxy,https://git.launchpad.net/juju-introspection-proxy-charm,FALSE,,
+IS,mailman3-core,https://git.launchpad.net/mailman3-core-charm,FALSE,,
+IS,mailman3-web,https://git.launchpad.net/mailman3-web-charm,FALSE,,
+IS,mattermost-k8s,https://github.com/canonical/mattermost-k8s-operator,FALSE,,
+IS,nginx-ingress-integator,https://github.com/canonical/nginx-ingress-integrator-operator,FALSE,,
+IS,ntp,https://git.launchpad.net/ntp-charm,FALSE,,
+IS,openvpn-server,https://git.launchpad.net/openvpn-server-charm,FALSE,,
+IS,pollen,https://github.com/canonical/pollen-operator,FALSE,,
+IS,postgresql,https://git.launchpad.net/postgresql-charm,FALSE,,
+IS,postgresql-k8s,https://git.launchpad.net/charm-k8s-postgresql,FALSE,,
+IS,saml-integrator,https://github.com/canonical/saml-integrator-operator,FALSE,,
+IS,smtp-dkim-signing,https://git.launchpad.net/smtp-dkim-signing-charm,FALSE,,
+IS,smtp-integrator,https://github.com/canonical/smtp-integrator-operator,FALSE,,
+IS,smtp-relay,https://git.launchpad.net/smtp-relay-charm,FALSE,,
+IS,stunnel,https://git.launchpad.net/stunnel-charm,FALSE,,
+IS,synapse,https://github.com/canonical/synapse-operator,TRUE,,
+IS,ubuntu-mirror,https://git.launchpad.net/ubuntu-mirror-charm,FALSE,,
+IS,ubuntu-syncproxy,https://git.launchpad.net/ubuntu-syncproxy-charm,FALSE,,
+IS,wordpress-k8s,https://github.com/canonical/wordpress-k8s-operator,TRUE,,
+K8s,cinder-csi,https://github.com/canonical/cinder-csi-operator,FALSE,,
+K8s,etcd,https://github.com/canonical/etcd-operator,FALSE,,
+K8s,Microk8s,https://github.com/canonical/charm-microk8s,FALSE,,
+MLOps,admission-webhook,https://github.com/canonical/admission-webhook-operator,FALSE,,
+MLOps,argo,https://github.com/canonical/argo-operators,FALSE,,
+MLOps,dex-auth,https://github.com/canonical/dex-auth-operator,FALSE,,
+MLOps,envoy,https://github.com/canonical/envoy-operator,FALSE,,
+MLOps,istio,https://github.com/canonical/istio-operators,FALSE,,
+MLOps,katib,https://github.com/canonical/katib-operators,FALSE,,
+MLOps,kfp,https://github.com/canonical/kfp-operators,FALSE,,
+MLOps,knative,https://github.com/canonical/knative-operators,FALSE,,
+MLOps,kserve,https://github.com/canonical/kserve-operators,FALSE,,
+MLOps,kubeflow-dashboard,https://github.com/canonical/kubeflow-dashboard-operator,FALSE,,
+MLOps,kubeflow-profiles,https://github.com/canonical/kubeflow-profiles-operator,FALSE,,
+MLOps,kubeflow-roles,https://github.com/canonical/kubeflow-roles-operator,FALSE,,
+MLOps,kubeflow-tensorboards,https://github.com/canonical/kubeflow-tensorboards-operator,FALSE,,
+MLOps,kubeflow-volumes,https://github.com/canonical/kubeflow-volumes-operator,FALSE,,
+MLOps,metacontroller,https://github.com/canonical/metacontroller-operator,FALSE,,
+MLOps,minio,https://github.com/canonical/minio-operator,FALSE,,
+MLOps,mlflow,https://github.com/canonical/mlflow-operator,FALSE,,
+MLOps,mlmd,https://github.com/canonical/mlmd-operator,FALSE,,
+MLOps,namespace-node-affinity,https://github.com/canonical/namespace-node-affinity-operator,FALSE,,
+MLOps,notebook,https://github.com/canonical/notebook-operators,FALSE,,
+MLOps,OIDC-gatekeeper,https://github.com/canonical/oidc-gatekeeper-operator,FALSE,,
+MLOps,pvcviewer,https://github.com/canonical/pvcviewer-operator,FALSE,,
+MLOps,training,https://github.com/canonical/training-operator,FALSE,,
+Observability,Alertmanager,https://github.com/canonical/alertmanager-k8s-operator,TRUE,,
+Observability,Avalanche,https://github.com/canonical/avalanche-k8s-operator,FALSE,,
+Observability,Blackbox Exporter,https://github.com/canonical/blackbox-exporter-k8s-operator,FALSE,,
+Observability,Catalogue,https://github.com/canonical/catalogue-k8s-operator,FALSE,,
+Observability,COS Configuration,https://github.com/canonical/cos-configuration-k8s-operator,FALSE,,
+Observability,COS Proxy,https://github.com/canonical/cos-proxy-operator,TRUE,,
+Observability,Grafana,https://github.com/canonical/grafana-k8s-operator,TRUE,,
+Observability,Grafana Agent K8s,https://github.com/canonical/grafana-agent-k8s-operator,TRUE,,
+Observability,Grafana Agent Subordinate,https://github.com/canonical/grafana-agent-operator,TRUE,,
+Observability,Grafana Cloud Integrator,https://github.com/canonical/grafana-cloud-integrator,FALSE,,
+Observability,Loki,https://github.com/canonical/loki-k8s-operator,TRUE,,
+Observability,Prometheus,https://github.com/canonical/prometheus-k8s-operator,TRUE,,
+Observability,Prometheus PushGateway,https://github.com/canonical/prometheus-pushgateway-k8s-operator,FALSE,,
+Observability,Prometheus Scrape Config,https://github.com/canonical/prometheus-scrape-config-k8s-operator,FALSE,,
+Observability,Prometheus Scrape Target,https://github.com/canonical/prometheus-scrape-target-k8s-operator,FALSE,,
+Observability,TLS Truststore,https://github.com/canonical/tls-truststore-operator,FALSE,,This is archived and shouldn't be used (e.g. tests fail)
+Observability,Traefik,https://github.com/canonical/traefik-k8s-operator,TRUE,,
+OpenStack,multiple charms (mono-repo),https://opendev.org/openstack/sunbeam-charms,TRUE,,
+Telco,Manual TLS Certificates,https://github.com/canonical/manual-tls-certificates-operator,TRUE,,
+Telco,Self Signed Certificates,https://github.com/canonical/self-signed-certificates-operator,TRUE,,
+Telco,TLS Certificates Requirer,https://github.com/canonical/tls-certificates-requirer-operator,FALSE,,
+Telco,Vault (K8s),https://github.com/canonical/vault-k8s-operator,TRUE,,
+,airbyte-k8s-operator,https://github.com/canonical/airbyte-k8s-operator,FALSE,,
+,aodh,https://opendev.org/openstack/charm-aodh,FALSE,,Added automatically from Charmhub
+,aproxy-operator,https://github.com/canonical/aproxy-operator,FALSE,,
+,barbican,https://opendev.org/openstack/charm-barbican,FALSE,,Added automatically from Charmhub
+,barbican-vault,https://opendev.org/openstack/charm-barbican-vault,FALSE,,Added automatically from Charmhub
+,calico,https://github.com/charmed-kubernetes/layer-calico,FALSE,,Added automatically from Charmhub
+,cassandra,https://git.launchpad.net/cassandra-charm,FALSE,,Added automatically from Charmhub
+,ceilometer,https://opendev.org/openstack/charm-ceilometer,FALSE,,Added automatically from Charmhub
+,ceilometer-agent,https://opendev.org/openstack/charm-ceilometer-agent,FALSE,,Added automatically from Charmhub
+,charm-ubuntu,https://github.com/canonical/charm-ubuntu,FALSE,,
+,cilium,https://github.com/charmed-kubernetes/charm-cilium,FALSE,,Added automatically from Charmhub
+,cinder,https://opendev.org/openstack/charm-cinder,FALSE,,Added automatically from Charmhub
+,cinder-backup,https://opendev.org/openstack/charm-cinder-backup,FALSE,,Added automatically from Charmhub
+,cinder-backup-swift-proxy,https://opendev.org/openstack/charm-cinder-backup-swift-proxy,FALSE,,Added automatically from Charmhub
+,cinder-ceph,https://opendev.org/openstack/charm-cinder-ceph,FALSE,,Added automatically from Charmhub
+,cinder-dell-powerflex,https://github.com/dell-esg/powerflex-cinder-charm,FALSE,,Added automatically from Charmhub
+,cinder-lvm,https://opendev.org/openstack/charm-cinder-lvm,FALSE,,Added automatically from Charmhub
+,cinder-netapp,https://opendev.org/openstack/charm-cinder-netapp,FALSE,,Added automatically from Charmhub
+,cinder-powermax,https://github.com/dell-esg/powermax-cinder-charm,FALSE,,Added automatically from Charmhub
+,cinder-powerstore,https://github.com/dell-esg/powerstore-cinder-charm,FALSE,,Added automatically from Charmhub
+,cinder-purestorage,https://opendev.org/openstack/charm-cinder-purestorage,FALSE,,Added automatically from Charmhub
+,conserver-charm,https://github.com/canonical/conserver-charm,FALSE,,
+,containers-flannel,https://github.com/juju-solutions/charm-flannel,FALSE,,Added automatically from Charmhub
+,containers-kubeapi-load-balancer,https://github.com/kubernetes/kubernetes,FALSE,,Added automatically from Charmhub
+,designate-bind,https://opendev.org/openstack/charm-designate-bind,FALSE,,Added automatically from Charmhub
+,digest-squid-auth-helper,https://github.com/canonical/digest-squid-auth-helper,FALSE,,
+,dokuwiki,https://github.com/battlemidget/juju-charm-dokuwiki.rb,FALSE,,Added automatically from Charmhub
+,etcd,https://github.com/canonical/charmed-etcd-operator,FALSE,,
+,ganglia-node,https://git.launchpad.net/charm-ganglia-node,FALSE,,Added automatically from Charmhub
+,ghost,https://github.com/battlemidget/charm-layer-ghost,FALSE,,Added automatically from Charmhub
+,giraph,https://github.com/panagiotisl/bigtop,FALSE,,Added automatically from Charmhub
+,glance,https://opendev.org/openstack/charm-glance,FALSE,,Added automatically from Charmhub
+,glance-simplestreams-sync,https://opendev.org/openstack/charm-glance-simplestreams-sync,FALSE,,Added automatically from Charmhub
+,gnocchi,https://opendev.org/openstack/charm-gnocchi,FALSE,,Added automatically from Charmhub
+,hacluster,https://opendev.org/openstack/charm-hacluster,FALSE,,Added automatically from Charmhub
+,heat,https://opendev.org/openstack/charm-heat,FALSE,,Added automatically from Charmhub
+,hello-juju,https://github.com/juju/hello-juju-charm,FALSE,,Added automatically from Charmhub
+,httprequest-lego-provider,https://github.com/canonical/httprequest-lego-provider,FALSE,,
+,influxdb,https://git.launchpad.net/influxdb-charm,FALSE,,Added automatically from Charmhub
+,ironic-api,https://opendev.org/openstack/charm-ironic-api,FALSE,,Added automatically from Charmhub
+,ironic-conductor,https://opendev.org/openstack/charm-ironic-conductor,FALSE,,Added automatically from Charmhub
+,jenkins,https://github.com/jenkinsci/jenkins-charm,FALSE,,Added automatically from Charmhub
+,jimm,https://github.com/canonical/jimm,FALSE,,
+,juju-dashboard-k8s,https://github.com/canonical/juju-dashboard,FALSE,,Added automatically from Charmhub
+,jupyter,https://github.com/canonical/bundle-jupyter/issues/,FALSE,,Added automatically from Charmhub
+,k8s-operator,https://github.com/canonical/k8s-operator,FALSE,,
+,keystone,https://opendev.org/openstack/charm-keystone,FALSE,,Added automatically from Charmhub
+,keystone-kerberos,https://opendev.org/openstack/charm-keystone-kerberos,FALSE,,Added automatically from Charmhub
+,keystone-ldap,https://opendev.org/openstack/charm-keystone-ldap,FALSE,,Added automatically from Charmhub
+,keystone-saml-mellon,https://opendev.org/openstack/charm-keystone-saml-mellon,FALSE,,Added automatically from Charmhub
+,kibana,https://git.launchpad.net/kibana-charm,FALSE,,Added automatically from Charmhub
+,knf-lma-stack,https://github.com/davigar15/ecosystem-prep,FALSE,,Added automatically from Charmhub
+,kube-ovn,https://github.com/charmed-kubernetes/charm-kube-ovn,FALSE,,Added automatically from Charmhub
+,kubeapi-load-balancer,https://github.com/charmed-kubernetes/charm-kubeapi-load-balancer,FALSE,,Added automatically from Charmhub
+,kubernetes-control-plane,https://github.com/charmed-kubernetes/charm-kubernetes-control-plane,FALSE,,Added automatically from Charmhub
+,kubernetes-core,https://github.com/charmed-kubernetes/bundle,FALSE,,Added automatically from Charmhub
+,kubernetes-worker,https://github.com/charmed-kubernetes/charm-kubernetes-worker,FALSE,,Added automatically from Charmhub
+,kubescape,https://github.com/vladklokun/ks-charmed,FALSE,,Added automatically from Charmhub
+,kyuubi-k8s-operator,https://github.com/canonical/kyuubi-k8s-operator,FALSE,,
+,landscape-client,https://git.launchpad.net/landscape-client,FALSE,,Added automatically from Charmhub
+,landscape-dense,https://code.launchpad.net/landscape-bundles/+git,FALSE,,Added automatically from Charmhub
+,landscape-server,https://github.com/canonical/landscape-server-operator,FALSE,,Added automatically from Charmhub
+,lego-operator,https://github.com/canonical/lego-operator,FALSE,,
+,linstor,https://github.com/linbit/charmed-linstor,FALSE,,Added automatically from Charmhub
+,Livepatch K8s,https://github.com/canonical/livepatch-k8s-operator,FALSE,,
+,logstash,https://git.launchpad.net/logstash-charm,FALSE,,Added automatically from Charmhub
+,manila,https://opendev.org/openstack/charm-manila,FALSE,,Added automatically from Charmhub
+,manila-dashboard,https://opendev.org/openstack/charm-manila-dashboard,FALSE,,Added automatically from Charmhub
+,manila-netapp,https://opendev.org/openstack/charm-manila-netapp,FALSE,,Added automatically from Charmhub
+,masakari,https://opendev.org/openstack/charm-masakari,FALSE,,Added automatically from Charmhub
+,masakari-monitors,https://opendev.org/openstack/charm-masakari-monitors,FALSE,,Added automatically from Charmhub
+,metadata-api,https://github.com/juju-solutions/bundle-kubeflow,FALSE,,Added automatically from Charmhub
+,metallb,https://github.com/charmed-kubernetes/metallb-operator,FALSE,,Added automatically from Charmhub
+,mysql-router,https://git.launchpad.net/charm-mysql-router,FALSE,,Added automatically from Charmhub
+,mysql-router-k8s,https://github.com/canonical/mysql-router-operators,FALSE,,Added automatically from Charmhub
+,nats,https://github.com/canonical/nats-operator,FALSE,,Added automatically from Charmhub
+,netbox-k8s-operator,https://github.com/canonical/netbox-k8s-operator,FALSE,,
+,neutron-api-odl,https://opendev.org/openstack/charm-neutron-api-odl,FALSE,,Added automatically from Charmhub
+,neutron-api-plugin-arista,https://opendev.org/openstack/charm-neutron-api-plugin-arista,FALSE,,Added automatically from Charmhub
+,neutron-api-plugin-ironic,https://opendev.org/openstack/charm-neutron-api-plugin-ironic,FALSE,,Added automatically from Charmhub
+,neutron-dynamic-routing,https://opendev.org/openstack/charm-neutron-dynamic-routing,FALSE,,Added automatically from Charmhub
+,neutron-gateway,https://opendev.org/openstack/charm-neutron-gateway,FALSE,,Added automatically from Charmhub
+,nfs-ganesha,https://git.launchpad.net/nfs-ganesha-charm,FALSE,,Added automatically from Charmhub
+,nova-cell-controller,https://opendev.org/openstack/charm-nova-cell-controller,FALSE,,Added automatically from Charmhub
+,nova-dell-powerflex,https://github.com/dell-esg/powerflex-nova-charm,FALSE,,Added automatically from Charmhub
+,OAuth2 Proxy K8s,https://github.com/canonical/oauth2-proxy-k8s-operator,FALSE,,
+,octavia-dashboard,https://opendev.org/openstack/charm-octavia-dashboard,FALSE,,Added automatically from Charmhub
+,octavia-diskimage-retrofit,https://opendev.org/openstack/charm-octavia-diskimage-retrofit,FALSE,,Added automatically from Charmhub
+,odl-controller,https://opendev.org/openstack/charm-odl-controller,FALSE,,Added automatically from Charmhub
+,openstack-exporter-operator,https://github.com/canonical/openstack-exporter-operator,FALSE,,
+,openvswitch-odl,https://opendev.org/openstack/charm-openvswitch-odl,FALSE,,Added automatically from Charmhub
+,ovn-chassis,https://git.launchpad.net/charm-ovn-chassis,FALSE,,Added automatically from Charmhub
+,ovn-dedicated-chassis,https://git.launchpad.net/charm-ovn-dedicated-chassis,FALSE,,Added automatically from Charmhub
+,pacemaker-remote,https://opendev.org/openstack/charm-pacemaker-remote,FALSE,,Added automatically from Charmhub
+,parca-agent-operator,https://github.com/canonical/parca-agent-operator,FALSE,,
+,parca-k8s-operator,https://github.com/canonical/parca-k8s-operator,FALSE,,
+,parca-scrape-target-operator,https://github.com/canonical/parca-scrape-target-operator,FALSE,,
+,percona-cluster,https://opendev.org/openstack/charm-percona-cluster,FALSE,,Added automatically from Charmhub
+,placement,https://opendev.org/openstack/charm-placement,FALSE,,Added automatically from Charmhub
+,rabbitmq-server,https://opendev.org/openstack/charm-rabbitmq-server,FALSE,,Added automatically from Charmhub
+,S3 Integrator,https://github.com/canonical/s3-integrator,FALSE,,
+,spark-integration-hub-k8s-operator,https://github.com/canonical/spark-integration-hub-k8s-operator,FALSE,,
+,squid-reverseproxy,https://git.launchpad.net/squid-reverseproxy-charm,FALSE,,Added automatically from Charmhub
+,swift-proxy,https://opendev.org/openstack/charm-swift-proxy,FALSE,,Added automatically from Charmhub
+,swift-storage,https://opendev.org/openstack/charm-swift-storage,FALSE,,Added automatically from Charmhub
+,tempo-coordinator-k8s,https://github.com/canonical/tempo-operators,FALSE,,Added automatically from Charmhub
+,ubuntu-repository-cache,https://code.launchpad.net/~ubuntu-repository-cache-charmers/ubuntu-repository-cache/layer-ubuntu-repository-cache,FALSE,,Added automatically from Charmhub
+,znc,https://github.com/battlemidget/juju-charm-znc,FALSE,,Added automatically from Charmhub
