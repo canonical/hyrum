@@ -1,4 +1,4 @@
-"""Allow ``python -m hyrum`` to invoke the CLI."""
+"""Allow ``python -m hyrum`` to invoke the placeholder CLI."""
 
 from hyrum import cli
 

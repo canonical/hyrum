@@ -1,7 +1,3 @@
-"""hyrum: bulk-run checks across many charm repositories.
+"""hyrum — placeholder release reserving the PyPI name."""
 
-Named for Hyrum's law: the tool exists to find out which consumers were
-relying on observable behaviour of a dependency before you change it.
-"""
-
-__version__ = '0.0.1.dev0'
+__version__ = '0.0.0'
