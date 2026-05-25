@@ -1,0 +1,87 @@
+# Weekly refresh of `charm-list/charms.csv` from Charmhub. Opens (or updates)
+# a PR when tools/update_charm_list.py reports a diff; succeeds silently
+# otherwise so the schedule view stays clean.
+name: Update charm list
+
+on:
+  schedule:
+    # 06:00 UTC every Monday. No specific reason — early enough that a PR is
+    # waiting at the start of the European working week.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: refresh and open PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      BRANCH: chore/update-charm-list
+      TITLE: "chore: refresh charm-list from Charmhub"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run the updater
+        env:
+          # GITHUB_TOKEN is used by the script only for archive/404 probes
+          # against public github.com/canonical/* repos. Read-only is enough.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python tools/update_charm_list.py
+
+      - name: Push branch and open PR if anything changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- charm-list/charms.csv; then
+            echo "charm-list/charms.csv is unchanged. Exiting silently."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add charm-list/charms.csv
+          git commit -m "$TITLE"
+
+          # Push via x-access-token in the URL. GITHUB_TOKEN is auto-masked
+          # in job logs so this stays out of any output. --force-with-lease
+          # so we cleanly update an existing PR branch from a previous run
+          # without clobbering anything we did not predict.
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force-with-lease "$remote" "HEAD:${BRANCH}"
+
+          if gh pr view "$BRANCH" --json number --jq .number >/dev/null 2>&1; then
+            echo "PR for $BRANCH already exists; pushed updates to it."
+            exit 0
+          fi
+
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "$TITLE" \
+            --label dependencies \
+            --body "$(cat <<'BODY'
+          Automated weekly refresh of `charm-list/charms.csv`.
+
+          Source: `tools/update_charm_list.py` (see job log for details).
+
+          Each run can:
+          - Append charms newly published on Charmhub.
+          - Remove rows whose GitHub repository is archived or 404.
+          - Rewrite the `Repository` URL on auto-added rows when Charmhub
+            now reports a different source URL. Manually-curated rows are
+            never touched.
+          BODY
+          )"
