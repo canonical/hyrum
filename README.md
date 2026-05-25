@@ -32,10 +32,12 @@ tests are explicitly out of scope.
 
 ## Non-goals
 
-- Cloning or curating the charm collection. `hyrum` assumes a folder
-  of already-cloned charm repos is provided.
 - Running integration tests.
 - Acting as a general-purpose CI orchestrator.
+
+The `hyrum` CLI itself doesn't clone or curate the charm collection — it
+expects a folder of already-cloned repos. Helpers for populating that
+folder live in `tools/` (see *Populating the cache* below).
 
 ## Usage
 
@@ -43,6 +45,10 @@ tests are explicitly out of scope.
 # Install (editable, with the lint/static/unit dependency groups for
 # ruff, pyright, pytest, …):
 uv sync --all-groups
+
+# Populate the local cache with every charm in charm-list/charms.csv
+# (shallow clones, pulls for repos that already exist):
+python tools/get_charms.py
 
 # Run `tox -e unit` across every charm in the default cache
 # (~/.cache/hyrum/charms), with ops swapped to the `fix/X` branch of
