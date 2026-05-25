@@ -49,8 +49,8 @@ jobs:
             exit 0
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "Prints Charming [bot]"
+          git config --global user.email "ben.hoyt+prints-charming-bot@canonical.com"
           git switch -c "$BRANCH"
           git add charm-list/charms.csv
           git commit -m "$TITLE"
