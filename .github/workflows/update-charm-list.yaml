@@ -5,9 +5,9 @@ name: Update charm list
 
 on:
   schedule:
-    # 06:00 UTC every Monday. No specific reason — early enough that a PR is
-    # waiting at the start of the European working week.
-    - cron: "0 6 * * 1"
+    # 19:00 UTC every Sunday == early Monday morning in NZ
+    # (07:00 NZST / 08:00 NZDT).
+    - cron: "0 19 * * 0"
   workflow_dispatch:
 
 permissions: {}
