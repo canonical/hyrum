@@ -39,10 +39,9 @@ def test_cli_end_to_end_with_stubbed_runner(monkeypatch, tmp_path: pathlib.Path)
     result = testing.CliRunner().invoke(
         cli.main,
         [
+            'unit',
             '--cache-folder',
             str(cache),
-            '--target',
-            'unit',
             '--no-patch',  # skip the real patcher to keep this unit-test pure
             '--workers',
             '2',
@@ -52,32 +51,51 @@ def test_cli_end_to_end_with_stubbed_runner(monkeypatch, tmp_path: pathlib.Path)
     assert 'passed' in result.output
 
 
-def test_cli_fail_on_regression_exits_nonzero(monkeypatch, tmp_path: pathlib.Path):
+async def _fail_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
+    return runners.RunResult(
+        repo=repo,
+        runner=self.name,
+        target=target,
+        status=runners.RunStatus.FAILED,
+        returncode=1,
+        duration_s=0.01,
+    )
+
+
+def test_cli_exits_nonzero_by_default_on_failure(monkeypatch, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
     _make_charm(cache / 'alpha')
 
-    async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
-        return runners.RunResult(
-            repo=repo,
-            runner=self.name,
-            target=target,
-            status=runners.RunStatus.FAILED,
-            returncode=1,
-            duration_s=0.01,
-        )
-
-    monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
+    monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
 
     result = testing.CliRunner().invoke(
         cli.main,
         [
+            'unit',
             '--cache-folder',
             str(cache),
-            '--target',
-            'unit',
             '--no-patch',
-            '--fail-on-regression',
         ],
     )
     assert result.exit_code == 1, result.output
+
+
+def test_cli_no_fail_forces_exit_zero(monkeypatch, tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    _make_charm(cache / 'alpha')
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
+
+    result = testing.CliRunner().invoke(
+        cli.main,
+        [
+            'unit',
+            '--cache-folder',
+            str(cache),
+            '--no-patch',
+            '--no-fail',
+        ],
+    )
+    assert result.exit_code == 0, result.output

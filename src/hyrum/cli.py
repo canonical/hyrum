@@ -73,7 +73,7 @@ def _select_repos(
     *,
     config: config_loader.Config,
     repo_re: str,
-    sample: int,
+    limit: int,
     framework: str | None,
 ) -> tuple[list[pathlib.Path], list[tuple[pathlib.Path, str]]]:
     """Return (repos to run, list of (repo, skip-reason) pairs)."""
@@ -94,8 +94,8 @@ def _select_repos(
     repos: list[pathlib.Path] = []
     skipped: list[tuple[pathlib.Path, str]] = []
     raw = enum_mod.iter_charm_repos(cache)
-    if sample > 0:
-        raw = itertools.islice(raw, sample)
+    if limit > 0:
+        raw = itertools.islice(raw, limit)
     for repo in raw:
         for predicate in chain:
             reason = predicate(repo)
@@ -110,12 +110,13 @@ def _select_repos(
 @click.command()
 @click.option(
     '--cache-folder',
-    required=True,
+    envvar='HYRUM_CHARMS',
+    default=lambda: pathlib.Path('~/.cache/hyrum/charms').expanduser(),
+    show_default='~/.cache/hyrum/charms',
     type=click.Path(exists=True, file_okay=False, path_type=pathlib.Path),
-    help='Folder containing pre-cloned charm repositories.',
+    help='Folder containing pre-cloned charm repositories. [env: HYRUM_CHARMS]',
 )
 @click.option(
-    '-c',
     '--config',
     'config_path',
     type=click.Path(dir_okay=False, path_type=pathlib.Path),
@@ -123,12 +124,21 @@ def _select_repos(
     show_default=True,
     help='TOML config file (only the [ignore] table is read today).',
 )
+@click.argument('target')
+@click.option('--repo', default='.*', show_default=True, help='Regex on the repo name.')
 @click.option(
-    '-t',
-    '--target',
-    required=True,
-    help='Tox environment or make target (e.g. unit, lint).',
+    '--limit',
+    default=0,
+    type=click.IntRange(0),
+    help='Stop after this many charms (0 = all).',
 )
+@click.option(
+    '--framework',
+    type=click.Choice(list(frameworks.supported_frameworks()), case_sensitive=False),
+    default=None,
+    help='Only run for charms using this testing framework.',
+)
+@click.option('--workers', default=1, type=click.IntRange(1), show_default=True)
 @click.option(
     '--runner',
     'runner_choice',
@@ -137,21 +147,6 @@ def _select_repos(
     show_default=True,
     help='auto = tox if tox.ini, else make; falls back if the target is missing.',
 )
-@click.option('--repo', default='.*', show_default=True, help='Regex on the repo name.')
-@click.option(
-    '--sample',
-    default=0,
-    type=click.IntRange(0),
-    help='Stop after this many charms (0 = all).',
-)
-@click.option(
-    '--filter',
-    'framework',
-    type=click.Choice(list(frameworks.supported_frameworks()), case_sensitive=False),
-    default=None,
-    help='Only run for charms using this testing framework.',
-)
-@click.option('--workers', default=1, type=click.IntRange(1), show_default=True)
 @click.option('--tox-executable', default='tox', show_default=True, help='Tox command.')
 @click.option('--make-executable', default='make', show_default=True, help='Make command.')
 @click.option(
@@ -179,7 +174,7 @@ def _select_repos(
     default=600,
     type=click.IntRange(1),
     show_default=True,
-    help='Timeout for poetry/uv lock during patching.',
+    help='Timeout for poetry/uv lock during patching. Independent of --timeout.',
 )
 @click.option(
     '--log-level',
@@ -188,9 +183,10 @@ def _select_repos(
 )
 @click.option('--verbose/--no-verbose', default=False)
 @click.option(
-    '--fail-on-regression/--no-fail-on-regression',
+    '--no-fail',
+    is_flag=True,
     default=False,
-    help='Exit non-zero if any charm failed, timed out, or hit a patcher error.',
+    help='Always exit 0, even if some charms failed (default: exit non-zero on any failure).',
 )
 def main(
     cache_folder: pathlib.Path,
@@ -198,7 +194,7 @@ def main(
     target: str,
     runner_choice: str,
     repo: str,
-    sample: int,
+    limit: int,
     framework: str | None,
     workers: int,
     tox_executable: str,
@@ -212,9 +208,9 @@ def main(
     lock_timeout: int,
     log_level: str,
     verbose: bool,
-    fail_on_regression: bool,
+    no_fail: bool,
 ) -> None:
-    """Run a check (typically lint or unit tests) across many charm repos."""
+    """Run TARGET (a tox environment or make target, e.g. unit, lint) across many charm repos."""
     _configure_logging(log_level)
 
     cfg = config_loader.load(config_path)
@@ -222,7 +218,7 @@ def main(
         cache_folder,
         config=cfg,
         repo_re=repo,
-        sample=sample,
+        limit=limit,
         framework=framework,
     )
     logger.info('Selected %d charm(s); skipping %d up-front.', len(repos), len(skipped))
@@ -250,5 +246,5 @@ def main(
 
     report.render(results, base=cache_folder, target=target, verbose=verbose)
 
-    if fail_on_regression and not pool.passed(results):
+    if not no_fail and not pool.passed(results):
         sys.exit(1)
