@@ -34,6 +34,7 @@ def render(
     base: pathlib.Path,
     target: str,
     verbose: bool = False,
+    no_headers: bool = False,
     console: rich.console.Console | None = None,
 ) -> None:
     """Print a Rich tally of ``outcomes`` plus an optional verbose offender list."""
@@ -44,9 +45,14 @@ def render(
     total = len(outcomes)
     ran = sum(counts.get(s, 0) for s in ('passed', 'failed', 'timeout'))
 
-    table = rich.table.Table(title=f'hyrum: {target}', show_lines=False)
-    table.add_column('status')
-    table.add_column('count', justify='right')
+    table = rich.table.Table(
+        title=f'hyrum: {target}',
+        show_lines=False,
+        show_header=not no_headers,
+        header_style='bold',
+    )
+    table.add_column('STATUS')
+    table.add_column('COUNT', justify='right')
     table.add_column('%', justify='right')
     for status in pool.outcome_statuses():
         count = counts.get(status, 0)

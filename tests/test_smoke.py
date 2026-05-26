@@ -11,6 +11,12 @@ def test_version_string():
     assert hyrum.__version__
 
 
+def test_cli_version_runs():
+    result = testing.CliRunner().invoke(cli.main, ['--version'])
+    assert result.exit_code == 0
+    assert hyrum.__version__ in result.output
+
+
 def test_cli_help_runs():
     result = testing.CliRunner().invoke(cli.main, ['--help'])
     assert result.exit_code == 0

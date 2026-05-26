@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import itertools
 import logging
 import pathlib
@@ -10,7 +11,9 @@ import sys
 
 import click
 import rich.logging
+import rich.text
 
+import hyrum
 from hyrum import config as config_loader
 from hyrum import enumerate as enum_mod
 from hyrum import filters as filt
@@ -20,13 +23,26 @@ from hyrum.runners import make_runner, tox
 logger = logging.getLogger('hyrum')
 
 
-def _configure_logging(level: str) -> None:
+def _iso_utc(dt: datetime.datetime) -> rich.text.Text:
+    return rich.text.Text(dt.astimezone(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ'))
+
+
+def _configure_logging(level: int) -> None:
     logging.basicConfig(
-        level=getattr(logging, level.upper()),
+        level=level,
         format='%(message)s',
-        datefmt='[%X]',
-        handlers=[rich.logging.RichHandler(show_path=False)],
+        handlers=[rich.logging.RichHandler(show_path=False, log_time_format=_iso_utc)],
     )
+
+
+def _resolve_log_level(*, quiet: bool, verbose: bool, verbosity: str | None) -> int:
+    if quiet:
+        return logging.WARNING
+    if verbosity in ('debug', 'trace'):
+        return logging.DEBUG
+    # Brief (default) and verbose both run at INFO; --verbose changes the report shape,
+    # not the log level.
+    return logging.INFO
 
 
 def _build_patcher(
@@ -108,6 +124,7 @@ def _select_repos(
 
 
 @click.command()
+@click.version_option(hyrum.__version__)
 @click.option(
     '--cache-folder',
     envvar='HYRUM_CHARMS',
@@ -138,7 +155,13 @@ def _select_repos(
     default=None,
     help='Only run for charms using this testing framework.',
 )
-@click.option('--workers', default=1, type=click.IntRange(1), show_default=True)
+@click.option(
+    '--workers',
+    default=1,
+    type=click.IntRange(1),
+    show_default=True,
+    help='Number of charms to process concurrently.',
+)
 @click.option(
     '--runner',
     'runner_choice',
@@ -165,10 +188,21 @@ def _select_repos(
     '--ops-source',
     default='https://github.com/canonical/operator',
     show_default=True,
+    help='Git URL of the operator repository to swap in.',
 )
 @click.option('--ops-source-branch', default=None, help='Branch of --ops-source to use.')
-@click.option('--poetry-executable', default='poetry', show_default=True)
-@click.option('--uv-executable', default='uv', show_default=True)
+@click.option(
+    '--poetry-executable',
+    default='poetry',
+    show_default=True,
+    help='Poetry command, used to regenerate the lockfile after patching.',
+)
+@click.option(
+    '--uv-executable',
+    default='uv',
+    show_default=True,
+    help='uv command, used to regenerate the lockfile after patching.',
+)
 @click.option(
     '--lock-timeout',
     default=600,
@@ -177,11 +211,32 @@ def _select_repos(
     help='Timeout for poetry/uv lock during patching. Independent of --timeout.',
 )
 @click.option(
-    '--log-level',
-    default='info',
-    type=click.Choice(['debug', 'info', 'warning', 'error', 'critical'], case_sensitive=False),
+    '--quiet',
+    is_flag=True,
+    default=False,
+    help='No output except errors. Exit code still reflects pass/fail.',
 )
-@click.option('--verbose/--no-verbose', default=False)
+@click.option(
+    '--verbose',
+    is_flag=True,
+    default=False,
+    help='Descriptive detail: include the per-charm offender list in the report.',
+)
+@click.option(
+    '--verbosity',
+    type=click.Choice(['debug', 'trace'], case_sensitive=False),
+    default=None,
+    help=(
+        'Developer-level detail. Use debug for execution detail; trace reserved for '
+        'future code-level detail (currently aliased to debug).'
+    ),
+)
+@click.option(
+    '--no-headers',
+    is_flag=True,
+    default=False,
+    help='Suppress header row in the summary table.',
+)
 @click.option(
     '--no-fail',
     is_flag=True,
@@ -206,12 +261,16 @@ def main(
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
-    log_level: str,
+    quiet: bool,
     verbose: bool,
+    verbosity: str | None,
+    no_headers: bool,
     no_fail: bool,
 ) -> None:
     """Run TARGET (a tox environment or make target, e.g. unit, lint) across many charm repos."""
-    _configure_logging(log_level)
+    if sum([quiet, verbose, verbosity is not None]) > 1:
+        raise click.UsageError('--quiet, --verbose, and --verbosity are mutually exclusive.')
+    _configure_logging(_resolve_log_level(quiet=quiet, verbose=verbose, verbosity=verbosity))
 
     cfg = config_loader.load(config_path)
     repos, skipped = _select_repos(
@@ -244,7 +303,17 @@ def main(
     pool.add_skipped(results, skipped)
     results.sort(key=lambda o: str(o.repo))
 
-    report.render(results, base=cache_folder, target=target, verbose=verbose)
+    if not quiet:
+        report.render(
+            results,
+            base=cache_folder,
+            target=target,
+            verbose=verbose,
+            no_headers=no_headers,
+        )
+    elif not pool.passed(results):
+        failed = sum(1 for o in results if o.status in ('failed', 'timeout', 'patcher_error'))
+        click.echo(f'hyrum: {failed} charm(s) did not pass.', err=True)
 
     if not no_fail and not pool.passed(results):
         sys.exit(1)

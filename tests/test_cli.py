@@ -99,3 +99,57 @@ def test_cli_no_fail_forces_exit_zero(monkeypatch, tmp_path: pathlib.Path):
         ],
     )
     assert result.exit_code == 0, result.output
+
+
+def test_cli_quiet_suppresses_report(monkeypatch, tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    _make_charm(cache / 'alpha')
+
+    async def pass_run(self, repo, target):  # noqa: RUF029
+        return runners.RunResult(
+            repo=repo,
+            runner=self.name,
+            target=target,
+            status=runners.RunStatus.PASSED,
+            returncode=0,
+            duration_s=0.01,
+        )
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', pass_run)
+
+    result = testing.CliRunner().invoke(
+        cli.main,
+        ['unit', '--cache-folder', str(cache), '--no-patch', '--quiet'],
+    )
+    assert result.exit_code == 0, result.output
+    assert 'passed' not in result.output
+    assert 'hyrum:' not in result.output
+
+
+def test_cli_quiet_reports_failure_to_stderr(monkeypatch, tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    _make_charm(cache / 'alpha')
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
+
+    result = testing.CliRunner().invoke(
+        cli.main,
+        ['unit', '--cache-folder', str(cache), '--no-patch', '--quiet'],
+    )
+    assert result.exit_code == 1
+    assert 'did not pass' in result.stderr
+
+
+def test_cli_verbosity_flags_are_mutually_exclusive(tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    _make_charm(cache / 'alpha')
+
+    result = testing.CliRunner().invoke(
+        cli.main,
+        ['unit', '--cache-folder', str(cache), '--no-patch', '--quiet', '--verbose'],
+    )
+    assert result.exit_code != 0
+    assert 'mutually exclusive' in result.output
