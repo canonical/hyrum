@@ -146,6 +146,35 @@ over-mocked snap helpers, reliance on a removed `ops` internal. With
 `default-jdk` + `skopeo` installed (recovering the two Kafka charms)
 3.12 lands around **90 %**.
 
+### Known-broken charms on Python 3.12
+
+These are the charms that still fail a `--no-patch` `unit` run on 3.12
+with the full apt list above, grouped by cause (audited 2026-05-28).
+`hyrum` does not ship a default ignore list — most of the 3.14 noise
+evaporates simply by running on 3.12 — but if you want a quiet tally you
+can drop these into a local `hyrum.toml` `[ignore]` table under whatever
+category names you like.
+
+- **Genuine test bugs** (independent of interpreter and ops version):
+  `exim-operator` (pebble layer assertion), `grafana-agent-operator` and
+  `parca-agent-operator` (over-mocked snap helpers), `redis-operator`
+  and `tls-truststore-operator` (stale Harness `set_can_connect`
+  assumption), `snappass-test` (uses a removed `ops` internal),
+  `timescaledb-charm` (`mock` spec change), `tls-certificates-requirer-operator`
+  (test-isolation `Patch is already started`).
+- **Resource-intensive** (OOM under worker concurrency, pass when run
+  alone): `mysql-router-operators/kubernetes` (`pytest -n 120`),
+  `namespace-node-affinity-operator`.
+- **Build** (a transitive sdist fails the modern setuptools build):
+  `ks-charmed`.
+- **Tox config drift** (env points pytest at an empty `tests/unit`):
+  `opensearch-operator`.
+
+Three more are *recoverable* and deliberately left off the list:
+`kafka-k8s-operator` and `kafka-operator` pass once `default-jdk` is
+installed (above), and `self-signed-certificates-operator` passes after
+`charmcraft fetch-libs`.
+
 ## Usage
 
 ```bash
