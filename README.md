@@ -136,44 +136,28 @@ sweet spot — new enough for those charms, old enough to dodge the
 
 The headline takeaway: most of what a 3.14-only run reports as
 "charm-side breakage" is just *not-yet-3.14-ready dependencies*, not
-broken charms. On 3.12 the genuine residual is small (~12 %): a couple
-of charms need the extra host tooling listed above (`default-jdk`,
-`skopeo`, `charmcraft fetch-libs`), two OOM the host under worker
-concurrency (`mysql-router/kubernetes` runs `pytest -n 120`,
-`namespace-node-affinity`), and ~9 have real test bugs independent of
-the interpreter — stale Harness `set_can_connect` assumptions,
-over-mocked snap helpers, reliance on a removed `ops` internal. With
-`default-jdk` + `skopeo` installed (recovering the two Kafka charms)
-3.12 lands around **90 %**.
+broken charms. With the full apt list above plus `charmcraft
+fetch-libs` for the charms that need it, a 3.12 `--no-patch` run scores
+**~92 % genuine** — only ~10 charms have real, interpreter-independent
+charm-side bugs (see [Known failures](KNOWN_FAILURES.md)).
+
+A single run typically *reports* a few points lower (≈ 89 %, 119/134)
+because of one badly-behaved charm: `mysql-router-operators/kubernetes`
+runs `pytest --numprocesses 120`, which exhausts host RAM and gets
+SIGKILLed — taking 3–4 unrelated charms down with it as OOM collateral
+(they pass cleanly when re-run alone). It is the dominant source of
+run-to-run wobble. Skip it (it is listed under
+[Known failures](KNOWN_FAILURES.md) as resource-intensive) or drop
+`--workers` and the number is both higher and stable.
 
 ### Known-broken charms on Python 3.12
 
-These are the charms that still fail a `--no-patch` `unit` run on 3.12
-with the full apt list above, grouped by cause (audited 2026-05-28).
-`hyrum` does not ship a default ignore list — most of the 3.14 noise
-evaporates simply by running on 3.12 — but if you want a quiet tally you
-can drop these into a local `hyrum.toml` `[ignore]` table under whatever
-category names you like.
-
-- **Genuine test bugs** (independent of interpreter and ops version):
-  `exim-operator` (pebble layer assertion), `grafana-agent-operator` and
-  `parca-agent-operator` (over-mocked snap helpers), `redis-operator`
-  and `tls-truststore-operator` (stale Harness `set_can_connect`
-  assumption), `snappass-test` (uses a removed `ops` internal),
-  `timescaledb-charm` (`mock` spec change), `tls-certificates-requirer-operator`
-  (test-isolation `Patch is already started`).
-- **Resource-intensive** (OOM under worker concurrency, pass when run
-  alone): `mysql-router-operators/kubernetes` (`pytest -n 120`),
-  `namespace-node-affinity-operator`.
-- **Build** (a transitive sdist fails the modern setuptools build):
-  `ks-charmed`.
-- **Tox config drift** (env points pytest at an empty `tests/unit`):
-  `opensearch-operator`.
-
-Three more are *recoverable* and deliberately left off the list:
-`kafka-k8s-operator` and `kafka-operator` pass once `default-jdk` is
-installed (above), and `self-signed-certificates-operator` passes after
-`charmcraft fetch-libs`.
+The ~10 charms that still fail a `--no-patch` `unit` run on 3.12 with the
+full apt list above are catalogued — by charm, symptom, root cause, and
+who should fix it — in [KNOWN_FAILURES.md](KNOWN_FAILURES.md). `hyrum`
+does not ship a default ignore list (most of the 3.14 noise evaporates
+just by running on 3.12), but that file lists the names if you want to
+drop them into a local `hyrum.toml` `[ignore]` table.
 
 ## Usage
 
