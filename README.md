@@ -55,6 +55,10 @@ sudo apt-get install -y \
     libffi-dev \
     libpq-dev \
     libmariadb-dev \
+    libjpeg-dev \
+    zlib1g-dev \
+    default-jdk \
+    skopeo \
     python3-dev   # or python3.<minor>-dev matching the Python uv selects
 
 # Poetry is invoked by ~5 % of charms' tox envs; install it if you want
@@ -62,6 +66,24 @@ sudo apt-get install -y \
 # 'poetry'".
 uv tool install poetry
 ```
+
+Beyond the obvious compilers, the less-obvious entries each unblock a
+specific cluster of charms:
+
+- `libjpeg-dev` + `zlib1g-dev` — let Pillow build from source (pulled in
+  transitively by `matplotlib` via `prometheus-api-client`); without
+  them the COS charms fail with *"The headers or library files could
+  not be found for jpeg"*.
+- `default-jdk` — the Kafka charms shell out to `keytool`; missing it
+  surfaces as `CalledProcessError: Command 'keytool' returned non-zero
+  exit status 127`.
+- `skopeo` — `kyuubi-k8s` inspects container image metadata via
+  `skopeo` and errors with `FileNotFoundError: Could not find 'skopeo'`.
+
+A handful of charms also need their charm libraries vendored before
+their tests import cleanly (`ModuleNotFoundError: No module named
+'charms'`); run `charmcraft fetch-libs` in the charm dir to populate
+`lib/charms/…` (`uv tool install charmcraft` if you don't have it).
 
 Some charms also pull C/Rust extensions whose latest releases pre-date
 the host's Python version. PyO3 < 0.23 can't build against Python 3.14
@@ -88,14 +110,41 @@ collection with `ModuleNotFoundError` — a misleading "regression" that
 isn't a warning at all. `pass_env+=` doesn't touch `set_env`, so the
 charm's PYTHONPATH stays intact and the warning still propagates.
 
-Empirically (Ubuntu Resolute, system Python 3.14, 145 runnable charms in
-the curated list as of 2026-05): a host with none of these installed
-passes ~40 %; adding `build-essential` + `python3.14-dev` lifts that to
-~60 %; the full apt list above gets to ~64 %; the PyO3 forward-compat
-flag adds ~3 % more, topping out around **67 %**. The residual ~33 % is
-genuine charm-side breakage (test failures, dependencies pinned to
-versions that don't build on the host Python) and is not something
-`hyrum` itself can move.
+### The Python version is the biggest lever
+
+The apt list and PyO3 flag matter, but the single largest factor in the
+pass rate is the **interpreter version**. The curated charms' pinned
+dependency stacks have largely caught up to Python 3.12, but not yet to
+3.13/3.14, where stdlib removals (`cgi`, `ast.Str`,
+`_PyInterpreterState_Get`) and un-rebuilt C/Rust wheels (PyO3 < 0.23,
+`netifaces`, `psycopg2`) start to bite. Same fleet, same `--no-patch`,
+only the interpreter changed (Ubuntu Resolute, 134 runnable `unit`
+envs, 2026-05):
+
+| Python | passed / ran | pass rate |
+|--------|-------------:|----------:|
+| 3.14   | 86 / 134     | 64 %  |
+| 3.10   | 89 / 134     | 66 % † |
+| 3.12   | 118 / 134    | 88 %  |
+
+† 3.10 looks no better than 3.14 only because forcing a single old
+interpreter breaks the ~30 kubeflow/istio charms that declare
+`requires-python >= 3.12`; it is not a fair comparison. 3.12 is the
+sweet spot — new enough for those charms, old enough to dodge the
+3.13/3.14 stdlib and wheel breakage — so **run the fleet on Python
+3.12** for the cleanest signal.
+
+The headline takeaway: most of what a 3.14-only run reports as
+"charm-side breakage" is just *not-yet-3.14-ready dependencies*, not
+broken charms. On 3.12 the genuine residual is small (~12 %): a couple
+of charms need the extra host tooling listed above (`default-jdk`,
+`skopeo`, `charmcraft fetch-libs`), two OOM the host under worker
+concurrency (`mysql-router/kubernetes` runs `pytest -n 120`,
+`namespace-node-affinity`), and ~9 have real test bugs independent of
+the interpreter — stale Harness `set_can_connect` assumptions,
+over-mocked snap helpers, reliance on a removed `ops` internal. With
+`default-jdk` + `skopeo` installed (recovering the two Kafka charms)
+3.12 lands around **90 %**.
 
 ## Usage
 
