@@ -53,6 +53,18 @@ def ignore_filter(ignore: dict[str, list[str]], *, base: pathlib.Path) -> Filter
     return _filter
 
 
+def not_legacy(repo: pathlib.Path) -> SkipReason:
+    """Skip reactive / classic hook-based charms.
+
+    Reactive charms have a ``reactive/`` directory; classic hook charms
+    have a ``hooks/`` directory. Both predate ``ops`` and are out of
+    scope for ``hyrum``.
+    """
+    if (repo / 'reactive').exists() or (repo / 'hooks').exists():
+        return 'legacy (reactive/hooks) charm'
+    return None
+
+
 def has_runnable_target(repo: pathlib.Path) -> SkipReason:
     """Skip charms with neither ``tox.ini`` nor ``Makefile``.
 
