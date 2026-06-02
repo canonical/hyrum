@@ -50,3 +50,20 @@ def test_has_runnable_target_with_makefile(charm_cache):
 def test_has_runnable_target_with_neither(charm_cache):
     repo = make_charm(charm_cache / 'a', tox=False)
     assert filters.has_runnable_target(repo) == 'no tox.ini or Makefile'
+
+
+def test_not_legacy_passes_ops_charm(charm_cache):
+    repo = make_charm(charm_cache / 'a')
+    assert filters.not_legacy(repo) is None
+
+
+def test_not_legacy_skips_reactive_charm(charm_cache):
+    repo = make_charm(charm_cache / 'a')
+    (repo / 'reactive').mkdir()
+    assert filters.not_legacy(repo) == 'legacy (reactive/hooks) charm'
+
+
+def test_not_legacy_skips_classic_hook_charm(charm_cache):
+    repo = make_charm(charm_cache / 'a')
+    (repo / 'hooks').mkdir()
+    assert filters.not_legacy(repo) == 'legacy (reactive/hooks) charm'

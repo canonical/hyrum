@@ -44,12 +44,13 @@ def test_monorepo_with_charm_subdirs(charm_cache: pathlib.Path):
     assert found == ['agent', 'controller']
 
 
-def test_legacy_reactive_charm_skipped(charm_cache: pathlib.Path):
+def test_legacy_charms_yielded_for_filter_layer(charm_cache: pathlib.Path):
+    """Enumeration is layout-only; the not_legacy filter drops these."""
     legacy = make_charm(charm_cache / 'legacy')
     (legacy / 'reactive').mkdir()
     make_charm(charm_cache / 'modern')
     found = [p.name for p in enum_mod.iter_charm_repos(charm_cache)]
-    assert found == ['modern']
+    assert found == ['legacy', 'modern']
 
 
 def test_missing_cache_raises(tmp_path: pathlib.Path):

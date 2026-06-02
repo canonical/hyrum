@@ -94,6 +94,7 @@ def _select_repos(
 ) -> tuple[list[pathlib.Path], list[tuple[pathlib.Path, str]]]:
     """Return (repos to run, list of (repo, skip-reason) pairs)."""
     chain: list[filt.Filter] = [
+        filt.not_legacy,
         filt.regex_filter(repo_re),
         filt.ignore_filter(config.ignore, base=cache),
         filt.has_runnable_target,
