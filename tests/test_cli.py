@@ -7,22 +7,15 @@ from click import testing
 from hyrum import cli, runners
 from hyrum.runners import tox
 
-
-def _make_charm(root: pathlib.Path, *, tox_ini: bool = True) -> pathlib.Path:
-    root.mkdir(parents=True, exist_ok=True)
-    (root / 'charmcraft.yaml').write_text('type: charm\n')
-    if tox_ini:
-        (root / 'tox.ini').write_text('[tox]\nenvlist = unit\n')
-    (root / 'requirements.txt').write_text('ops>=2.10\n')
-    return root
+from .conftest import make_charm
 
 
 def test_cli_end_to_end_with_stubbed_runner(monkeypatch, tmp_path: pathlib.Path):
     """Drives the full CLI: enumerate -> patch -> stub runner -> render."""
     cache = tmp_path / 'cache'
     cache.mkdir()
-    _make_charm(cache / 'alpha')
-    _make_charm(cache / 'beta')
+    make_charm(cache / 'alpha', requirements=True)
+    make_charm(cache / 'beta', requirements=True)
 
     async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
         return runners.RunResult(
@@ -65,7 +58,7 @@ async def _fail_run(self, repo, target):  # noqa: RUF029 — async to satisfy Ru
 def test_cli_exits_nonzero_by_default_on_failure(monkeypatch, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
-    _make_charm(cache / 'alpha')
+    make_charm(cache / 'alpha', requirements=True)
 
     monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
 
@@ -84,7 +77,7 @@ def test_cli_exits_nonzero_by_default_on_failure(monkeypatch, tmp_path: pathlib.
 def test_cli_no_fail_forces_exit_zero(monkeypatch, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
-    _make_charm(cache / 'alpha')
+    make_charm(cache / 'alpha', requirements=True)
 
     monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
 
@@ -104,7 +97,7 @@ def test_cli_no_fail_forces_exit_zero(monkeypatch, tmp_path: pathlib.Path):
 def test_cli_quiet_suppresses_report(monkeypatch, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
-    _make_charm(cache / 'alpha')
+    make_charm(cache / 'alpha', requirements=True)
 
     async def pass_run(self, repo, target):  # noqa: RUF029
         return runners.RunResult(
@@ -130,7 +123,7 @@ def test_cli_quiet_suppresses_report(monkeypatch, tmp_path: pathlib.Path):
 def test_cli_quiet_reports_failure_to_stderr(monkeypatch, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
-    _make_charm(cache / 'alpha')
+    make_charm(cache / 'alpha', requirements=True)
 
     monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
 
@@ -145,7 +138,7 @@ def test_cli_quiet_reports_failure_to_stderr(monkeypatch, tmp_path: pathlib.Path
 def test_cli_verbosity_flags_are_mutually_exclusive(tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
-    _make_charm(cache / 'alpha')
+    make_charm(cache / 'alpha', requirements=True)
 
     result = testing.CliRunner().invoke(
         cli.main,
