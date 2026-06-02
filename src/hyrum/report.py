@@ -7,6 +7,7 @@ import pathlib
 from collections.abc import Iterable
 
 import rich.console
+import rich.markup
 import rich.table
 
 from hyrum import pool
@@ -79,11 +80,12 @@ def render(
             console.print(f'\n[bold]{status}:[/bold]')
             for outcome in sorted(offenders, key=lambda o: str(o.repo)):
                 detail = outcome.error or outcome.skip_reason or ''
-                trailer = f' — {detail}' if detail else ''
+                trailer = f' — {rich.markup.escape(detail)}' if detail else ''
                 console.print(f'  {_relative(outcome.repo, base)}{trailer}')
 
         skipped = [o for o in outcomes if o.status == 'skipped']
         if skipped:
             console.print('\n[bold]skipped:[/bold]')
             for outcome in sorted(skipped, key=lambda o: str(o.repo)):
-                console.print(f'  {_relative(outcome.repo, base)} — {outcome.skip_reason}')
+                reason = rich.markup.escape(outcome.skip_reason or '')
+                console.print(f'  {_relative(outcome.repo, base)} — {reason}')

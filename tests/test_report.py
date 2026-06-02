@@ -70,6 +70,19 @@ def test_render_verbose_includes_error_detail(tmp_path: pathlib.Path):
     assert 'bad pyproject' in out
 
 
+def test_render_verbose_preserves_bracketed_detail(tmp_path: pathlib.Path):
+    outcomes = [
+        pool.Outcome(
+            repo=tmp_path / 'borked',
+            status='patcher_error',
+            error='pyproject has no recognisable [project] or [tool.poetry] deps',
+        ),
+    ]
+    out = _render(outcomes, base=tmp_path, verbose=True)
+    assert '[project]' in out
+    assert '[tool.poetry]' in out
+
+
 def test_render_verbose_lists_skipped(tmp_path: pathlib.Path):
     outcomes = [
         pool.Outcome(repo=tmp_path / 'x', status='skipped', skip_reason='ignored (manual)'),
