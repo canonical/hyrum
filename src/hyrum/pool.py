@@ -140,11 +140,5 @@ def add_skipped(
 
 def passed(results: Iterable[Outcome]) -> bool:
     """Did every non-skipped charm pass?"""
-    for outcome in results:
-        if outcome.status in {
-            runners.RunStatus.FAILED.value,
-            runners.RunStatus.TIMEOUT.value,
-            'patcher_error',
-        }:
-            return False
-    return True
+    benign = {runners.RunStatus.PASSED.value, runners.RunStatus.NO_TARGET.value, 'skipped'}
+    return all(outcome.status in benign for outcome in results)
