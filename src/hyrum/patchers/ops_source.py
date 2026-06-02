@@ -69,6 +69,100 @@ class OpsSource:
         return f'{self.pep508_url()}#subdirectory={subdir}'
 
 
+class OpsSourcePatcher:
+    """Point a charm at a development ``ops`` source for the duration of a run."""
+
+    def __init__(self, ops: OpsSource):
+        self.ops = ops
+
+    @contextlib.contextmanager
+    def apply(self, repo: pathlib.Path) -> Generator[None, None, None]:
+        """Patch ``repo``'s ops dep to ``self.ops``; restore every touched file on exit."""
+        requirements = repo / 'requirements.txt'
+        pyproject = repo / 'pyproject.toml'
+
+        if requirements.exists():
+            yield from self._apply_requirements(repo, requirements)
+        elif pyproject.exists():
+            yield from self._apply_pyproject(repo, pyproject)
+        else:
+            raise base.PatcherError(f'{repo} has neither requirements.txt nor pyproject.toml')
+
+    def _apply_requirements(
+        self, repo: pathlib.Path, requirements: pathlib.Path
+    ) -> Generator[None, None, None]:
+        snapshots: dict[pathlib.Path, str | None] = {requirements: requirements.read_text()}
+        # Sibling requirements files often pin ops too; patch them all.
+        for sibling in itertools.chain(
+            repo.glob('requirements-*.txt'),
+            repo.glob('*-requirements.txt'),
+            repo.glob('requirements*.in'),
+        ):
+            if sibling == requirements:
+                continue
+            snapshots[sibling] = sibling.read_text()
+        try:
+            for path in snapshots:
+                _patch_requirements_file(path, self.ops)
+            yield
+        finally:
+            for path, original in snapshots.items():
+                _restore(path, original)
+
+    def _apply_pyproject(
+        self, repo: pathlib.Path, pyproject: pathlib.Path
+    ) -> Generator[None, None, None]:
+        poetry_lock = repo / 'poetry.lock'
+        uv_lock = repo / 'uv.lock'
+        snapshots: dict[pathlib.Path, str | None] = {
+            pyproject: pyproject.read_text(),
+            poetry_lock: _snapshot(poetry_lock),
+            uv_lock: _snapshot(uv_lock),
+        }
+
+        try:
+            parsed = tomllib.loads(snapshots[pyproject] or '')
+        except tomllib.TOMLDecodeError as exc:
+            raise base.PatcherError(f'could not parse {pyproject}: {exc}') from exc
+
+        try:
+            ops_extras = _collect_pyproject_ops_extras(parsed)
+            flavour = _detect_pyproject_flavour(parsed, uv_lock.exists())
+            original_text = snapshots[pyproject] or ''
+
+            if flavour == 'uv':
+                new_text = _patch_pyproject_uv(original_text, self.ops, ops_extras)
+            elif flavour == 'poetry':
+                new_text = _patch_pyproject_poetry(original_text, self.ops, ops_extras)
+            elif flavour == 'pep621':
+                new_text = _patch_pyproject_pep621(original_text, self.ops, ops_extras)
+            else:
+                raise base.PatcherError(
+                    f'{pyproject} has no recognisable [project] or [tool.poetry] deps'
+                )
+
+            pyproject.write_text(new_text)
+
+            if flavour == 'poetry':
+                _run_lock(
+                    repo,
+                    (*shlex.split(' '.join(self.ops.poetry_executable)), 'lock'),
+                    self.ops.lock_timeout,
+                    on_failure_remove=poetry_lock,
+                )
+            elif flavour == 'uv' and uv_lock.exists():
+                _run_lock(
+                    repo,
+                    (*self.ops.uv_executable, 'lock'),
+                    self.ops.lock_timeout,
+                )
+
+            yield
+        finally:
+            for path, original in snapshots.items():
+                _restore(path, original)
+
+
 def _snapshot(path: pathlib.Path) -> str | None:
     """Read a file's content, or return ``None`` if it does not exist."""
     if not path.exists():
@@ -363,97 +457,3 @@ def _run_lock(
         )
         if on_failure_remove and on_failure_remove.exists():
             on_failure_remove.unlink()
-
-
-class OpsSourcePatcher:
-    """Point a charm at a development ``ops`` source for the duration of a run."""
-
-    def __init__(self, ops: OpsSource):
-        self.ops = ops
-
-    @contextlib.contextmanager
-    def apply(self, repo: pathlib.Path) -> Generator[None, None, None]:
-        """Patch ``repo``'s ops dep to ``self.ops``; restore every touched file on exit."""
-        requirements = repo / 'requirements.txt'
-        pyproject = repo / 'pyproject.toml'
-
-        if requirements.exists():
-            yield from self._apply_requirements(repo, requirements)
-        elif pyproject.exists():
-            yield from self._apply_pyproject(repo, pyproject)
-        else:
-            raise base.PatcherError(f'{repo} has neither requirements.txt nor pyproject.toml')
-
-    def _apply_requirements(
-        self, repo: pathlib.Path, requirements: pathlib.Path
-    ) -> Generator[None, None, None]:
-        snapshots: dict[pathlib.Path, str | None] = {requirements: requirements.read_text()}
-        # Sibling requirements files often pin ops too; patch them all.
-        for sibling in itertools.chain(
-            repo.glob('requirements-*.txt'),
-            repo.glob('*-requirements.txt'),
-            repo.glob('requirements*.in'),
-        ):
-            if sibling == requirements:
-                continue
-            snapshots[sibling] = sibling.read_text()
-        try:
-            for path in snapshots:
-                _patch_requirements_file(path, self.ops)
-            yield
-        finally:
-            for path, original in snapshots.items():
-                _restore(path, original)
-
-    def _apply_pyproject(
-        self, repo: pathlib.Path, pyproject: pathlib.Path
-    ) -> Generator[None, None, None]:
-        poetry_lock = repo / 'poetry.lock'
-        uv_lock = repo / 'uv.lock'
-        snapshots: dict[pathlib.Path, str | None] = {
-            pyproject: pyproject.read_text(),
-            poetry_lock: _snapshot(poetry_lock),
-            uv_lock: _snapshot(uv_lock),
-        }
-
-        try:
-            parsed = tomllib.loads(snapshots[pyproject] or '')
-        except tomllib.TOMLDecodeError as exc:
-            raise base.PatcherError(f'could not parse {pyproject}: {exc}') from exc
-
-        try:
-            ops_extras = _collect_pyproject_ops_extras(parsed)
-            flavour = _detect_pyproject_flavour(parsed, uv_lock.exists())
-            original_text = snapshots[pyproject] or ''
-
-            if flavour == 'uv':
-                new_text = _patch_pyproject_uv(original_text, self.ops, ops_extras)
-            elif flavour == 'poetry':
-                new_text = _patch_pyproject_poetry(original_text, self.ops, ops_extras)
-            elif flavour == 'pep621':
-                new_text = _patch_pyproject_pep621(original_text, self.ops, ops_extras)
-            else:
-                raise base.PatcherError(
-                    f'{pyproject} has no recognisable [project] or [tool.poetry] deps'
-                )
-
-            pyproject.write_text(new_text)
-
-            if flavour == 'poetry':
-                _run_lock(
-                    repo,
-                    (*shlex.split(' '.join(self.ops.poetry_executable)), 'lock'),
-                    self.ops.lock_timeout,
-                    on_failure_remove=poetry_lock,
-                )
-            elif flavour == 'uv' and uv_lock.exists():
-                _run_lock(
-                    repo,
-                    (*self.ops.uv_executable, 'lock'),
-                    self.ops.lock_timeout,
-                )
-
-            yield
-        finally:
-            for path, original in snapshots.items():
-                _restore(path, original)
