@@ -44,26 +44,25 @@ tests are explicitly out of scope.
 # ruff, pyright, pytest, …):
 uv sync --all-groups
 
-# Run `tox -e unit` across every charm in ~/charms, with ops swapped
-# to the `fix/X` branch of canonical/operator:
-hyrum \
-    --cache-folder ~/charms \
-    --target unit \
-    --workers 8 \
-    --ops-source-branch fix/X
+# Run `tox -e unit` across every charm in the default cache
+# (~/.cache/hyrum/charms), with ops swapped to the `fix/X` branch of
+# canonical/operator. Override the cache folder with --cache-folder or
+# the HYRUM_CHARMS environment variable.
+hyrum unit --workers 8 --ops-source-branch fix/X
 
 # Force the make runner (default is auto-detect: tox.ini -> tox,
 # Makefile -> make, fall back to the other if the target is missing):
-hyrum --cache-folder ~/charms --target unit --runner make
+hyrum unit --runner make
 
 # Skip the dependency swap; just check how the charms behave as-pinned:
-hyrum --cache-folder ~/charms --target unit --no-patch
+hyrum unit --no-patch
 
 # Only run for charms that use the Scenario testing framework:
-hyrum --cache-folder ~/charms --target unit --filter scenario
+hyrum unit --framework scenario
 
-# Exit non-zero if any charm fails, times out, or hits a patcher error:
-hyrum --cache-folder ~/charms --target unit --fail-on-regression
+# Always exit 0, even if some charms fail (default is exit non-zero on
+# any failure):
+hyrum unit --no-fail
 ```
 
 Output statuses:
@@ -87,7 +86,7 @@ from a git source) can plug in without changes elsewhere.
 
 ## Configuration
 
-`hyrum.toml` (path overridable via `-c`) supports an `[ignore]`
+`hyrum.toml` (path overridable via `--config`) supports an `[ignore]`
 table that maps a category to a list of repo paths to skip. Categories
 are free-form; their name shows up in the run output as the skip
 reason. Example:
@@ -97,9 +96,6 @@ reason. Example:
 expensive = ["argo-operators", "mysql-router-k8s"]
 manual    = ["opensearch-operator"]
 ```
-
-See `PLAN.md` in the parent work-queue tree for the broader
-productisation plan.
 
 ## License
 
