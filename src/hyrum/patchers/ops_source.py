@@ -150,6 +150,8 @@ class OpsSourcePatcher:
                     self.ops.lock_timeout,
                     on_failure_remove=poetry_lock,
                 )
+            # Only re-lock when uv.lock is checked in; otherwise the charm
+            # regenerates it on demand and our re-lock would be wasted work.
             elif flavour == 'uv' and uv_lock.exists():
                 _run_lock(
                     repo,
