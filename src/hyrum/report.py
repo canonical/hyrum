@@ -54,7 +54,7 @@ def render(
     table.add_column('STATUS')
     table.add_column('COUNT', justify='right')
     table.add_column('%', justify='right')
-    for status in pool.outcome_statuses():
+    for status in pool.OUTCOME_STATUSES:
         count = counts.get(status, 0)
         pct = f'{(count / total * 100):.0f}%' if total else '—'
         style = _STATUS_STYLES.get(status, '')

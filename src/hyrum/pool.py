@@ -20,13 +20,14 @@ import dataclasses
 import logging
 import pathlib
 from collections.abc import Iterable
+from typing import Final
 
 from hyrum import patchers, runners
 
 logger = logging.getLogger(__name__)
 
 
-_OUTCOME_STATUSES: tuple[str, ...] = (
+OUTCOME_STATUSES: Final[tuple[str, ...]] = (
     'passed',
     'failed',
     'no_target',
@@ -34,6 +35,7 @@ _OUTCOME_STATUSES: tuple[str, ...] = (
     'patcher_error',
     'skipped',
 )
+"""The full set of statuses an Outcome may carry, in display order."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -70,11 +72,6 @@ class Outcome:
     def patcher_error(cls, repo: pathlib.Path, target: str, message: str) -> Outcome:
         """Build an outcome for a patcher failure (distinct from a run failure)."""
         return cls(repo=repo, status='patcher_error', target=target, error=message)
-
-
-def outcome_statuses() -> tuple[str, ...]:
-    """Return the full set of statuses an Outcome may carry, in display order."""
-    return _OUTCOME_STATUSES
 
 
 async def run_one(
