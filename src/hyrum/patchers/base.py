@@ -36,7 +36,6 @@ class NullPatcher:
     @contextlib.contextmanager
     def apply(self, repo: pathlib.Path) -> Generator[None, None, None]:
         """Yield without making any changes."""
-        del repo
         yield
 
 

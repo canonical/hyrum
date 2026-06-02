@@ -47,7 +47,7 @@ static = [
 ]
 unit = [
     "pytest>=8",
-    "pytest-asyncio>=0.23",
+    "pytest-asyncio>=1.4.0",
     "coverage>=7",
 ]
 
