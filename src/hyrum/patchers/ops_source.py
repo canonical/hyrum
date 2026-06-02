@@ -98,7 +98,7 @@ class OpsSourcePatcher:
             repo.glob('*-requirements.txt'),
             repo.glob('requirements*.in'),
         ):
-            if sibling == requirements:
+            if sibling in snapshots:
                 continue
             snapshots[sibling] = sibling.read_text()
         try:
