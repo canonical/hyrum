@@ -39,7 +39,7 @@ clarification is required:
 
 Ensure that `pre-commit` is installed (with the user's permission) so that
 style is enforced with every commit. If the user does not permit using
-`pre-commit`, *always* ensure `make lint unit` shows no issues
+`pre-commit`, *always* ensure `make all` shows no issues
 before committing.
 
 Avoid writing prose documentation: that is a task for humans. When reviewing
