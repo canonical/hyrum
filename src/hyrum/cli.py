@@ -6,6 +6,7 @@ import asyncio
 import datetime
 import itertools
 import logging
+import os
 import pathlib
 import sys
 
@@ -43,6 +44,38 @@ def _resolve_log_level(*, quiet: bool, verbose: bool, verbosity: str | None) -> 
     # Brief (default) and verbose both run at INFO; --verbose changes the report shape,
     # not the log level.
     return logging.INFO
+
+
+# Environment variables hyrum sets by default to dodge well-known host build
+# issues that aren't charm regressions. The README's host-prereqs section is
+# the source of truth for why each one is here.
+_HOST_ENV_DEFAULTS: dict[str, str] = {
+    # PyO3 < 0.23 (still pinned by pydantic-core in older charms) refuses to
+    # build against Python 3.14 unless the stable-ABI escape hatch is set.
+    'PYO3_USE_ABI3_FORWARD_COMPATIBILITY': '1',
+}
+
+
+def _apply_host_env_defaults(target: str, env: dict[str, str] | None = None) -> dict[str, str]:
+    """Inject host-env defaults into ``env`` (default: ``os.environ``).
+
+    Returns ``env`` for testability. Existing values are not overwritten —
+    a user who has explicitly set ``PYO3_USE_ABI3_FORWARD_COMPATIBILITY=0``
+    keeps their value. For tox runs we also append ``pass_env+=`` entries to
+    ``TOX_OVERRIDE`` so the testenv's install step actually sees the vars;
+    without that, tox's process-isolation strips them.
+    """
+    env = env if env is not None else os.environ  # type: ignore[assignment]
+    assert env is not None
+    for key, value in _HOST_ENV_DEFAULTS.items():
+        env.setdefault(key, value)
+    overrides = [f'testenv:{target}.pass_env+={key}' for key in _HOST_ENV_DEFAULTS]
+    existing = env.get('TOX_OVERRIDE', '').strip()
+    if existing:
+        env['TOX_OVERRIDE'] = existing + '\n' + '\n'.join(overrides)
+    else:
+        env['TOX_OVERRIDE'] = '\n'.join(overrides)
+    return env
 
 
 def _build_patcher(
@@ -244,6 +277,16 @@ def _select_repos(
     default=False,
     help='Always exit 0, even if some charms failed (default: exit non-zero on any failure).',
 )
+@click.option(
+    '--host-env-defaults/--no-host-env-defaults',
+    default=True,
+    show_default=True,
+    help=(
+        'Inject sensible default env vars (e.g. PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1) '
+        'plus matching TOX_OVERRIDE pass_env entries so common host build issues '
+        'do not get mis-attributed to the charm.'
+    ),
+)
 def main(
     cache_folder: pathlib.Path,
     config_path: pathlib.Path,
@@ -267,11 +310,14 @@ def main(
     verbosity: str | None,
     no_headers: bool,
     no_fail: bool,
+    host_env_defaults: bool,
 ) -> None:
     """Run TARGET (a tox environment or make target, e.g. unit, lint) across many charm repos."""
     if sum([quiet, verbose, verbosity is not None]) > 1:
         raise click.UsageError('--quiet, --verbose, and --verbosity are mutually exclusive.')
     _configure_logging(_resolve_log_level(quiet=quiet, verbose=verbose, verbosity=verbosity))
+    if host_env_defaults:
+        _apply_host_env_defaults(target)
 
     cfg = config_loader.load(config_path)
     repos, skipped = _select_repos(
