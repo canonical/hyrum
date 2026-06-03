@@ -59,3 +59,14 @@ jobs:
           enable-cache: true
       - run: uv python install ${{ matrix.python }}
       - run: uvx --with tox-uv --python ${{ matrix.python }} tox -e unit
+
+  charm-list:
+    name: charm-list validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - run: python tools/update_charm_list.py --check

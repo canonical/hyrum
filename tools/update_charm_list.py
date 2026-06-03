@@ -3,12 +3,16 @@
 Three changes can be made by a run:
 
 * New charms published on Charmhub whose source URL is not yet in the CSV are
-  appended with the ``Added automatically from Charmhub`` note.
+  appended with ``Source`` set to ``auto``.
 * Rows whose ``Repository`` is a GitHub URL that now 404s, or whose repo is
   marked archived on GitHub, are dropped.
-* Rows that were previously added automatically (``Notes`` contains
-  ``Added automatically from Charmhub``) whose Charmhub-reported source URL
-  has changed are rewritten. Manually-curated rows are never touched.
+* Auto-added rows (``Source`` is ``auto``) whose Charmhub-reported source URL
+  has changed are rewritten. Manual rows are never rewritten, but URL drift
+  against them is logged as a warning so a human can investigate.
+
+Charmhub packages with no recorded source URL are written to
+``charm-list/charms-no-source.csv`` each run so they can drive follow-up work
+(e.g. opening issues asking charm owners to add source metadata).
 
 The script is intentionally stdlib-only so that the weekly GitHub Action does
 not have to install anything beyond Python.
@@ -35,16 +39,20 @@ logger = logging.getLogger(__name__)
 CHARMHUB_PACKAGES_URL = 'https://charmhub.io/packages.json'
 CHARMHUB_INFO_URL = 'https://api.charmhub.io/v2/charms/info'
 GITHUB_REPO_URL = 'https://api.github.com/repos'
-AUTO_NOTE = 'Added automatically from Charmhub'
+
+AUTO_SOURCE = 'auto'
+MANUAL_SOURCE = 'manual'
+VALID_SOURCES = frozenset({AUTO_SOURCE, MANUAL_SOURCE})
 
 CSV_FIELDS = (
     'Team',
     'Charm Name',
     'Repository',
-    'Key Charm for this Team',
     'Branch (if not the default)',
-    'Notes',
+    'Source',
 )
+
+NO_SOURCE_CSV_FIELDS = ('Charm Name',)
 
 
 class CharmhubClient:
@@ -176,7 +184,7 @@ def charmhub_charm_name(url: str) -> str | None:
 
 def is_auto_added(row: dict[str, str]) -> bool:
     """Return whether ``row`` was originally appended by this script."""
-    return AUTO_NOTE in (row.get('Notes') or '')
+    return (row.get('Source') or '').strip() == AUTO_SOURCE
 
 
 def read_csv(path: pathlib.Path) -> list[dict[str, str]]:
@@ -196,26 +204,67 @@ def write_csv(path: pathlib.Path, rows: list[dict[str, str]]) -> None:
     path.write_text(buffer.getvalue(), encoding='utf-8', newline='')
 
 
-def discover_charmhub_urls(
-    client: CharmhubClient, *, name_override: dict[str, str] | None = None
-) -> dict[str, str]:
-    """Return a mapping of ``charmhub-package-name -> source-url``.
+def write_no_source_csv(path: pathlib.Path, names: list[str]) -> None:
+    """Write the Charmhub charms with no source URL to a sidecar CSV."""
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=NO_SOURCE_CSV_FIELDS, lineterminator='\n')
+    writer.writeheader()
+    for name in sorted(names):
+        writer.writerow({'Charm Name': name})
+    path.write_text(buffer.getvalue(), encoding='utf-8', newline='')
 
-    ``name_override`` is used by tests to inject a fixture without hitting
-    the network.
+
+def validate(rows: list[dict[str, str]]) -> None:
+    """Raise ``ValueError`` if ``rows`` violate the file's invariants.
+
+    Checked invariants: every row has a non-empty ``Charm Name`` and
+    ``Repository``, ``Source`` is one of ``VALID_SOURCES``, and no two rows
+    share a ``Repository`` after URL normalisation.
     """
-    if name_override is not None:
-        return name_override
+    errors: list[str] = []
+    seen: dict[str, int] = {}
+    for index, row in enumerate(rows, start=2):  # +1 header, +1 1-indexed
+        name = (row.get('Charm Name') or '').strip()
+        url = (row.get('Repository') or '').strip()
+        source = (row.get('Source') or '').strip()
+        if not name:
+            errors.append(f'row {index}: missing Charm Name')
+        if not url:
+            errors.append(f'row {index}: missing Repository')
+        if source not in VALID_SOURCES:
+            valid = ', '.join(repr(s) for s in sorted(VALID_SOURCES))
+            errors.append(f'row {index}: Source must be one of {valid}, got {source!r}')
+        if not url:
+            continue
+        key = normalise_url(url)
+        if key in seen:
+            errors.append(f'row {index}: duplicate Repository {url!r} (also row {seen[key]})')
+        else:
+            seen[key] = index
+    if errors:
+        raise ValueError('charm list is invalid:\n  ' + '\n  '.join(errors))
+
+
+def discover_charmhub_urls(client: CharmhubClient) -> tuple[dict[str, str], list[str]]:
+    """Return ``(complete, incomplete)`` from Charmhub.
+
+    ``complete`` maps each Charmhub package name with a known source URL to
+    that URL. ``incomplete`` is the sorted list of package names with no
+    recorded source URL — captured so they can drive follow-up work.
+    """
     packages = client.packages()
-    out: dict[str, str] = {}
+    complete: dict[str, str] = {}
+    incomplete: list[str] = []
     for pkg in packages:
         name = pkg.get('name')
         if not name:
             continue
         url = client.source_url(name)
         if url:
-            out[name] = url
-    return out
+            complete[name] = url
+        else:
+            incomplete.append(name)
+    return complete, sorted(incomplete)
 
 
 def merge(
@@ -223,41 +272,47 @@ def merge(
     charmhub: dict[str, str],
     github: GitHubClient,
 ) -> list[dict[str, str]]:
-    """Return the updated row list given the existing CSV and Charmhub state."""
+    """Return the updated row list given the existing CSV and Charmhub state.
+
+    ``existing`` is assumed to have passed ``validate``: every row has a
+    non-empty Repository, Source is one of VALID_SOURCES, and URLs are unique.
+    """
     by_url: dict[str, dict[str, str]] = {}
     rows_in_order: list[dict[str, str]] = []
     for row in existing:
-        url = (row.get('Repository') or '').strip()
-        if not url:
-            rows_in_order.append(row)
-            continue
-        key = normalise_url(url)
-        if key in by_url:
-            logger.warning('Dropping duplicate row for %s', url)
-            continue
-        by_url[key] = row
+        url = row['Repository'].strip()
+        by_url[normalise_url(url)] = row
         rows_in_order.append(row)
 
     # URL drift for auto-added rows. Done first so the dedup map stays in sync
-    # before we consider archival of the *new* URL.
+    # before we consider archival of the *new* URL. Manual rows are never
+    # rewritten, but drift is logged so a human can investigate.
     for row in rows_in_order:
-        if not is_auto_added(row):
-            continue
         name_match = charmhub_charm_name(row.get('Repository', ''))
-        if name_match and name_match in charmhub:
-            new_url = charmhub[name_match]
-            old_url = row['Repository']
-            if normalise_url(new_url) != normalise_url(old_url):
-                logger.info('URL drift for %s: %s -> %s', name_match, old_url, new_url)
-                del by_url[normalise_url(old_url)]
-                row['Repository'] = new_url
-                by_url[normalise_url(new_url)] = row
+        if not name_match or name_match not in charmhub:
+            continue
+        new_url = charmhub[name_match]
+        old_url = row['Repository']
+        if normalise_url(new_url) == normalise_url(old_url):
+            continue
+        if not is_auto_added(row):
+            logger.warning(
+                'URL drift for manual row %s: %s -> %s (Charmhub); leaving row unchanged',
+                name_match,
+                old_url,
+                new_url,
+            )
+            continue
+        logger.info('URL drift for %s: %s -> %s', name_match, old_url, new_url)
+        del by_url[normalise_url(old_url)]
+        row['Repository'] = new_url
+        by_url[normalise_url(new_url)] = row
 
     # Archive / 404 removal for github.com rows.
     survivors: list[dict[str, str]] = []
     for row in rows_in_order:
-        url = (row.get('Repository') or '').strip()
-        owner_repo = github_owner_repo(url) if url else None
+        url = row['Repository'].strip()
+        owner_repo = github_owner_repo(url)
         if owner_repo is None:
             survivors.append(row)
             continue
@@ -296,26 +351,35 @@ def merge(
             'Team': '',
             'Charm Name': name,
             'Repository': url,
-            'Key Charm for this Team': 'FALSE',
             'Branch (if not the default)': '',
-            'Notes': AUTO_NOTE,
+            'Source': AUTO_SOURCE,
         }
         rows_in_order.append(new_row)
         by_url[key] = new_row
 
     # No reordering: keeping the input order is the only way to produce a
-    # clean diff against a CSV that's been edited by humans over time, where
-    # the "auto-added" section is not consistently tagged.
+    # clean diff against a CSV that's been edited by humans over time.
     return rows_in_order
 
 
+def no_source_csv_path(csv_path: pathlib.Path) -> pathlib.Path:
+    """Return the sidecar CSV path that lives alongside ``csv_path``."""
+    return csv_path.with_name('charms-no-source.csv')
+
+
 def run(csv_path: pathlib.Path, *, charmhub: CharmhubClient, github: GitHubClient) -> bool:
-    """Update ``csv_path`` in place. Returns True iff the file changed."""
+    """Update ``csv_path`` in place. Returns True iff the CSV changed.
+
+    The no-source sidecar at ``no_source_csv_path(csv_path)`` is also written
+    each run; the workflow detects sidecar changes via ``git diff``.
+    """
     original = csv_path.read_bytes()
     rows = read_csv(csv_path)
-    discovered = discover_charmhub_urls(charmhub)
+    validate(rows)
+    discovered, incomplete = discover_charmhub_urls(charmhub)
     updated = merge(rows, discovered, github)
     write_csv(csv_path, updated)
+    write_no_source_csv(no_source_csv_path(csv_path), incomplete)
     return csv_path.read_bytes() != original
 
 
@@ -329,6 +393,11 @@ def main(argv: list[str] | None = None) -> int:
         help='Path to the CSV to update.',
     )
     parser.add_argument(
+        '--check',
+        action='store_true',
+        help='Validate the existing CSV (no network, no writes) and exit.',
+    )
+    parser.add_argument(
         '--github-token',
         default=os.environ.get('GITHUB_TOKEN'),
         help='GitHub token for the archive/404 probes. Defaults to $GITHUB_TOKEN.',
@@ -340,6 +409,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     logging.basicConfig(level=args.log_level, format='%(levelname)s %(name)s: %(message)s')
+    if args.check:
+        try:
+            validate(read_csv(args.csv))
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        return 0
     changed = run(
         args.csv,
         charmhub=CharmhubClient(),
