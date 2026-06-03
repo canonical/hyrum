@@ -35,10 +35,10 @@ To help us review your changes, please rebase your pull request onto the `main` 
 Changes should include tests. Run them locally with:
 
 ```bash
-tox -e lint,static,unit
+make all
 ```
 
-`unit` is the canonical unit test environment; `lint` covers `ruff check`, `ruff format --check`, and `codespell`; `static` runs `pyright` in strict mode.
+`lint` covers `ruff check`, `ruff format --check`, `codespell`, and `pyright` in strict mode; `unit` runs `pytest` with coverage. `make all` also runs `format` first. See `make help` for the full target list.
 
 # Coding style
 
