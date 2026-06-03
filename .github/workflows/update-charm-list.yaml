@@ -1,0 +1,93 @@
+# Weekly refresh of `charm-list/charms.csv` (and the `charms-no-source.csv`
+# sidecar) from Charmhub. Opens (or updates) a PR when tools/update_charm_list.py
+# reports a diff; succeeds silently otherwise so the schedule view stays clean.
+name: Update charm list
+
+on:
+  schedule:
+    # 19:00 UTC every Sunday == early Monday morning in NZ
+    # (07:00 NZST / 08:00 NZDT).
+    # Failure notifications: see canonical/operator#2424 for the planned
+    # repo-wide pattern; falls back to GitHub's default email-on-failure
+    # for the workflow's last editor until that lands.
+    - cron: "0 19 * * 0"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: refresh and open PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      BRANCH: chore/update-charm-list
+      TITLE: "chore: refresh charm-list from Charmhub"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run the updater
+        env:
+          # GITHUB_TOKEN is used by the script only for archive/404 probes
+          # against public github.com/canonical/* repos. Read-only is enough.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python tools/update_charm_list.py
+
+      - name: Push branch and open PR if anything changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- charm-list/charms.csv charm-list/charms-no-source.csv; then
+            echo "charm-list is unchanged. Exiting silently."
+            exit 0
+          fi
+
+          git config --global user.name "Prints Charming [bot]"
+          git config --global user.email "ben.hoyt+prints-charming-bot@canonical.com"
+          git switch -c "$BRANCH"
+          git add charm-list/charms.csv charm-list/charms-no-source.csv
+          git commit -m "$TITLE"
+
+          # Push via x-access-token in the URL. GITHUB_TOKEN is auto-masked
+          # in job logs so this stays out of any output. --force-with-lease
+          # so we cleanly update an existing PR branch from a previous run
+          # without clobbering anything we did not predict.
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force-with-lease "$remote" "HEAD:${BRANCH}"
+
+          if gh pr view "$BRANCH" --json number --jq .number >/dev/null 2>&1; then
+            echo "PR for $BRANCH already exists; pushed updates to it."
+            exit 0
+          fi
+
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "$TITLE" \
+            --label dependencies \
+            --body "$(cat <<'BODY'
+          Automated weekly refresh of `charm-list/charms.csv` (and the
+          `charm-list/charms-no-source.csv` sidecar).
+
+          Source: `tools/update_charm_list.py` (see job log for details).
+
+          Each run can:
+          - Append charms newly published on Charmhub (`Source` set to `auto`).
+          - Remove rows whose GitHub repository is archived or 404.
+          - Rewrite the `Repository` URL on `auto` rows when Charmhub now
+            reports a different source URL. `manual` rows are never rewritten;
+            drift against them is logged as a warning in the job log.
+          - Refresh the no-source sidecar with the set of Charmhub packages
+            that have no recorded source URL.
+          BODY
+          )"
