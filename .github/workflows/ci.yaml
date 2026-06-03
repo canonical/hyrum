@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.12", "3.13"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v6.0.2
         with:
@@ -47,3 +47,14 @@ jobs:
       - env:
           UV_PYTHON: ${{ matrix.python }}
         run: make unit
+
+  charm-list:
+    name: charm-list validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - run: python tools/update_charm_list.py --check
