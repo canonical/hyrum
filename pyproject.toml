@@ -33,16 +33,15 @@ build-backend = "hatchling.build"
 packages = ["src/hyrum"]
 
 # ---------------------------------------------------------------------------
-# Dependency groups (PEP 735). Consumed by tox-uv via dependency_groups = ...
-# in tox.ini and by `uv sync --group <name>`.
+# Dependency groups (PEP 735). Split by purpose so CI jobs install only what
+# they need; `[tool.uv] default-groups` below makes `uv run` install both for
+# local Makefile use.
 # ---------------------------------------------------------------------------
 [dependency-groups]
 lint = [
     "ruff>=0.6",
     "codespell>=2.2",
     "zizmor>=1.11",
-]
-static = [
     "pyright>=1.1.380",
 ]
 unit = [
@@ -50,6 +49,9 @@ unit = [
     "pytest-asyncio>=1.4.0",
     "coverage>=7",
 ]
+
+[tool.uv]
+default-groups = ["lint", "unit"]
 
 # ---------------------------------------------------------------------------
 # Tooling config — copied from canonical/charm-tech python/pyproject-snippets.toml

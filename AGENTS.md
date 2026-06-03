@@ -18,13 +18,15 @@ dependency before that behaviour changes.
 ## Common Commands
 
 ```bash
-tox -e lint    # ruff check + ruff format --check + codespell
-tox -e static  # pyright (strict)
-tox -e unit    # pytest with coverage
-tox -e format  # apply ruff formatting
+make lint    # ruff check + ruff format --check + codespell + pyright (strict)
+make unit    # pytest with coverage
+make format  # apply ruff formatting
+make all     # format + lint + unit
+make help    # list every target
 ```
 
 `uv` is the dependency manager (see `pyproject.toml`'s `[dependency-groups]`).
+Each `make` target runs `uv run …`, which auto-syncs the default groups.
 Pre-commit hooks mirror the CI checks; install them with `pre-commit install`.
 
 ## Code and Documentation Style
@@ -37,7 +39,7 @@ clarification is required:
 
 Ensure that `pre-commit` is installed (with the user's permission) so that
 style is enforced with every commit. If the user does not permit using
-`pre-commit`, *always* ensure `tox -e lint,static,unit` shows no issues
+`pre-commit`, *always* ensure `make all` shows no issues
 before committing.
 
 Avoid writing prose documentation: that is a task for humans. When reviewing
