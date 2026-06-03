@@ -33,6 +33,7 @@ def test_cli_end_to_end_with_stubbed_runner(monkeypatch, tmp_path: pathlib.Path)
     result = testing.CliRunner().invoke(
         cli.main,
         [
+            'check',
             'unit',
             '--cache-folder',
             str(cache),
@@ -66,6 +67,7 @@ def test_cli_exits_nonzero_by_default_on_failure(monkeypatch, tmp_path: pathlib.
     result = testing.CliRunner().invoke(
         cli.main,
         [
+            'check',
             'unit',
             '--cache-folder',
             str(cache),
@@ -85,6 +87,7 @@ def test_cli_no_fail_forces_exit_zero(monkeypatch, tmp_path: pathlib.Path):
     result = testing.CliRunner().invoke(
         cli.main,
         [
+            'check',
             'unit',
             '--cache-folder',
             str(cache),
@@ -114,7 +117,7 @@ def test_cli_quiet_suppresses_report(monkeypatch, tmp_path: pathlib.Path):
 
     result = testing.CliRunner().invoke(
         cli.main,
-        ['unit', '--cache-folder', str(cache), '--no-patch', '--quiet'],
+        ['check', 'unit', '--cache-folder', str(cache), '--no-patch', '--quiet'],
     )
     assert result.exit_code == 0, result.output
     assert 'passed' not in result.output
@@ -130,7 +133,7 @@ def test_cli_quiet_reports_failure_to_stderr(monkeypatch, tmp_path: pathlib.Path
 
     result = testing.CliRunner().invoke(
         cli.main,
-        ['unit', '--cache-folder', str(cache), '--no-patch', '--quiet'],
+        ['check', 'unit', '--cache-folder', str(cache), '--no-patch', '--quiet'],
     )
     assert result.exit_code == 1
     assert 'did not pass' in result.stderr
@@ -143,7 +146,7 @@ def test_cli_verbosity_flags_are_mutually_exclusive(tmp_path: pathlib.Path):
 
     result = testing.CliRunner().invoke(
         cli.main,
-        ['unit', '--cache-folder', str(cache), '--no-patch', '--quiet', '--verbose'],
+        ['check', 'unit', '--cache-folder', str(cache), '--no-patch', '--quiet', '--verbose'],
     )
     assert result.exit_code != 0
     assert 'mutually exclusive' in result.output
@@ -201,6 +204,7 @@ def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathli
     result = testing.CliRunner().invoke(
         cli.main,
         [
+            'check',
             'unit',
             '--cache-folder',
             str(cache),

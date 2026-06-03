@@ -35,9 +35,10 @@ tests are explicitly out of scope.
 - Running integration tests.
 - Acting as a general-purpose CI orchestrator.
 
-The `hyrum` CLI itself doesn't clone or curate the charm collection — it
-expects a folder of already-cloned repos. Helpers for populating that
-folder live in `tools/` (see *Populating the cache* below).
+The `hyrum` CLI doesn't curate the charm collection — it works against a
+folder of already-cloned repos. `hyrum get-charms` populates that folder
+from `charm-list/charms.csv`; the CSV itself is maintained out-of-band by
+`tools/update_charm_list.py`.
 
 ## Usage
 
@@ -48,31 +49,31 @@ uv sync --all-groups
 
 # Populate the local cache with every charm in charm-list/charms.csv
 # (shallow clones, pulls for repos that already exist):
-python tools/get_charms.py
+hyrum get-charms
 
 # Run `tox -e unit` across every charm in the default cache
 # (~/.cache/hyrum/charms), with ops swapped to the `fix/X` branch of
 # canonical/operator. Override the cache folder with --cache-folder or
 # the HYRUM_CHARMS environment variable.
-hyrum unit --workers 8 --ops-source-branch fix/X
+hyrum check unit --workers 8 --ops-source-branch fix/X
 
 # Force the make runner (default is auto-detect: tox.ini -> tox,
 # Makefile -> make, fall back to the other if the target is missing):
-hyrum unit --runner make
+hyrum check unit --runner make
 
 # Skip the dependency swap; just check how the charms behave as-pinned:
-hyrum unit --no-patch
+hyrum check unit --no-patch
 
 # Only run for charms that use the Scenario testing framework:
-hyrum unit --framework scenario
+hyrum check unit --framework scenario
 
 # Always exit 0, even if some charms fail (default is exit non-zero on
 # any failure):
-hyrum unit --no-fail
+hyrum check unit --no-fail
 
 # Dump each charm's stdout, stderr, and run metadata to a per-charm
 # file under the given directory for offline triage:
-hyrum unit --log-dir ~/hyrum-runs/logs
+hyrum check unit --log-dir ~/hyrum-runs/logs
 ```
 
 Output statuses:

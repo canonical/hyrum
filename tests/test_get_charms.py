@@ -1,4 +1,4 @@
-"""Tests for tools/get_charms.py."""
+"""Tests for hyrum.get_charms."""
 
 from __future__ import annotations
 
@@ -8,8 +8,9 @@ import logging
 import pathlib
 
 import pytest
+from click import testing
 
-from tools import get_charms
+from hyrum import get_charms
 
 
 @dataclasses.dataclass
@@ -221,18 +222,20 @@ async def test_process_rows_logs_error_on_clone_failure(tmp_path: pathlib.Path, 
     assert any('Could not clone foo' in r.message for r in caplog.records)
 
 
-# ---- main -------------------------------------------------------------------
+# ---- get-charms CLI ---------------------------------------------------------
 
 
-def test_main_returns_error_when_csv_missing(tmp_path: pathlib.Path, caplog):
+def test_get_charms_reports_error_when_csv_missing(tmp_path: pathlib.Path):
     missing = tmp_path / 'does-not-exist.csv'
-    with caplog.at_level(logging.ERROR, logger=get_charms.logger.name):
-        rc = get_charms.main(['--csv', str(missing), '--cache-folder', str(tmp_path / 'c')])
-    assert rc == 1
-    assert any('not found' in r.message for r in caplog.records)
+    result = testing.CliRunner().invoke(
+        get_charms.get_charms,
+        ['--csv', str(missing), '--cache-folder', str(tmp_path / 'c')],
+    )
+    assert result.exit_code != 0
+    assert 'not found' in result.output
 
 
-def test_main_creates_cache_folder_and_drives_clone(tmp_path: pathlib.Path, spawner):
+def test_get_charms_creates_cache_folder_and_drives_clone(tmp_path: pathlib.Path, spawner):
     csv_path = tmp_path / 'charms.csv'
     csv_path.write_text(
         'Charm Name,Repository,Branch (if not the default)\n'
@@ -242,9 +245,12 @@ def test_main_creates_cache_folder_and_drives_clone(tmp_path: pathlib.Path, spaw
     cache = tmp_path / 'cache'
     fake = spawner(FakeProc(returncode=0))
 
-    rc = get_charms.main(['--csv', str(csv_path), '--cache-folder', str(cache)])
+    result = testing.CliRunner().invoke(
+        get_charms.get_charms,
+        ['--csv', str(csv_path), '--cache-folder', str(cache)],
+    )
 
-    assert rc == 0
+    assert result.exit_code == 0, result.output
     assert cache.is_dir()
     argv, _ = fake.calls[0]
     assert argv[:2] == ('git', 'clone')

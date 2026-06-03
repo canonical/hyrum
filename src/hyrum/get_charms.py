@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Bulk clone or update charm repositories listed in a CSV.
 
 Reads ``charm-list/charms.csv`` (or another path given via ``--csv``) and
@@ -8,64 +7,56 @@ Network work runs concurrently via ``asyncio``.
 
 The ``git`` CLI is invoked as a subprocess, so it inherits whatever
 authentication the calling shell has configured.
-
-The script is intentionally stdlib-only — same constraint as
-``tools/update_charm_list.py`` — so it can run without any wheel install.
 """
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import csv
 import logging
 import pathlib
-import sys
 import typing
+
+import click
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CSV = pathlib.Path('charm-list/charms.csv')
-DEFAULT_CACHE_FOLDER = pathlib.Path.home() / '.cache' / 'hyrum' / 'charms'
 
 
-def main(argv: typing.Sequence[str] | None = None) -> int:
-    """CLI entry point."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        '--csv',
-        type=pathlib.Path,
-        default=DEFAULT_CSV,
-        help='Path to the charm CSV (default: %(default)s).',
-    )
-    parser.add_argument(
-        '--cache-folder',
-        type=pathlib.Path,
-        default=DEFAULT_CACHE_FOLDER,
-        help='Destination folder for clones (default: %(default)s).',
-    )
-    parser.add_argument(
-        '--ssh',
-        action='store_true',
-        help='Use SSH (git@github.com:) instead of HTTPS for GitHub URLs.',
-    )
-    parser.add_argument(
-        '--log-level',
-        default='INFO',
-        help='Python logging level (DEBUG, INFO, WARNING).',
-    )
-    args = parser.parse_args(argv)
-    logging.basicConfig(level=args.log_level, format='%(levelname)s %(name)s: %(message)s')
+@click.command('get-charms')
+@click.option(
+    '--csv',
+    'csv_path',
+    type=click.Path(dir_okay=False, path_type=pathlib.Path),
+    default=DEFAULT_CSV,
+    show_default=True,
+    help='Path to the charm CSV.',
+)
+@click.option(
+    '--cache-folder',
+    envvar='HYRUM_CHARMS',
+    default=lambda: pathlib.Path('~/.cache/hyrum/charms').expanduser(),
+    show_default='~/.cache/hyrum/charms',
+    type=click.Path(file_okay=False, path_type=pathlib.Path),
+    help='Destination folder for clones. [env: HYRUM_CHARMS]',
+)
+@click.option(
+    '--ssh/--https',
+    default=False,
+    help='Use SSH (git@github.com:) instead of HTTPS for GitHub URLs.',
+)
+def get_charms(csv_path: pathlib.Path, cache_folder: pathlib.Path, ssh: bool) -> None:
+    """Populate the cache by cloning or pulling every charm listed in the CSV."""
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
 
-    if not args.csv.exists():
-        logger.error('Charm list not found: %s', args.csv)
-        return 1
-    args.cache_folder.mkdir(parents=True, exist_ok=True)
+    if not csv_path.exists():
+        raise click.UsageError(f'Charm list not found: {csv_path}')
+    cache_folder.mkdir(parents=True, exist_ok=True)
 
-    with args.csv.open(newline='', encoding='utf-8') as f:
+    with csv_path.open(newline='', encoding='utf-8') as f:
         rows = list(csv.DictReader(f))
-    asyncio.run(process_rows(rows, args.cache_folder, use_ssh=args.ssh))
-    return 0
+    asyncio.run(process_rows(rows, cache_folder, use_ssh=ssh))
 
 
 async def process_rows(
@@ -137,7 +128,3 @@ async def clone(dest: pathlib.Path, name: str, repository: str, branch: str | No
     await proc.wait()
     if proc.returncode != 0:
         logger.error('Could not clone %s from %s', name, repository)
-
-
-if __name__ == '__main__':
-    sys.exit(main())
