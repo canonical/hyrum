@@ -137,10 +137,63 @@ def _resolve_path(raw: str) -> str:
     return str(pathlib.Path(raw).expanduser().resolve())
 
 
+def _parse_charmlib_source(
+    spec: str,
+    *,
+    poetry_executable: str,
+    uv_executable: str,
+    lock_timeout: int,
+) -> patchers.CharmlibSource:
+    """Parse a ``--charmlib-source`` value into a :class:`CharmlibSource`.
+
+    Three forms::
+
+        <name>@<branch>               canonical/charmlibs, given branch
+        <name>=<owner>:<branch>       fork https://github.com/<owner>/charmlibs
+        <name>=<url>@<branch>         explicit URL
+    """
+    if '=' in spec:
+        name_part, source_part = spec.split('=', 1)
+        if source_part.startswith('http://') or source_part.startswith('https://'):
+            url, _, branch = source_part.rpartition('@')
+            if not url:
+                raise click.BadParameter(
+                    f'explicit-URL form requires @<branch>: {spec!r}',
+                    param_hint='--charmlib-source',
+                )
+        else:
+            owner, _, branch = source_part.partition(':')
+            if not branch:
+                raise click.BadParameter(
+                    f'owner form requires <owner>:<branch>: {spec!r}',
+                    param_hint='--charmlib-source',
+                )
+            url = f'https://github.com/{owner}/charmlibs'
+    elif '@' in spec:
+        name_part, _, branch = spec.partition('@')
+        url = 'https://github.com/canonical/charmlibs'
+    else:
+        raise click.BadParameter(
+            f'expected <name>@<branch>, <name>=<owner>:<branch>, or '
+            f'<name>=<url>@<branch>; got {spec!r}',
+            param_hint='--charmlib-source',
+        )
+
+    return patchers.CharmlibSource(
+        pkg_name=name_part,
+        url=url,
+        branch=branch,
+        poetry_executable=tuple(poetry_executable.split()),
+        uv_executable=tuple(uv_executable.split()),
+        lock_timeout=lock_timeout,
+    )
+
+
 def _build_patcher(
     *,
     no_patch: bool,
     ops_source: str,
+    charmlib_sources: tuple[str, ...],
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
@@ -159,7 +212,16 @@ def _build_patcher(
         lock_timeout=lock_timeout,
         auto_python=auto_python,
     )
-    return patchers.PatcherStack([patchers.OpsSourcePatcher(ops)])
+    patcher_list: list[patchers.Patcher] = [patchers.OpsSourcePatcher(ops)]
+    for raw in charmlib_sources:
+        src = _parse_charmlib_source(
+            raw,
+            poetry_executable=poetry_executable,
+            uv_executable=uv_executable,
+            lock_timeout=lock_timeout,
+        )
+        patcher_list.append(patchers.CharmlibPatcher(src))
+    return patchers.PatcherStack(patcher_list)
 
 
 def _build_runner(
@@ -295,6 +357,18 @@ def _select_repos(
     ),
 )
 @click.option(
+    '--charmlib-source',
+    'charmlib_sources',
+    multiple=True,
+    metavar='SPEC',
+    help=(
+        'Swap a charmlib dep for a git source. SPEC forms: '
+        '<name>@<branch>, <name>=<owner>:<branch>, <name>=<url>@<branch>. '
+        'Repeatable. <name> is the short (nginx-k8s) or full PyPI name '
+        '(charmlibs-nginx-k8s).'
+    ),
+)
+@click.option(
     '--poetry-executable',
     default='poetry',
     show_default=True,
@@ -389,6 +463,7 @@ def main(
     timeout: int,
     no_patch: bool,
     ops_source: str,
+    charmlib_sources: tuple[str, ...],
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
@@ -421,6 +496,7 @@ def main(
     patcher = _build_patcher(
         no_patch=no_patch,
         ops_source=ops_source,
+        charmlib_sources=charmlib_sources,
         poetry_executable=poetry_executable,
         uv_executable=uv_executable,
         lock_timeout=lock_timeout,

@@ -286,16 +286,6 @@ def _restore(path: pathlib.Path, original: str | None) -> None:
         path.write_text(original)
 
 
-def _ops_extras_from_pep508_line(line: str) -> set[str]:
-    try:
-        req = packaging.requirements.Requirement(line)
-    except packaging.requirements.InvalidRequirement:
-        return set()
-    if req.name != 'ops':
-        return set()
-    return set(req.extras)
-
-
 def _patch_requirements_file(path: pathlib.Path, ops: OpsSource) -> None:
     """Rewrite a pip-style requirements file in place.
 
@@ -349,8 +339,23 @@ def _patch_requirements_file(path: pathlib.Path, ops: OpsSource) -> None:
     path.write_text('\n'.join(kept) + '\n')
 
 
-def _collect_pyproject_ops_extras(data: dict[str, Any]) -> set[str]:
+def _collect_pyproject_pkg_extras(data: dict[str, Any], pkg_name: str) -> set[str]:
+    """Collect all extras declared on ``pkg_name`` across all dep sections."""
     extras: set[str] = set()
+
+    def _norm(name: str) -> str:
+        import re as _re
+
+        return _re.sub(r'[-_.]+', '-', name).lower()
+
+    def _extras_from_pep508_line(line: str) -> set[str]:
+        try:
+            req = packaging.requirements.Requirement(line)
+        except packaging.requirements.InvalidRequirement:
+            return set()
+        if _norm(req.name) != _norm(pkg_name):
+            return set()
+        return set(req.extras)
 
     # tomllib returns nested Any; cast each step to a typed view so we can
     # destructure without lighting up pyright-strict.
@@ -358,55 +363,36 @@ def _collect_pyproject_ops_extras(data: dict[str, Any]) -> set[str]:
     for section in ('dependencies', 'dev-dependencies'):
         deps: Any = poetry.get(section, {})
         if isinstance(deps, dict):
-            dep: Any = deps.get('ops')
+            dep: Any = deps.get(pkg_name)
             if isinstance(dep, dict) and 'extras' in dep:
                 extras.update(str(e) for e in dep['extras'])
     for group in poetry.get('group', {}).values():
         group_deps: Any = group.get('dependencies', {})
         if isinstance(group_deps, dict):
-            dep = group_deps.get('ops')
+            dep = group_deps.get(pkg_name)
             if isinstance(dep, dict) and 'extras' in dep:
                 extras.update(str(e) for e in dep['extras'])
 
     project: dict[str, Any] = data.get('project', {})
     for dep_str in project.get('dependencies', []):
-        extras.update(_ops_extras_from_pep508_line(str(dep_str)))
+        extras.update(_extras_from_pep508_line(str(dep_str)))
     for opts in project.get('optional-dependencies', {}).values():
         for dep_str in opts:
-            extras.update(_ops_extras_from_pep508_line(str(dep_str)))
+            extras.update(_extras_from_pep508_line(str(dep_str)))
 
     return extras
 
 
-_OPS_LINE_RE = re.compile(r'^ops\s*=')
+def _collect_pyproject_ops_extras(data: dict[str, Any]) -> set[str]:
+    return _collect_pyproject_pkg_extras(data, 'ops')
 
 
-def _is_top_level_ops_dep_line(stripped: str) -> bool:
-    """Heuristic: does this stripped line declare ``ops`` as a dep?"""
-    if stripped == 'ops':
-        return True
-    for prefix in ('ops ', 'ops=', 'ops>', 'ops<', 'ops~', 'ops['):
-        if stripped.startswith(prefix):
-            return True
-    return bool(_OPS_LINE_RE.match(stripped))
-
-
-def _strip_ops_declarations(original: str) -> str:
-    """Remove explicit ``ops`` declarations from pyproject.toml text.
+def _strip_dep_declaration(content: str, pkg_name: str) -> str:
+    """Remove all declarations of ``pkg_name`` from pyproject.toml text.
 
     String-level edit; intentionally conservative (lines that mention
-    ``ops`` in unrelated ways — table headers, etc. — are left alone).
+    the name in unrelated ways — table headers, etc. — are left alone).
     """
-    out_lines: list[str] = []
-    for raw in original.splitlines(keepends=True):
-        stripped = raw.split('#', 1)[0].strip().strip('"').strip("'")
-        if _is_top_level_ops_dep_line(stripped):
-            continue
-        out_lines.append(raw)
-    return ''.join(out_lines)
-
-
-def _strip_companion_declarations(content: str, pkg_name: str) -> str:
     out_lines: list[str] = []
     pep_re = re.compile(rf'^{re.escape(pkg_name)}\s*=')
     for raw in content.splitlines(keepends=True):
@@ -415,6 +401,10 @@ def _strip_companion_declarations(content: str, pkg_name: str) -> str:
             stripped == pkg_name
             or stripped.startswith(f'{pkg_name} ')
             or stripped.startswith(f'{pkg_name}=')
+            or stripped.startswith(f'{pkg_name}>')
+            or stripped.startswith(f'{pkg_name}<')
+            or stripped.startswith(f'{pkg_name}~')
+            or stripped.startswith(f'{pkg_name}[')
             or pep_re.match(stripped)
         ):
             continue
@@ -422,9 +412,64 @@ def _strip_companion_declarations(content: str, pkg_name: str) -> str:
     return ''.join(out_lines)
 
 
+def _patch_git_dep(  # pyright: ignore[reportUnusedFunction]
+    original: str,
+    pkg_name: str,
+    url: str,
+    branch: str | None,
+    subdir: str | None,
+    extras: set[str],
+    flavour: str,
+) -> str:
+    """Inject a single git-source dep for ``pkg_name`` into a pyproject.toml string.
+
+    Strips any existing declaration of the package and rewrites for
+    ``flavour`` (``"pep621"``, ``"uv"``, or ``"poetry"``). Callers are
+    responsible for any additional companion-package or python-version
+    mutations needed on top.
+    """
+    extras_str = f'[{",".join(sorted(extras))}]' if extras else ''
+    pep508_url = f'git+{url}@{branch}' if branch else f'git+{url}'
+    if subdir:
+        pep508_url += f'#subdirectory={subdir}'
+
+    if flavour == 'pep621':
+        stripped = _strip_dep_declaration(original, pkg_name)
+        pkg_pep508 = f'{pkg_name}{extras_str} @ {pep508_url}'
+        return stripped.replace(
+            'dependencies = [',
+            f'dependencies = [\n  "{pkg_pep508}",',
+            1,
+        )
+
+    if flavour == 'uv':
+        subdir_part = f', subdirectory = "{subdir}"' if subdir else ''
+        branch_part = f', branch = "{branch}"' if branch else ''
+        source_line = f'{pkg_name} = {{ git = "{url}"{branch_part}{subdir_part} }}'
+        if '[tool.uv.sources]' in original:
+            return original.replace('[tool.uv.sources]', f'[tool.uv.sources]\n{source_line}', 1)
+        return original.rstrip('\n') + f'\n\n[tool.uv.sources]\n{source_line}\n'
+
+    if flavour == 'poetry':
+        extras_list = (
+            f', extras = [{", ".join(repr(e) for e in sorted(extras))}]' if extras else ''
+        )
+        subdir_part = f', subdirectory = "{subdir}"' if subdir else ''
+        branch_part = f', branch = "{branch}"' if branch else ''
+        pkg_toml = f'\n{pkg_name} = {{git = "{url}"{branch_part}{subdir_part}{extras_list}}}\n'
+        content = _strip_dep_declaration(original, pkg_name)
+        return content.replace(
+            '[tool.poetry.dependencies]',
+            f'[tool.poetry.dependencies]{pkg_toml}',
+            1,
+        )
+
+    raise ValueError(f'unknown flavour: {flavour}')
+
+
 def _patch_pyproject_pep621(original: str, ops: OpsSource, ops_extras: set[str]) -> str:
     """Patch a PEP 621 ``[project.dependencies]`` pyproject (non-uv)."""
-    stripped = _strip_ops_declarations(original)
+    stripped = _strip_dep_declaration(original, 'ops')
     ops_pep508 = ops.pep508_dep('ops', extras=sorted(ops_extras))
     return stripped.replace(
         'dependencies = [',
@@ -450,7 +495,7 @@ def _patch_pyproject_uv(original: str, ops: OpsSource, ops_extras: set[str]) -> 
         # PyPI ops pulls companions from PyPI normally — no source block,
         # no companion hoisting. Just rewrite the ops version pin in
         # [project.dependencies].
-        stripped = _strip_ops_declarations(original)
+        stripped = _strip_dep_declaration(original, 'ops')
         ops_pep508 = ops.pep508_dep('ops', extras=sorted(ops_extras))
         return stripped.replace(
             'dependencies = [',
@@ -496,12 +541,12 @@ def _patch_pyproject_uv(original: str, ops: OpsSource, ops_extras: set[str]) -> 
 def _patch_pyproject_poetry(original: str, ops: OpsSource, ops_extras: set[str]) -> str:
     ops_toml = f'\nops = {ops.poetry_dep_inline(extras=sorted(ops_extras))}\n'
 
-    content = _strip_ops_declarations(original)
+    content = _strip_dep_declaration(original, 'ops')
     if ops.overrides_companions():
         for extra, (pkg, subdir) in _COMPANION_PACKAGES.items():
             if extra not in ops_extras:
                 continue
-            content = _strip_companion_declarations(content, pkg)
+            content = _strip_dep_declaration(content, pkg)
             ops_toml += f'\n{pkg} = {ops.poetry_dep_inline(subdir=subdir)}\n'
 
     return content.replace(

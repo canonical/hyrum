@@ -19,9 +19,12 @@ from hyrum.patchers.base import (
     PatcherError,
     PatcherStack,
 )
+from hyrum.patchers.charmlib_source import CharmlibPatcher, CharmlibSource
 from hyrum.patchers.ops_source import OpsSource, OpsSourcePatcher
 
 __all__ = [
+    'CharmlibPatcher',
+    'CharmlibSource',
     'NullPatcher',
     'OpsSource',
     'OpsSourcePatcher',

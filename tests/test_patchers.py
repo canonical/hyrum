@@ -6,6 +6,7 @@ import pytest
 
 from hyrum import patchers
 from hyrum.patchers import ops_source
+from hyrum.patchers.charmlib_source import _lib_names
 
 
 @pytest.fixture
@@ -639,3 +640,202 @@ def test_lockfile_created_during_patch_is_removed_on_exit(
         # won't run, so no cleanup necessary in this case.
         pass
     assert not (tmp_path / 'uv.lock').exists()
+
+
+# ---- CharmlibSource: name parsing / subdir derivation ------------------------
+
+
+def test_lib_names_general_short():
+    pypi, subdir = _lib_names('nginx-k8s')
+    assert pypi == 'charmlibs-nginx-k8s'
+    assert subdir == 'nginx_k8s'
+
+
+def test_lib_names_general_full_pypi():
+    pypi, subdir = _lib_names('charmlibs-nginx-k8s')
+    assert pypi == 'charmlibs-nginx-k8s'
+    assert subdir == 'nginx_k8s'
+
+
+def test_lib_names_general_single_word():
+    pypi, subdir = _lib_names('apt')
+    assert pypi == 'charmlibs-apt'
+    assert subdir == 'apt'
+
+
+def test_lib_names_interface_short():
+    pypi, subdir = _lib_names('interfaces-tls-certificates')
+    assert pypi == 'charmlibs-interfaces-tls-certificates'
+    assert subdir == 'interfaces/tls-certificates'
+
+
+def test_lib_names_interface_full_pypi():
+    pypi, subdir = _lib_names('charmlibs-interfaces-tls-certificates')
+    assert pypi == 'charmlibs-interfaces-tls-certificates'
+    assert subdir == 'interfaces/tls-certificates'
+
+
+def test_lib_names_interface_multi_segment():
+    pypi, subdir = _lib_names('interfaces-istio-ingress-route')
+    assert pypi == 'charmlibs-interfaces-istio-ingress-route'
+    assert subdir == 'interfaces/istio-ingress-route'
+
+
+# ---- CharmlibPatcher: PatcherError on schema-only interface lib --------------
+
+
+def test_charmlib_patcher_error_interface_lib_no_pyproject(tmp_path: pathlib.Path):
+    """PatcherError if interface subdir has no pyproject.toml in charmlibs_path."""
+    # Fake charmlibs checkout: interfaces/tls-certificates/ exists but has no pyproject.toml
+    iface_dir = tmp_path / 'charmlibs' / 'interfaces' / 'tls-certificates'
+    iface_dir.mkdir(parents=True)
+    (iface_dir / 'schema.yaml').write_text('# schema only\n')
+
+    charm_dir = tmp_path / 'charm'
+    charm_dir.mkdir()
+    (charm_dir / 'pyproject.toml').write_text(
+        '[project]\nname = "c"\nversion = "0"\n'
+        'dependencies = [\n  "charmlibs-interfaces-tls-certificates>=1.0",\n]\n'
+    )
+
+    src = patchers.CharmlibSource(
+        pkg_name='interfaces-tls-certificates',
+        branch='main',
+        charmlibs_path=tmp_path / 'charmlibs',
+    )
+    with (
+        pytest.raises(patchers.PatcherError, match=r'no pyproject\.toml'),
+        patchers.CharmlibPatcher(src).apply(charm_dir),
+    ):
+        pass
+
+
+def test_charmlib_patcher_interface_lib_with_pyproject_ok(tmp_path: pathlib.Path, monkeypatch):
+    """No error when interface lib has a pyproject.toml."""
+    monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
+
+    iface_dir = tmp_path / 'charmlibs' / 'interfaces' / 'tls-certificates'
+    iface_dir.mkdir(parents=True)
+    (iface_dir / 'pyproject.toml').write_text(
+        '[project]\nname = "charmlibs-interfaces-tls-certificates"\n'
+    )
+
+    charm_dir = tmp_path / 'charm'
+    charm_dir.mkdir()
+    (charm_dir / 'pyproject.toml').write_text(
+        '[project]\nname = "c"\nversion = "0"\n'
+        'dependencies = [\n  "charmlibs-interfaces-tls-certificates>=1.0",\n]\n'
+    )
+    src = patchers.CharmlibSource(
+        pkg_name='interfaces-tls-certificates',
+        branch='feat',
+        charmlibs_path=tmp_path / 'charmlibs',
+    )
+    with patchers.CharmlibPatcher(src).apply(charm_dir):
+        patched = (charm_dir / 'pyproject.toml').read_text()
+        assert 'git+https://github.com/canonical/charmlibs@feat' in patched
+        assert 'interfaces/tls-certificates' in patched
+
+
+# ---- CharmlibPatcher: extras re-application ---------------------------------
+
+
+def test_charmlib_patcher_pep621_extras_reapplied(tmp_path: pathlib.Path):
+    charm_dir = tmp_path / 'charm'
+    charm_dir.mkdir()
+    (charm_dir / 'pyproject.toml').write_text(
+        '[project]\nname = "c"\nversion = "0"\n'
+        'dependencies = [\n  "charmlibs-nginx-k8s[extra1]>=1.0",\n]\n'
+    )
+    src = patchers.CharmlibSource(pkg_name='nginx-k8s', branch='mybranch')
+    with patchers.CharmlibPatcher(src).apply(charm_dir):
+        patched = (charm_dir / 'pyproject.toml').read_text()
+        url_prefix = 'git+https://github.com/canonical/charmlibs@mybranch'
+        assert f'charmlibs-nginx-k8s[extra1] @ {url_prefix}' in patched
+        assert 'subdirectory=nginx_k8s' in patched
+
+
+def test_charmlib_patcher_uv_extras_reapplied(tmp_path: pathlib.Path, monkeypatch):
+    monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
+    charm_dir = tmp_path / 'charm'
+    charm_dir.mkdir()
+    (charm_dir / 'pyproject.toml').write_text(
+        '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
+        'dependencies = [\n  "charmlibs-nginx-k8s[extra1]>=1.0",\n]\n'
+        '[tool.uv]\ndev-dependencies = []\n'
+    )
+    src = patchers.CharmlibSource(pkg_name='nginx-k8s', branch='mybranch')
+    with patchers.CharmlibPatcher(src).apply(charm_dir):
+        patched = (charm_dir / 'pyproject.toml').read_text()
+        assert '[tool.uv.sources]' in patched
+        assert 'charmlibs-nginx-k8s = { git = "https://github.com/canonical/charmlibs"' in patched
+        assert 'branch = "mybranch"' in patched
+        assert 'subdirectory = "nginx_k8s"' in patched
+
+
+# ---- CharmlibPatcher: git dep rewriting via shared _patch_git_dep helper ----
+
+
+def test_charmlib_patcher_pep621_injects_git_dep(tmp_path: pathlib.Path):
+    charm_dir = tmp_path / 'charm'
+    charm_dir.mkdir()
+    (charm_dir / 'pyproject.toml').write_text(
+        '[project]\nname = "c"\nversion = "0"\n'
+        'dependencies = [\n  "charmlibs-apt>=1.0",\n  "requests",\n]\n'
+    )
+    src = patchers.CharmlibSource(pkg_name='apt', branch='fix/apt')
+    with patchers.CharmlibPatcher(src).apply(charm_dir):
+        patched = (charm_dir / 'pyproject.toml').read_text()
+        git_dep = (
+            '"charmlibs-apt @ git+https://github.com/canonical/charmlibs@fix/apt#subdirectory=apt"'
+        )
+        assert git_dep in patched
+        assert 'charmlibs-apt>=1.0' not in patched
+        assert '"requests"' in patched
+    # restored on exit
+    assert 'charmlibs-apt>=1.0' in (charm_dir / 'pyproject.toml').read_text()
+
+
+def test_charmlib_patcher_poetry_injects_git_dep(tmp_path: pathlib.Path, monkeypatch):
+    monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
+    charm_dir = tmp_path / 'charm'
+    charm_dir.mkdir()
+    (charm_dir / 'pyproject.toml').write_text(
+        '[tool.poetry]\nname = "c"\nversion = "0"\ndescription = ""\n'
+        'authors = ["x <x@x>"]\n\n[tool.poetry.dependencies]\npython = "^3.10"\n'
+        'charmlibs-apt = "^1.0"\n'
+    )
+    src = patchers.CharmlibSource(pkg_name='apt', branch='fix/apt')
+    with patchers.CharmlibPatcher(src).apply(charm_dir):
+        patched = (charm_dir / 'pyproject.toml').read_text()
+        assert 'charmlibs-apt = {git = "https://github.com/canonical/charmlibs"' in patched
+        assert 'branch = "fix/apt"' in patched
+        assert 'subdirectory = "apt"' in patched
+        assert 'charmlibs-apt = "^1.0"' not in patched
+
+
+def test_charmlib_patcher_fork_url(tmp_path: pathlib.Path):
+    charm_dir = tmp_path / 'charm'
+    charm_dir.mkdir()
+    (charm_dir / 'pyproject.toml').write_text(
+        '[project]\nname = "c"\nversion = "0"\ndependencies = [\n  "charmlibs-apt>=1.0",\n]\n'
+    )
+    src = patchers.CharmlibSource(
+        pkg_name='apt',
+        url='https://github.com/myfork/charmlibs',
+        branch='dev',
+    )
+    with patchers.CharmlibPatcher(src).apply(charm_dir):
+        patched = (charm_dir / 'pyproject.toml').read_text()
+        assert 'git+https://github.com/myfork/charmlibs@dev' in patched
+
+
+def test_charmlib_patcher_no_pyproject_raises(tmp_path: pathlib.Path):
+    charm_dir = tmp_path / 'charm'
+    charm_dir.mkdir()
+    src = patchers.CharmlibSource(pkg_name='apt', branch='main')
+    with (
+        pytest.raises(patchers.PatcherError),
+        patchers.CharmlibPatcher(src).apply(charm_dir),
+    ):
+        pass
