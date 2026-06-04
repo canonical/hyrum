@@ -244,6 +244,16 @@ def _select_repos(
     ),
 )
 @click.option(
+    '--log-dir',
+    type=click.Path(file_okay=False, path_type=pathlib.Path),
+    default=None,
+    help=(
+        "Write each charm's runner stdout/stderr to a per-charm file under "
+        'this directory. Useful for triaging failures without rerunning. '
+        'File names use the repo path with ``/`` flattened to ``__``.'
+    ),
+)
+@click.option(
     '--no-headers',
     is_flag=True,
     default=False,
@@ -274,6 +284,7 @@ def main(
     uv_executable: str,
     lock_timeout: int,
     auto_python: bool,
+    log_dir: pathlib.Path | None,
     quiet: bool,
     verbose: bool,
     verbosity: str | None,
@@ -311,8 +322,19 @@ def main(
         timeout=timeout,
     )
 
+    if log_dir is not None:
+        log_dir.mkdir(parents=True, exist_ok=True)
+
     results: list[pool.Outcome] = asyncio.run(
-        pool.run_pool(repos, patcher=patcher, runner=runner, target=target, workers=workers)
+        pool.run_pool(
+            repos,
+            patcher=patcher,
+            runner=runner,
+            target=target,
+            workers=workers,
+            log_dir=log_dir,
+            log_base=cache_folder,
+        )
     )
     pool.add_skipped(results, skipped)
     results.sort(key=lambda o: str(o.repo))
