@@ -14,9 +14,13 @@ class StubRunner:
         self,
         status: runners.RunStatus = runners.RunStatus.PASSED,
         returncode: int = 0,
+        stdout: bytes = b'',
+        stderr: bytes = b'',
     ):
         self.status = status
         self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
         self.seen: list[pathlib.Path] = []
 
     async def run(self, repo: pathlib.Path, target: str) -> runners.RunResult:
@@ -28,6 +32,8 @@ class StubRunner:
             status=self.status,
             returncode=self.returncode,
             duration_s=0.01,
+            stdout=self.stdout,
+            stderr=self.stderr,
         )
 
 
@@ -86,6 +92,56 @@ async def test_run_pool_handles_runner_exception_as_patcher_error(tmp_path: path
     assert len(results) == 1
     assert results[0].status == 'patcher_error'
     assert 'kaboom' in results[0].error
+
+
+async def test_log_dir_dumps_runner_output(tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    repo = cache / 'argo-operators' / 'charms' / 'kfp-api'
+    repo.mkdir(parents=True)
+    log_dir = tmp_path / 'logs'
+    runner = StubRunner(
+        runners.RunStatus.FAILED, returncode=2, stdout=b'pytest ran\n', stderr=b'oops\n'
+    )
+    outcome = await pool.run_one(
+        repo,
+        'unit',
+        patcher=patchers.NullPatcher(),
+        runner=runner,
+        log_dir=log_dir,
+        log_base=cache,
+    )
+    assert outcome.status == 'failed'
+    # Flattened path: ``/`` becomes ``__`` so monorepo subcharms don't collide.
+    log = log_dir / 'argo-operators__charms__kfp-api.log'
+    assert log.exists()
+    content = log.read_text()
+    assert 'status: failed' in content
+    assert 'returncode: 2' in content
+    assert 'pytest ran' in content
+    assert 'oops' in content
+
+
+async def test_log_dir_dumps_patcher_error(tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    repo = cache / 'broken-charm'
+    repo.mkdir()
+    log_dir = tmp_path / 'logs'
+    outcome = await pool.run_one(
+        repo,
+        'unit',
+        patcher=FailingPatcher(),
+        runner=StubRunner(),
+        log_dir=log_dir,
+        log_base=cache,
+    )
+    assert outcome.status == 'patcher_error'
+    log = log_dir / 'broken-charm.log'
+    assert log.exists()
+    content = log.read_text()
+    assert 'status: patcher_error' in content
+    assert 'could not patch' in content
 
 
 def test_add_skipped_appends():

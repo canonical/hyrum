@@ -1,0 +1,236 @@
+Team,Charm Name,Repository,Branch (if not the default),Source
+BootStack,apt-mirror,https://github.com/canonical/charm-apt-mirror,,manual
+BootStack,hardware-observer,https://github.com/canonical/hardware-observer-operator,,manual
+BootStack,nginx,https://github.com/canonical/charm-nginx,,manual
+BootStack,simple-streams,https://github.com/canonical/charm-simple-streams,,manual
+Charm-Tech,exim-operator,https://github.com/tonyandrewmeyer/exim-operator,,manual
+Charm-Tech,snappass,https://github.com/benhoyt/snappass-test,,manual
+Charm-Tech,takahe-operator,https://github.com/tonyandrewmeyer/takahe-operator,,manual
+Charm-Tech,webapp (example charm),https://github.com/benhoyt/test-charms/,,manual
+Commercial Systems,certbot,https://github.com/canonical/certbot-charm,,manual
+Commercial Systems,ranger-k8s,https://github.com/canonical/ranger-k8s-operator,,manual
+Commercial Systems,superset-k8s,https://github.com/canonical/superset-k8s-operator,,manual
+Commercial Systems,temporal-admin-k8s,https://github.com/canonical/temporal-admin-k8s-operator,,manual
+Commercial Systems,temporal-k8s,https://github.com/canonical/temporal-k8s-operator,,manual
+Commercial Systems,temporal-ui-k8s,https://github.com/canonical/temporal-ui-k8s-operator,,manual
+Commercial Systems,temporal-worker-k8s,https://github.com/canonical/temporal-worker-k8s-operator,,manual
+Commercial Systems,timescaledb,https://github.com/canonical/timescaledb-charm,,manual
+Commercial Systems,trino-k8s,https://github.com/canonical/trino-k8s-operator,,manual
+Data,kafka,https://github.com/canonical/kafka-operator,,manual
+Data,kafka-broker-rack-awareness,https://github.com/canonical/kafka-broker-rack-awareness-operator,,manual
+Data,kafka-k8s,https://github.com/canonical/kafka-k8s-operator,,manual
+Data,mongodb,https://github.com/canonical/mongodb-operator,,manual
+Data,mongodb-k8s,https://github.com/canonical/mongodb-k8s-operator,,manual
+Data,mysql,https://github.com/canonical/mysql-operator,,manual
+Data,mysql-k8s,https://github.com/canonical/mysql-k8s-operator,,manual
+Data,mysql-router,https://github.com/canonical/mysql-router-operator,,manual
+Data,mysql-router-k8s,https://github.com/canonical/mysql-router-k8s-operator,,manual
+Data,opensearch,https://github.com/canonical/opensearch-operator,,manual
+Data,pgbouncer,https://github.com/canonical/pgbouncer-operator,,manual
+Data,pgbouncer-k8s,https://github.com/canonical/pgbouncer-k8s-operator,,manual
+Data,postgresql,https://github.com/canonical/postgresql-operator,,manual
+Data,postgresql-k8s,https://github.com/canonical/postgresql-k8s-operator,,manual
+Data,redis,https://github.com/canonical/redis-operator,,manual
+Data,redis-k8s,https://github.com/canonical/redis-k8s-operator,,manual
+Data,spark-history-server-k8s,https://github.com/canonical/spark-history-server-k8s-operator,,manual
+Data,zookeeper,https://github.com/canonical/zookeeper-operator,,manual
+Data,zookeeper-k8s,https://github.com/canonical/zookeeper-k8s-operator,,manual
+Identity,GLAuth,https://github.com/canonical/glauth-operator,,manual
+Identity,GLAuth-K8s,https://github.com/canonical/glauth-k8s-operator,,manual
+Identity,Hydra,https://github.com/canonical/hydra-operator,,manual
+Identity,Identity Platform Admin Ui,https://github.com/canonical/identity-platform-admin-ui-operator,,manual
+Identity,Identity Platform Login Ui,https://github.com/canonical/identity-platform-login-ui-operator,,manual
+Identity,Kratos,https://github.com/canonical/kratos-operator,,manual
+Identity,Kratos External IDP Integrator,https://github.com/canonical/kratos-external-idp-integrator,,manual
+Identity,Oathkeeper,https://github.com/canonical/oathkeeper-operator/,,manual
+Identity,OpenFGA,https://github.com/canonical/openfga-operator,,manual
+Identity,sssd,https://github.com/canonical/sssd-operator,,manual
+IS,apt-stresstest,https://git.launchpad.net/apt-stresstest-charm,,manual
+IS,autocert,https://git.launchpad.net/autocert-charm,,manual
+IS,bind-resolver,https://git.launchpad.net/bind-resolver-charm,,manual
+IS,cloudflared,https://github.com/canonical/cloudflared-operator,,manual
+IS,container-log-archive,https://git.launchpad.net/container-log-archive-charm,,manual
+IS,content-cache,https://github.com/canonical/content-cache-operator,,manual
+IS,content-cache,https://git.launchpad.net/content-cache-charm,,manual
+IS,content-cache-k8s,https://github.com/canonical/content-cache-k8s-operator,,manual
+IS,discourse-k8s,https://github.com/canonical/discourse-k8s-operator,,manual
+IS,hockeypuck,https://github.com/canonical/hockeypuck-k8s-operator,,manual
+IS,indico,https://github.com/canonical/indico-operator,,manual
+IS,internal-proxy,https://git.launchpad.net/internal-proxy-charm,,manual
+IS,jenkins-agent,https://github.com/canonical/jenkins-agent-operator,,manual
+IS,jenkins-agent-k8s,https://github.com/canonical/jenkins-agent-k8s-operator,,manual
+IS,jenkins-k8s,https://github.com/canonical/jenkins-k8s-operator,,manual
+IS,juju-introspection-proxy,https://git.launchpad.net/juju-introspection-proxy-charm,,manual
+IS,mailman3-core,https://git.launchpad.net/mailman3-core-charm,,manual
+IS,mailman3-web,https://git.launchpad.net/mailman3-web-charm,,manual
+IS,mattermost-k8s,https://github.com/canonical/mattermost-k8s-operator,,manual
+IS,nginx-ingress-integator,https://github.com/canonical/nginx-ingress-integrator-operator,,manual
+IS,ntp,https://git.launchpad.net/ntp-charm,,manual
+IS,openvpn-server,https://git.launchpad.net/openvpn-server-charm,,manual
+IS,pollen,https://github.com/canonical/pollen-operator,,manual
+IS,postgresql,https://git.launchpad.net/postgresql-charm,,manual
+IS,postgresql-k8s,https://git.launchpad.net/charm-k8s-postgresql,,manual
+IS,saml-integrator,https://github.com/canonical/saml-integrator-operator,,manual
+IS,smtp-dkim-signing,https://git.launchpad.net/smtp-dkim-signing-charm,,manual
+IS,smtp-integrator,https://github.com/canonical/smtp-integrator-operator,,manual
+IS,smtp-relay,https://git.launchpad.net/smtp-relay-charm,,manual
+IS,stunnel,https://git.launchpad.net/stunnel-charm,,manual
+IS,synapse,https://github.com/canonical/synapse-operator,,manual
+IS,ubuntu-mirror,https://git.launchpad.net/ubuntu-mirror-charm,,manual
+IS,ubuntu-syncproxy,https://git.launchpad.net/ubuntu-syncproxy-charm,,manual
+IS,wordpress-k8s,https://github.com/canonical/wordpress-k8s-operator,,manual
+K8s,cinder-csi,https://github.com/canonical/cinder-csi-operator,,manual
+K8s,etcd,https://github.com/canonical/etcd-operator,,manual
+K8s,Microk8s,https://github.com/canonical/charm-microk8s,,manual
+MLOps,admission-webhook,https://github.com/canonical/admission-webhook-operator,,manual
+MLOps,argo,https://github.com/canonical/argo-operators,,manual
+MLOps,dex-auth,https://github.com/canonical/dex-auth-operator,,manual
+MLOps,envoy,https://github.com/canonical/envoy-operator,,manual
+MLOps,istio,https://github.com/canonical/istio-operators,,manual
+MLOps,katib,https://github.com/canonical/katib-operators,,manual
+MLOps,kfp,https://github.com/canonical/kfp-operators,,manual
+MLOps,knative,https://github.com/canonical/knative-operators,,manual
+MLOps,kserve,https://github.com/canonical/kserve-operators,,manual
+MLOps,kubeflow-dashboard,https://github.com/canonical/kubeflow-dashboard-operator,,manual
+MLOps,kubeflow-profiles,https://github.com/canonical/kubeflow-profiles-operator,,manual
+MLOps,kubeflow-roles,https://github.com/canonical/kubeflow-roles-operator,,manual
+MLOps,kubeflow-tensorboards,https://github.com/canonical/kubeflow-tensorboards-operator,,manual
+MLOps,kubeflow-volumes,https://github.com/canonical/kubeflow-volumes-operator,,manual
+MLOps,metacontroller,https://github.com/canonical/metacontroller-operator,,manual
+MLOps,minio,https://github.com/canonical/minio-operator,,manual
+MLOps,mlflow,https://github.com/canonical/mlflow-operator,,manual
+MLOps,mlmd,https://github.com/canonical/mlmd-operator,,manual
+MLOps,namespace-node-affinity,https://github.com/canonical/namespace-node-affinity-operator,,manual
+MLOps,notebook,https://github.com/canonical/notebook-operators,,manual
+MLOps,OIDC-gatekeeper,https://github.com/canonical/oidc-gatekeeper-operator,,manual
+MLOps,pvcviewer,https://github.com/canonical/pvcviewer-operator,,manual
+MLOps,training,https://github.com/canonical/training-operator,,manual
+Observability,Alertmanager,https://github.com/canonical/alertmanager-k8s-operator,,manual
+Observability,Avalanche,https://github.com/canonical/avalanche-k8s-operator,,manual
+Observability,Blackbox Exporter,https://github.com/canonical/blackbox-exporter-k8s-operator,,manual
+Observability,Catalogue,https://github.com/canonical/catalogue-k8s-operator,,manual
+Observability,COS Configuration,https://github.com/canonical/cos-configuration-k8s-operator,,manual
+Observability,COS Proxy,https://github.com/canonical/cos-proxy-operator,,manual
+Observability,Grafana,https://github.com/canonical/grafana-k8s-operator,,manual
+Observability,Grafana Agent K8s,https://github.com/canonical/grafana-agent-k8s-operator,,manual
+Observability,Grafana Agent Subordinate,https://github.com/canonical/grafana-agent-operator,,manual
+Observability,Grafana Cloud Integrator,https://github.com/canonical/grafana-cloud-integrator,,manual
+Observability,Loki,https://github.com/canonical/loki-k8s-operator,,manual
+Observability,Prometheus,https://github.com/canonical/prometheus-k8s-operator,,manual
+Observability,Prometheus PushGateway,https://github.com/canonical/prometheus-pushgateway-k8s-operator,,manual
+Observability,Prometheus Scrape Config,https://github.com/canonical/prometheus-scrape-config-k8s-operator,,manual
+Observability,Prometheus Scrape Target,https://github.com/canonical/prometheus-scrape-target-k8s-operator,,manual
+Observability,Traefik,https://github.com/canonical/traefik-k8s-operator,,manual
+OpenStack,multiple charms (mono-repo),https://opendev.org/openstack/sunbeam-charms,,manual
+Telco,Manual TLS Certificates,https://github.com/canonical/manual-tls-certificates-operator,,manual
+Telco,Self Signed Certificates,https://github.com/canonical/self-signed-certificates-operator,,manual
+Telco,TLS Certificates Requirer,https://github.com/canonical/tls-certificates-requirer-operator,,manual
+Telco,Vault (K8s),https://github.com/canonical/vault-k8s-operator,,manual
+,airbyte-k8s-operator,https://github.com/canonical/airbyte-k8s-operator,,manual
+,aodh,https://opendev.org/openstack/charm-aodh,,auto
+,aproxy-operator,https://github.com/canonical/aproxy-operator,,manual
+,barbican,https://opendev.org/openstack/charm-barbican,,auto
+,barbican-vault,https://opendev.org/openstack/charm-barbican-vault,,auto
+,calico,https://github.com/charmed-kubernetes/layer-calico,,auto
+,cassandra,https://git.launchpad.net/cassandra-charm,,auto
+,ceilometer,https://opendev.org/openstack/charm-ceilometer,,auto
+,ceilometer-agent,https://opendev.org/openstack/charm-ceilometer-agent,,auto
+,charm-ubuntu,https://github.com/canonical/charm-ubuntu,,manual
+,cilium,https://github.com/charmed-kubernetes/charm-cilium,,auto
+,cinder,https://opendev.org/openstack/charm-cinder,,auto
+,cinder-backup,https://opendev.org/openstack/charm-cinder-backup,,auto
+,cinder-backup-swift-proxy,https://opendev.org/openstack/charm-cinder-backup-swift-proxy,,auto
+,cinder-ceph,https://opendev.org/openstack/charm-cinder-ceph,,auto
+,cinder-dell-powerflex,https://github.com/dell-esg/powerflex-cinder-charm,,auto
+,cinder-lvm,https://opendev.org/openstack/charm-cinder-lvm,,auto
+,cinder-netapp,https://opendev.org/openstack/charm-cinder-netapp,,auto
+,cinder-powermax,https://github.com/dell-esg/powermax-cinder-charm,,auto
+,cinder-powerstore,https://github.com/dell-esg/powerstore-cinder-charm,,auto
+,cinder-purestorage,https://opendev.org/openstack/charm-cinder-purestorage,,auto
+,conserver-charm,https://github.com/canonical/conserver-charm,,manual
+,containers-flannel,https://github.com/juju-solutions/charm-flannel,,auto
+,containers-kubeapi-load-balancer,https://github.com/kubernetes/kubernetes,,auto
+,designate-bind,https://opendev.org/openstack/charm-designate-bind,,auto
+,digest-squid-auth-helper,https://github.com/canonical/digest-squid-auth-helper,,manual
+,dokuwiki,https://github.com/battlemidget/juju-charm-dokuwiki.rb,,auto
+,etcd,https://github.com/canonical/charmed-etcd-operator,,manual
+,ganglia-node,https://git.launchpad.net/charm-ganglia-node,,auto
+,ghost,https://github.com/battlemidget/charm-layer-ghost,,auto
+,giraph,https://github.com/panagiotisl/bigtop,,auto
+,glance,https://opendev.org/openstack/charm-glance,,auto
+,glance-simplestreams-sync,https://opendev.org/openstack/charm-glance-simplestreams-sync,,auto
+,gnocchi,https://opendev.org/openstack/charm-gnocchi,,auto
+,hacluster,https://opendev.org/openstack/charm-hacluster,,auto
+,heat,https://opendev.org/openstack/charm-heat,,auto
+,hello-juju,https://github.com/juju/hello-juju-charm,,auto
+,httprequest-lego-provider,https://github.com/canonical/httprequest-lego-provider,,manual
+,influxdb,https://git.launchpad.net/influxdb-charm,,auto
+,ironic-api,https://opendev.org/openstack/charm-ironic-api,,auto
+,ironic-conductor,https://opendev.org/openstack/charm-ironic-conductor,,auto
+,jenkins,https://github.com/jenkinsci/jenkins-charm,,auto
+,jimm,https://github.com/canonical/jimm,,manual
+,juju-dashboard-k8s,https://github.com/canonical/juju-dashboard,,auto
+,jupyter,https://github.com/canonical/bundle-jupyter/issues/,,auto
+,k8s-operator,https://github.com/canonical/k8s-operator,,manual
+,keystone,https://opendev.org/openstack/charm-keystone,,auto
+,keystone-kerberos,https://opendev.org/openstack/charm-keystone-kerberos,,auto
+,keystone-ldap,https://opendev.org/openstack/charm-keystone-ldap,,auto
+,keystone-saml-mellon,https://opendev.org/openstack/charm-keystone-saml-mellon,,auto
+,kibana,https://git.launchpad.net/kibana-charm,,auto
+,knf-lma-stack,https://github.com/davigar15/ecosystem-prep,,auto
+,kube-ovn,https://github.com/charmed-kubernetes/charm-kube-ovn,,auto
+,kubeapi-load-balancer,https://github.com/charmed-kubernetes/charm-kubeapi-load-balancer,,auto
+,kubernetes-control-plane,https://github.com/charmed-kubernetes/charm-kubernetes-control-plane,,auto
+,kubernetes-core,https://github.com/charmed-kubernetes/bundle,,auto
+,kubernetes-worker,https://github.com/charmed-kubernetes/charm-kubernetes-worker,,auto
+,kubescape,https://github.com/vladklokun/ks-charmed,,auto
+,kyuubi-k8s-operator,https://github.com/canonical/kyuubi-k8s-operator,,manual
+,landscape-client,https://git.launchpad.net/landscape-client,,auto
+,landscape-dense,https://code.launchpad.net/landscape-bundles/+git,,auto
+,landscape-server,https://github.com/canonical/landscape-server-operator,,auto
+,lego-operator,https://github.com/canonical/lego-operator,,manual
+,linstor,https://github.com/linbit/charmed-linstor,,auto
+,Livepatch K8s,https://github.com/canonical/livepatch-k8s-operator,,manual
+,logstash,https://git.launchpad.net/logstash-charm,,auto
+,manila,https://opendev.org/openstack/charm-manila,,auto
+,manila-dashboard,https://opendev.org/openstack/charm-manila-dashboard,,auto
+,manila-netapp,https://opendev.org/openstack/charm-manila-netapp,,auto
+,masakari,https://opendev.org/openstack/charm-masakari,,auto
+,masakari-monitors,https://opendev.org/openstack/charm-masakari-monitors,,auto
+,metadata-api,https://github.com/juju-solutions/bundle-kubeflow,,auto
+,metallb,https://github.com/charmed-kubernetes/metallb-operator,,auto
+,mysql-router,https://git.launchpad.net/charm-mysql-router,,auto
+,mysql-router-k8s,https://github.com/canonical/mysql-router-operators,,auto
+,nats,https://github.com/canonical/nats-operator,,auto
+,netbox-k8s-operator,https://github.com/canonical/netbox-k8s-operator,,manual
+,neutron-api-odl,https://opendev.org/openstack/charm-neutron-api-odl,,auto
+,neutron-api-plugin-arista,https://opendev.org/openstack/charm-neutron-api-plugin-arista,,auto
+,neutron-api-plugin-ironic,https://opendev.org/openstack/charm-neutron-api-plugin-ironic,,auto
+,neutron-dynamic-routing,https://opendev.org/openstack/charm-neutron-dynamic-routing,,auto
+,neutron-gateway,https://opendev.org/openstack/charm-neutron-gateway,,auto
+,nfs-ganesha,https://git.launchpad.net/nfs-ganesha-charm,,auto
+,nova-cell-controller,https://opendev.org/openstack/charm-nova-cell-controller,,auto
+,nova-dell-powerflex,https://github.com/dell-esg/powerflex-nova-charm,,auto
+,OAuth2 Proxy K8s,https://github.com/canonical/oauth2-proxy-k8s-operator,,manual
+,octavia-dashboard,https://opendev.org/openstack/charm-octavia-dashboard,,auto
+,octavia-diskimage-retrofit,https://opendev.org/openstack/charm-octavia-diskimage-retrofit,,auto
+,odl-controller,https://opendev.org/openstack/charm-odl-controller,,auto
+,openstack-exporter-operator,https://github.com/canonical/openstack-exporter-operator,,manual
+,openvswitch-odl,https://opendev.org/openstack/charm-openvswitch-odl,,auto
+,ovn-chassis,https://git.launchpad.net/charm-ovn-chassis,,auto
+,ovn-dedicated-chassis,https://git.launchpad.net/charm-ovn-dedicated-chassis,,auto
+,pacemaker-remote,https://opendev.org/openstack/charm-pacemaker-remote,,auto
+,parca-agent-operator,https://github.com/canonical/parca-agent-operator,,manual
+,parca-k8s-operator,https://github.com/canonical/parca-k8s-operator,,manual
+,parca-scrape-target-operator,https://github.com/canonical/parca-scrape-target-operator,,manual
+,percona-cluster,https://opendev.org/openstack/charm-percona-cluster,,auto
+,placement,https://opendev.org/openstack/charm-placement,,auto
+,rabbitmq-server,https://opendev.org/openstack/charm-rabbitmq-server,,auto
+,S3 Integrator,https://github.com/canonical/s3-integrator,,manual
+,spark-integration-hub-k8s-operator,https://github.com/canonical/spark-integration-hub-k8s-operator,,manual
+,squid-reverseproxy,https://git.launchpad.net/squid-reverseproxy-charm,,auto
+,swift-proxy,https://opendev.org/openstack/charm-swift-proxy,,auto
+,swift-storage,https://opendev.org/openstack/charm-swift-storage,,auto
+,tempo-coordinator-k8s,https://github.com/canonical/tempo-operators,,auto
+,ubuntu-repository-cache,https://code.launchpad.net/~ubuntu-repository-cache-charmers/ubuntu-repository-cache/layer-ubuntu-repository-cache,,auto
+,znc,https://github.com/battlemidget/juju-charm-znc,,auto
