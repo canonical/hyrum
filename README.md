@@ -63,6 +63,10 @@ hyrum unit --framework scenario
 # Always exit 0, even if some charms fail (default is exit non-zero on
 # any failure):
 hyrum unit --no-fail
+
+# Dump each charm's stdout, stderr, and run metadata to a per-charm
+# file under the given directory for offline triage:
+hyrum unit --log-dir ~/hyrum-runs/logs
 ```
 
 Output statuses:
