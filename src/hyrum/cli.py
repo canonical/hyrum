@@ -53,6 +53,7 @@ def _build_patcher(
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
+    auto_python: bool,
 ):
     if no_patch:
         return patchers.NullPatcher()
@@ -62,6 +63,7 @@ def _build_patcher(
         poetry_executable=tuple(poetry_executable.split()),
         uv_executable=tuple(uv_executable.split()),
         lock_timeout=lock_timeout,
+        auto_python=auto_python,
     )
     return patchers.PatcherStack([patchers.OpsSourcePatcher(ops)])
 
@@ -212,6 +214,15 @@ def _select_repos(
     help='Timeout for poetry/uv lock during patching. Independent of --timeout.',
 )
 @click.option(
+    '--auto-python/--no-auto-python',
+    default=True,
+    show_default=True,
+    help=(
+        "Run poetry lock under an interpreter that satisfies the charm's "
+        'requires-python (via uv run --python X.Y). Requires uv on PATH.'
+    ),
+)
+@click.option(
     '--quiet',
     is_flag=True,
     default=False,
@@ -262,6 +273,7 @@ def main(
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
+    auto_python: bool,
     quiet: bool,
     verbose: bool,
     verbosity: str | None,
@@ -290,6 +302,7 @@ def main(
         poetry_executable=poetry_executable,
         uv_executable=uv_executable,
         lock_timeout=lock_timeout,
+        auto_python=auto_python,
     )
     runner = _build_runner(
         choice=runners.RunnerChoice(runner_choice),
