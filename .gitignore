@@ -27,5 +27,10 @@ htmlcov/
 .hyrum-logs/
 results-*.json
 
+# Docs build output
+docs/_build/
+docs/.venv/
+docs/_dev/
+
 # uv
 .python-version
