@@ -1,0 +1,15 @@
+# Ensure the last line in this file has a newline at the end, to support concatenation
+Charmcraft
+charmcraft
+charmhub
+Charmhub
+CSV
+Hyrum's
+monorepo
+monorepos
+ops
+pre-commit
+pyproject
+PyPI
+tox
+uv
