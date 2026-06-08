@@ -354,10 +354,16 @@ def _patch_pyproject_uv(original: str, ops: OpsSource, ops_extras: set[str]) -> 
     """Patch a uv-managed pyproject.
 
     uv resolves the dependency graph itself, so the canonical way to
-    point ``ops`` at a git source is ``[tool.uv.sources]``. We also
-    add companion packages as direct dependencies so uv accepts a URL
-    source for what would otherwise be a transitive dep.
+    point ``ops`` at a git source is ``[tool.uv.sources]``. Companion
+    packages are always added as direct dependencies plus sources,
+    regardless of whether the charm asked for the matching extra: the
+    patched ``ops`` HEAD declares its companions as workspace URL deps,
+    and uv requires URL deps on transitive packages to be hoisted to
+    the top-level pyproject. A charm that pulls ``ops`` transitively
+    (e.g. via ``coordinated-workers``) otherwise fails ``uv lock`` with
+    "URL dependencies must be expressed as direct requirements".
     """
+    del ops_extras  # uv hoists all companions unconditionally.
     source_lines: list[str] = []
     if ops.branch:
         source_lines.append(f'ops = {{ git = "{ops.url}", branch = "{ops.branch}" }}')
@@ -365,9 +371,7 @@ def _patch_pyproject_uv(original: str, ops: OpsSource, ops_extras: set[str]) -> 
         source_lines.append(f'ops = {{ git = "{ops.url}" }}')
 
     companion_direct: list[str] = []
-    for extra, (pkg, subdir) in _COMPANION_PACKAGES.items():
-        if extra not in ops_extras:
-            continue
+    for pkg, subdir in _COMPANION_PACKAGES.values():
         if ops.branch:
             source_lines.append(
                 f'{pkg} = {{ git = "{ops.url}", '
