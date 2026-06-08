@@ -8,7 +8,7 @@ charm-tooling
 design
 ```
 
-Background reading on why hyrum exists and how it works.
+The dependency-coupling problem that motivates hyrum, its place within the broader charm-development toolchain, and the patcher–runner architecture that keeps fleet runs reproducible and signal-rich.
 
 **[Hyrum's Law and this tool](hyrums-law)**
 : What Hyrum's Law says, why it matters for `ops` development, and what problem hyrum solves.
