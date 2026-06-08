@@ -8,7 +8,7 @@ configuration
 output
 ```
 
-Technical reference for hyrum.
+Technical specifications for hyrum's command-line surface, the `hyrum.toml` configuration file, and the structure of run output — outcome statuses, summary table format, and the optional per-charm log files.
 
 **[CLI reference](cli)**
 : Every command-line option with full descriptions.
