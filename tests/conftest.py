@@ -7,19 +7,22 @@ import pathlib
 import pytest
 
 
-def _make_charm(root: pathlib.Path, *, tox: bool = True, makefile: bool = False) -> pathlib.Path:
+def make_charm(
+    root: pathlib.Path,
+    *,
+    tox: bool = True,
+    makefile: bool = False,
+    requirements: bool = False,
+) -> pathlib.Path:
     root.mkdir(parents=True, exist_ok=True)
     (root / 'charmcraft.yaml').write_text('type: charm\n')
     if tox:
         (root / 'tox.ini').write_text('[tox]\nenvlist = unit\n')
     if makefile:
         (root / 'Makefile').write_text('unit:\n\techo ok\n')
+    if requirements:
+        (root / 'requirements.txt').write_text('ops>=2.10\n')
     return root
-
-
-@pytest.fixture
-def make_charm():
-    return _make_charm
 
 
 @pytest.fixture

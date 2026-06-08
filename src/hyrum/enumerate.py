@@ -6,8 +6,8 @@ Handles:
   * monorepos heuristically detected by the presence of `charmcraft.yaml`
     or `metadata.yaml` in a subdirectory.
 
-Reactive and classic hook-based charms are filtered out — `hyrum`
-targets `ops`-based charms.
+Reactive and classic hook-based charms are dropped by the ``not_legacy``
+filter at the application layer — ``hyrum`` targets ``ops``-based charms.
 
 Charm-collection curation is out of scope for this tool. The cache
 folder is assumed to be pre-populated (e.g. by ``get-charms`` or
@@ -51,12 +51,6 @@ def _iter_monorepo(base: pathlib.Path) -> Iterator[pathlib.Path]:
             yield from _iter_bundle(child)
 
 
-def _is_legacy_charm(path: pathlib.Path) -> bool:
-    # Reactive charms have a `reactive/` directory; classic hook charms
-    # have a `hooks/` directory. Both predate `ops` and are out of scope.
-    return (path / 'reactive').exists() or (path / 'hooks').exists()
-
-
 def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
     """Yield each charm repository under ``base``.
 
@@ -73,14 +67,9 @@ def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
         if not entry.is_dir() or entry.name.startswith('.'):
             continue
         if _is_bundle_dir(entry):
-            candidates = _iter_bundle(entry)
+            yield from _iter_bundle(entry)
         elif _is_charm_dir(entry):
-            candidates = iter([entry])
+            yield entry
         else:
             # Treat as a monorepo; if it has no charm subdirs this yields nothing.
-            candidates = _iter_monorepo(entry)
-        for candidate in candidates:
-            if _is_legacy_charm(candidate):
-                logger.info('Ignoring legacy (reactive/hooks) charm: %s', candidate)
-                continue
-            yield candidate
+            yield from _iter_monorepo(entry)

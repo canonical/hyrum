@@ -11,15 +11,21 @@ def test_version_string():
     assert hyrum.__version__
 
 
+def test_cli_version_runs():
+    result = testing.CliRunner().invoke(cli.main, ['--version'])
+    assert result.exit_code == 0
+    assert hyrum.__version__ in result.output
+
+
 def test_cli_help_runs():
     result = testing.CliRunner().invoke(cli.main, ['--help'])
     assert result.exit_code == 0
     assert '--cache-folder' in result.output
-    assert '--target' in result.output
+    assert 'TARGET' in result.output
     assert '--runner' in result.output
 
 
 def test_cli_requires_target():
     result = testing.CliRunner().invoke(cli.main, [])
     assert result.exit_code != 0
-    assert '--target' in result.output or 'Missing option' in result.output
+    assert 'TARGET' in result.output or 'Missing argument' in result.output

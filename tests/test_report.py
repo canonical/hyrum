@@ -8,10 +8,24 @@ import rich.console
 from hyrum import pool, report
 
 
-def _render(outcomes, *, base: pathlib.Path, target: str = 'unit', verbose: bool = False):
+def _render(
+    outcomes,
+    *,
+    base: pathlib.Path,
+    target: str = 'unit',
+    verbose: bool = False,
+    no_headers: bool = False,
+):
     buf = io.StringIO()
     console = rich.console.Console(file=buf, width=120, force_terminal=False)
-    report.render(outcomes, base=base, target=target, verbose=verbose, console=console)
+    report.render(
+        outcomes,
+        base=base,
+        target=target,
+        verbose=verbose,
+        no_headers=no_headers,
+        console=console,
+    )
     return buf.getvalue()
 
 
@@ -56,9 +70,36 @@ def test_render_verbose_includes_error_detail(tmp_path: pathlib.Path):
     assert 'bad pyproject' in out
 
 
+def test_render_verbose_preserves_bracketed_detail(tmp_path: pathlib.Path):
+    outcomes = [
+        pool.Outcome(
+            repo=tmp_path / 'borked',
+            status='patcher_error',
+            error='pyproject has no recognisable [project] or [tool.poetry] deps',
+        ),
+    ]
+    out = _render(outcomes, base=tmp_path, verbose=True)
+    assert '[project]' in out
+    assert '[tool.poetry]' in out
+
+
 def test_render_verbose_lists_skipped(tmp_path: pathlib.Path):
     outcomes = [
         pool.Outcome(repo=tmp_path / 'x', status='skipped', skip_reason='ignored (manual)'),
     ]
     out = _render(outcomes, base=tmp_path, verbose=True)
     assert 'ignored (manual)' in out
+
+
+def test_render_uses_uppercase_headers(tmp_path: pathlib.Path):
+    out = _render([], base=tmp_path)
+    assert 'STATUS' in out
+    assert 'COUNT' in out
+
+
+def test_render_no_headers_suppresses_header_row(tmp_path: pathlib.Path):
+    out = _render([], base=tmp_path, no_headers=True)
+    assert 'STATUS' not in out
+    assert 'COUNT' not in out
+    # The status rows themselves are still present (with zero counts).
+    assert 'passed' in out
