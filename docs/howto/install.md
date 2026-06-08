@@ -42,7 +42,7 @@ The `uv sync` command creates a virtual environment and installs all dependencie
 - `tox` or `make` on your PATH (whichever your charms use)
 - `git` on your PATH, to clone charms separately (hyrum does not clone for you)
 
-When using the ops-source patcher (`--ops-source-branch`), you also need:
+When `--ops-source` points at a git URL or local checkout, you also need:
 
 - `poetry` on your PATH if any charms in your cache use Poetry
 - `uv` on your PATH if any charms use uv

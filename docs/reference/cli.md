@@ -68,15 +68,16 @@ hyrum [OPTIONS] TARGET
 
 `--no-patch / --patch`
 : Skip the dependency-swap step entirely. Run charms against whatever dependencies they already pin.
-: Default: `--patch` (patching is enabled when `--ops-source-branch` is set; otherwise `--no-patch` is effectively the default behaviour because no source branch is supplied)
+: Default: `--patch` (when patching, charms are run against the default branch of `--ops-source` unless another ref is supplied)
 
-`--ops-source URL`
-: Git URL of the operator repository to swap in.
-: Default: `https://github.com/canonical/operator`
-
-`--ops-source-branch BRANCH`
-: Branch of `--ops-source` to use. If not set and `--no-patch` is not set, hyrum uses the default branch of `--ops-source`.
-: Default: (none)
+`--ops-source SPEC`
+: Where to pull `ops` from. Accepts several forms:
+: - PyPI version (`2.17.0`, or any PEP 440 version). Companion packages (`ops-scenario`, `ops-tracing`) resolve from PyPI normally.
+: - `git+<url>[@ref]` — explicit git URL (the form `pip` and `uv` print). `ref` is any git ref: branch, tag, or commit SHA.
+: - `<url>[@ref]` — bare `https://…` git URL with optional `@ref`.
+: - `owner:branch` — GitHub shorthand, expands to `https://github.com/<owner>/operator` at that branch.
+: - `file://<path>` or a bare path (`/abs/operator`, `./operator`, `~/operator`) — a local operator checkout.
+: Default: `https://github.com/canonical/operator` (the default branch)
 
 `--poetry-executable CMD`
 : Poetry command used to regenerate `poetry.lock` after patching.
@@ -148,7 +149,7 @@ hyrum [OPTIONS] TARGET
 
 ```text
 # Run tox -e unit with ops swapped to a dev branch, 8 workers:
-hyrum unit --ops-source-branch fix/my-change --workers 8
+hyrum unit --ops-source canonical:fix/my-change --workers 8
 
 # Run without patching:
 hyrum unit --no-patch

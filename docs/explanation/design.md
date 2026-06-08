@@ -38,7 +38,7 @@ Any object with an `apply` method that returns a context manager satisfies the p
 
 `PatcherStack` composes multiple patchers and unwinds them in reverse order on exit, behaving like nested context managers.
 
-`NullPatcher` does nothing. It is used when `--no-patch` is set or when no ops-source branch is specified.
+`NullPatcher` does nothing. It is used when `--no-patch` is set.
 
 ## The Runner protocol
 

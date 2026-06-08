@@ -25,7 +25,7 @@ uv tool install hyrum
 ```text
 # Run tox -e unit across every charm in ~/.cache/hyrum/charms,
 # with ops swapped to a development branch:
-hyrum unit --ops-source-branch fix/my-change --workers 8
+hyrum unit --ops-source canonical:fix/my-change --workers 8
 
 # Run without any dependency swap (test charms as they are pinned):
 hyrum unit --no-patch

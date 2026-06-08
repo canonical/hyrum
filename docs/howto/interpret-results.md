@@ -86,7 +86,7 @@ Compare a patched run against a `--no-patch` baseline to distinguish failures in
 
 ```text
 hyrum unit --no-patch --log-dir ./baseline
-hyrum unit --ops-source-branch fix/my-change --log-dir ./patched
+hyrum unit --ops-source canonical:fix/my-change --log-dir ./patched
 ```
 
 Any charm that appears in the `failed` column for the patched run but not the baseline is a genuine regression introduced by your change.
