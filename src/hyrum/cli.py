@@ -92,13 +92,11 @@ def _parse_ops_source(arg: str) -> dict[str, str | None]:
     Accepted forms:
 
     - ``2.17.0`` — PyPI version (any PEP 440 version specifier).
-    - ``git+<url>[@branch]`` — explicit git URL (the form ``pip`` and
-      ``uv`` print).
+    - ``git+<url>[@branch]`` — explicit git URL (the form ``pip`` and ``uv`` print).
     - ``<url>[@branch]`` — bare ``https://…`` git URL with optional branch.
     - ``owner:branch`` — GitHub shorthand, expands to
       ``https://github.com/<owner>/operator`` at the given branch.
-    - ``file://<path>`` or a bare path (``/abs``, ``./rel``, ``~/x``) —
-      local operator checkout.
+    - ``file://<path>`` or a bare path (``/abs``, ``./rel``, ``~/x``) — local operator checkout.
     """
     arg = arg.strip()
     if not arg:

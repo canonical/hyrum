@@ -57,7 +57,9 @@ class OpsSource:
 
     - **git** (default): ``url`` plus optional ``branch`` — pulled via
       PEP 508 ``git+<url>[@branch]`` URLs. Companions come from the
-      same ref via ``#subdirectory=<sub>``.
+      same ref via ``#subdirectory=<sub>``. ``branch`` is interpolated
+      raw into the git URL, so any ref git understands (tag, commit
+      SHA) works in the same field.
     - **path**: ``path`` — local operator checkout, expressed as a
       ``file://`` URL. Companions resolved by ``#subdirectory=<sub>``.
     - **pypi**: ``version`` — pin ops to a PyPI version. Companion
@@ -95,7 +97,7 @@ class OpsSource:
             return 'path'
         return 'git'
 
-    def _url(self, *, subdir: str | None = None) -> str:
+    def _source_url(self, *, subdir: str | None = None) -> str:
         if self.kind == 'path':
             assert self.path is not None
             url = f'file://{self.path}'
@@ -114,7 +116,7 @@ class OpsSource:
         extras_str = f'[{",".join(sorted(extras))}]' if extras else ''
         if self.kind == 'pypi':
             return f'{name}{extras_str}=={self.version}'
-        return f'{name}{extras_str} @ {self._url(subdir=subdir)}'
+        return f'{name}{extras_str} @ {self._source_url(subdir=subdir)}'
 
     def overrides_companions(self) -> bool:
         """Whether companion packages should be swapped in alongside ops.
