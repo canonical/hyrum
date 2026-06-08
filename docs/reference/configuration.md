@@ -1,3 +1,9 @@
+---
+myst:
+  html_meta:
+    description: Reference for the hyrum.toml configuration file format, including the ignore section and all supported keys.
+---
+
 # Configuration reference
 
 Hyrum reads an optional TOML file, defaulting to `hyrum.toml` in the current working directory. Use `--config PATH` to specify a different location.

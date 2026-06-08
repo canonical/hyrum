@@ -1,3 +1,9 @@
+---
+myst:
+  html_meta:
+    description: How Hyrum's Law applies to the ops library and why hyrum exists to surface charms that depend on observable behaviour before it changes.
+---
+
 # Hyrum's Law and this tool
 
 ## Hyrum's Law

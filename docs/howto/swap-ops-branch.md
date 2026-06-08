@@ -1,3 +1,9 @@
+---
+myst:
+  html_meta:
+    description: Point every charm's ops dependency at a development branch of canonical/operator to find breakages before release.
+---
+
 # How to swap ops to a development branch
 
 The ops-source patcher rewrites each charm's dependency declarations so that `ops` is pulled from a git source instead of PyPI. This lets you run the charm fleet against a pre-release `ops` to find breakages before shipping.

@@ -1,3 +1,9 @@
+---
+myst:
+  html_meta:
+    description: Use --repo and --limit to run hyrum against one charm for a quick sanity-check or to debug a failure.
+---
+
 # How to run against a single charm
 
 To check one specific charm, for a quick sanity-check or to debug a failure, use `--repo` or `--limit` to avoid waiting for a full fleet run.

@@ -1,3 +1,9 @@
+---
+myst:
+  html_meta:
+    description: Use a hyrum.toml configuration file to exclude charm repositories that are known to fail or are too slow to be useful.
+---
+
 # How to suppress known results
 
 If some charm repositories are always expected to fail, or are too slow to be useful, exclude them from hyrum runs with a `hyrum.toml` configuration file.
