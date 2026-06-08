@@ -83,7 +83,7 @@ class OpsSource:
     """
 
     def __post_init__(self) -> None:
-        if sum(x is not None for x in (self.version, self.path)) > 1:
+        if self.version is not None and self.path is not None:
             raise ValueError('OpsSource: set at most one of `version` and `path`')
 
     @property
