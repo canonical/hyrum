@@ -105,7 +105,7 @@ def _parse_ops_source(arg: str) -> dict[str, str | None]:
         raise click.UsageError('--ops-source: empty value')
 
     if arg.startswith('git+'):
-        url, branch = _split_url_branch(arg[len('git+') :])
+        url, branch = _split_url_branch(arg.removeprefix('git+'))
         return {'url': url, 'branch': branch}
     if arg.startswith('file://'):
         return {'path': _resolve_path(arg[len('file://') :])}
