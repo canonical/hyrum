@@ -10,7 +10,7 @@ Each charm produces exactly one outcome. The possible statuses are:
 | `failed`        | The runner exited non-zero. |
 | `no_target`     | The requested tox environment or make target does not exist in this charm. Not counted as a failure. |
 | `timeout`       | The runner was killed after `--timeout` seconds. |
-| `patcher_error` | The dependency swap could not be applied. Distinct from a runner failure — indicates an infrastructure problem rather than a charm test failure. |
+| `patcher_error` | The dependency swap could not be applied. This is distinct from a runner failure: it points to an infrastructure problem, not a charm test failure. |
 | `skipped`       | Excluded before the run began (by `--repo`, `--framework`, `[ignore]` in `hyrum.toml`, or because the charm has neither `tox.ini` nor `Makefile`). |
 
 ## Summary table
