@@ -63,18 +63,20 @@ def _apply_host_env_defaults(target: str, env: dict[str, str] | None = None) -> 
     a user who has explicitly set ``PYO3_USE_ABI3_FORWARD_COMPATIBILITY=0``
     keeps their value. For tox runs we also append ``pass_env+=`` entries to
     ``TOX_OVERRIDE`` so the testenv's install step actually sees the vars;
-    without that, tox's process-isolation strips them.
+    without that, tox's process-isolation strips them. Entries are joined
+    with ``;`` per tox's documented ``TOX_OVERRIDE`` grammar — newlines are
+    not an entry separator and would be folded into the preceding value.
     """
     env = env if env is not None else os.environ  # type: ignore[assignment]
     assert env is not None
     for key, value in _HOST_ENV_DEFAULTS.items():
         env.setdefault(key, value)
     overrides = [f'testenv:{target}.pass_env+={key}' for key in _HOST_ENV_DEFAULTS]
-    existing = env.get('TOX_OVERRIDE', '').strip()
+    existing = env.get('TOX_OVERRIDE', '').strip().rstrip(';')
     if existing:
-        env['TOX_OVERRIDE'] = existing + '\n' + '\n'.join(overrides)
+        env['TOX_OVERRIDE'] = existing + ';' + ';'.join(overrides)
     else:
-        env['TOX_OVERRIDE'] = '\n'.join(overrides)
+        env['TOX_OVERRIDE'] = ';'.join(overrides)
     return env
 
 

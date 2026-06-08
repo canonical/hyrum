@@ -165,8 +165,11 @@ def test_apply_host_env_defaults_respects_existing_values():
 def test_apply_host_env_defaults_appends_to_existing_tox_override():
     env: dict[str, str] = {'TOX_OVERRIDE': 'testenv.set_env+=FOO=bar'}
     cli._apply_host_env_defaults('lint', env)
-    assert 'testenv.set_env+=FOO=bar' in env['TOX_OVERRIDE']
-    assert 'testenv:lint.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY' in env['TOX_OVERRIDE']
+    # ';' is tox's documented TOX_OVERRIDE entry separator (tox splits on it);
+    # newlines would be folded into the preceding override's value.
+    assert env['TOX_OVERRIDE'] == (
+        'testenv.set_env+=FOO=bar;testenv:lint.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY'
+    )
 
 
 def test_apply_host_env_defaults_uses_target_in_override():
