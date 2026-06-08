@@ -57,7 +57,7 @@ This documentation uses the [Diátaxis](https://diataxis.fr/) documentation stru
 
 ## Project and community
 
-Hyrum is an open source project ([Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0)) maintained by the [Canonical Charm Tech](https://github.com/canonical/charm-tech) team.
+Hyrum is an open source project ([Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0)) maintained by the Canonical Charm Tech team.
 
 - [Report a bug](https://github.com/canonical/hyrum/issues)
 - [Contribute](https://github.com/canonical/hyrum/blob/main/CONTRIBUTING.md)
