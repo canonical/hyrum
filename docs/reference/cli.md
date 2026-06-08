@@ -31,15 +31,15 @@ hyrum [OPTIONS] TARGET
 
 `--framework {scenario,jubilant}`
 : Only process charms that use the specified testing framework. Framework detection checks dependency declarations first, then falls back to AST scanning of test files.
-: Default: (no filter — all frameworks)
+: Default: (no filter; all frameworks)
 
 ### Runner
 
 `--runner {auto,tox,make}`
 : Which runner backend to use.
-: `auto` — prefer tox if `tox.ini` is present, otherwise prefer make; falls back to the other backend if the requested target is absent.
-: `tox` — always use tox.
-: `make` — always use make.
+: `auto`: prefer tox if `tox.ini` is present, otherwise prefer make; fall back to the other backend if the requested target is absent.
+: `tox`: always use tox.
+: `make`: always use make.
 : Default: `auto`
 
 `--workers N`
@@ -93,7 +93,7 @@ hyrum [OPTIONS] TARGET
 
 `--log-dir PATH`
 : Directory to write per-charm log files. Each file contains the runner's stdout, stderr, and run metadata. File names use the charm's path relative to the cache folder with `/` replaced by `__`.
-: Default: (not set — logs are not written)
+: Default: (not set; logs are not written)
 
 `--quiet`
 : Suppress all output except errors. The exit code still reflects pass/fail. Mutually exclusive with `--verbose` and `--verbosity`.
@@ -105,10 +105,10 @@ hyrum [OPTIONS] TARGET
 
 `--verbosity {debug,trace}`
 : Developer-level log verbosity.
-: `debug` — detailed execution logging.
-: `trace` — currently aliased to `debug`; reserved for future per-line code tracing.
+: `debug`: detailed execution logging.
+: `trace`: currently aliased to `debug`; reserved for future per-line code tracing.
 : Mutually exclusive with `--quiet` and `--verbose`.
-: Default: (not set — INFO level)
+: Default: (not set; INFO level)
 
 `--no-headers`
 : Suppress the header row in the summary table.

@@ -72,7 +72,7 @@ hyrum unit --ops-source-branch fix/my-change --no-auto-python
 
 ## Run without patching
 
-To verify that your charm fleet is passing before applying the patch — useful as a baseline:
+Run a baseline first, to see which charms pass before the patch is applied:
 
 ```text
 hyrum unit --no-patch --workers 8

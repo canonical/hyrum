@@ -6,11 +6,11 @@
 
 > With a sufficient number of users of an API, it does not matter what you promise in the contract: all observable behaviours of your system will be depended on by somebody.
 
-The law describes a practical reality in software maintenance. Once a library has enough consumers, *any* observable behaviour — even behaviours the library author considers implementation details, bugs, or accidents of timing — will be relied on by some consumer. When the library changes that behaviour, some consumer breaks, even if the change was well within the documented contract.
+Once a library has enough consumers, *any* observable behaviour will be relied on by some consumer, including behaviours the library author thought of as implementation details, bugs, or accidents of timing. When the library changes that behaviour, some consumer breaks, even if the change was well within the documented contract.
 
 ## Why this matters for ops
 
-The `ops` library (from `canonical/operator`) is the foundation for all Juju charms written in Python. It has a large and diverse set of consumers, each with its own test suite. When the ops team changes a behaviour — a method signature, an exception type, a hook-dispatch order, an internal class that leaked into the public namespace — they cannot reliably predict which charms will break by reading the source code alone. Consumer code evolves independently and may depend on behaviour that was never part of the public API.
+The `ops` library (from `canonical/operator`) is the foundation for all Juju charms written in Python. It has a large and diverse set of consumers, each with its own test suite. When the ops team changes a behaviour (a method signature, an exception type, a hook-dispatch order, an internal class that leaked into the public namespace), they cannot reliably predict which charms will break by reading the source code alone. Consumer code evolves independently and may depend on behaviour that was never part of the public API.
 
 ## What hyrum does
 
@@ -26,8 +26,8 @@ The result is a compatibility matrix: *this proposed change breaks N charms, her
 ## What hyrum does not do
 
 - It does not decide what to *do* about failures. That is a human judgment call.
-- It does not clone charms — the cache folder is pre-populated externally.
-- It does not run integration tests — only lint and unit tests, which run without a live Juju model.
+- It does not clone charms; the cache folder is pre-populated externally.
+- It does not run integration tests, only lint and unit tests, which run without a live Juju model.
 - It does not guarantee that passing tests mean the charm works correctly under the new `ops`. Tests only cover what they cover.
 
 ## The baseline comparison pattern

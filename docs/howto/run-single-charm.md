@@ -1,6 +1,6 @@
 # How to run against a single charm
 
-When you want to check one specific charm — for a quick sanity-check or to debug a failure — use `--repo` or `--limit` to avoid waiting for a full fleet run.
+To check one specific charm, for a quick sanity-check or to debug a failure, use `--repo` or `--limit` to avoid waiting for a full fleet run.
 
 ## Filter by name
 

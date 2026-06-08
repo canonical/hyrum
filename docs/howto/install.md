@@ -34,7 +34,7 @@ The `uv sync` command creates a virtual environment and installs all dependencie
 
 - Python 3.11 or later
 - `tox` or `make` on your PATH (whichever your charms use)
-- `git` on your PATH (to clone charms separately — hyrum does not clone for you)
+- `git` on your PATH, to clone charms separately (hyrum does not clone for you)
 
 When using the ops-source patcher (`--ops-source-branch`), you also need:
 

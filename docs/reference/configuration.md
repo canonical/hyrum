@@ -17,7 +17,7 @@ The `[ignore]` table maps category names to lists of charm paths to exclude.
 
 **Type:** `dict[str, list[str]]`
 
-Each key is a free-form string that names the reason for the exclusion. This string appears in the run output as the skip reason (for example, `skipped — ignored (expensive)`). Choose names that communicate *why* the charm is excluded.
+Each key is a free-form string that names the reason for the exclusion. This string appears in the run output as the skip reason (for example, the `expensive` in `skipped: ignored (expensive)`). Choose names that communicate *why* the charm is excluded.
 
 Each value is a list of charm paths, where each path is one of:
 

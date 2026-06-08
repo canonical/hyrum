@@ -19,10 +19,10 @@ Each key under `[ignore]` is a free-form category name. The values are lists of 
 
 Good category names make the output self-documenting:
 
-- `expensive` — charms whose tests take too long for routine runs
-- `pre-existing` — charms with known failures that predate the change under test
-- `manual` — charms that require manual steps before running
-- `broken-upstream` — charms that are broken in their own main branch
+- `expensive`: charms whose tests take too long for routine runs.
+- `pre-existing`: charms with known failures that predate the change under test.
+- `manual`: charms that require manual steps before running.
+- `broken-upstream`: charms that are broken in their own main branch.
 
 ## Point to a different config file
 
