@@ -14,7 +14,7 @@ uv tool install hyrum
 
 ```text
 # Run tox -e unit with ops swapped to a development branch:
-hyrum unit --ops-source-branch fix/my-change --workers 8
+hyrum unit --ops-source canonical:fix/my-change --workers 8
 
 # Run without any dependency swap:
 hyrum unit --no-patch

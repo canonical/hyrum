@@ -30,7 +30,7 @@ User journey context: initial setup, run configuration, execution
 : Point hyrum at a large cache folder and run across many charms.
 
 **[Swap ops to a development branch](swap-ops-branch)**
-: Use `--ops-source-branch` to test a pre-release `ops` against your charm fleet.
+: Use `--ops-source` to test a pre-release `ops` against your charm fleet.
 
 ## Reading and curating results
 <!--

@@ -10,11 +10,19 @@ The ops-source patcher rewrites each charm's dependency declarations so that `op
 
 ## Basic usage
 
-Point hyrum at a branch of the `canonical/operator` repository:
+Point hyrum at a branch of the `canonical/operator` repository using the `owner:branch` shorthand:
 
 ```text
-hyrum unit --ops-source-branch fix/my-change --workers 8
+hyrum unit --ops-source canonical:fix/my-change --workers 8
 ```
+
+`--ops-source` accepts several forms:
+
+- `canonical:fix/my-change` — `owner:branch` shorthand, expands to `https://github.com/canonical/operator` at that branch.
+- `https://github.com/canonical/operator@fix/my-change` — bare git URL with optional `@branch` (or tag, commit SHA).
+- `git+https://github.com/canonical/operator@fix/my-change` — explicit PEP 508 form (the one `pip` and `uv` print).
+- `2.17.0` — a PyPI version; companion packages still resolve from PyPI.
+- `~/operator`, `/abs/operator`, or `file:///abs/operator` — a local operator checkout.
 
 Hyrum will:
 
@@ -28,9 +36,7 @@ Hyrum will:
 To use a branch on a fork rather than the upstream repository:
 
 ```text
-hyrum unit \
-    --ops-source https://github.com/your-fork/operator \
-    --ops-source-branch my-experimental-branch
+hyrum unit --ops-source your-fork:my-experimental-branch
 ```
 
 ## Companion packages
@@ -53,7 +59,7 @@ If regeneration fails (for example, because the charm has an unresolvable depend
 Lockfile regeneration can take a few minutes for large charms. The default timeout is 600 seconds per charm. Adjust it if needed:
 
 ```text
-hyrum unit --ops-source-branch fix/my-change --lock-timeout 300
+hyrum unit --ops-source canonical:fix/my-change --lock-timeout 300
 ```
 
 ### Use a custom poetry or uv executable
@@ -61,7 +67,7 @@ hyrum unit --ops-source-branch fix/my-change --lock-timeout 300
 If `poetry` or `uv` is not on your PATH, or if you need a specific version:
 
 ```text
-hyrum unit --ops-source-branch fix/my-change \
+hyrum unit --ops-source canonical:fix/my-change \
     --poetry-executable "uvx poetry" \
     --uv-executable "uvx uv"
 ```
@@ -73,7 +79,7 @@ Some charms declare a `requires-python` that is higher than the Python you are r
 Disable this behaviour if it causes problems:
 
 ```text
-hyrum unit --ops-source-branch fix/my-change --no-auto-python
+hyrum unit --ops-source canonical:fix/my-change --no-auto-python
 ```
 
 ## Run without patching

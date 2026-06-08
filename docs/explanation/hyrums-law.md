@@ -45,7 +45,7 @@ Because some charms have pre-existing test failures unrelated to any change, a b
 hyrum unit --no-patch --log-dir baseline/
 
 # Patched: how many fail with the proposed change:
-hyrum unit --ops-source-branch fix/my-change --log-dir patched/
+hyrum unit --ops-source canonical:fix/my-change --log-dir patched/
 ```
 
 Charms that appear as `failed` in the patched run but not in the baseline are the set of regressions introduced by the change.
