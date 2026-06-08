@@ -1,3 +1,9 @@
+---
+myst:
+  html_meta:
+    description: Reference for hyrum's outcome statuses, summary table, verbose offender list, and exit codes.
+---
+
 # Output reference
 
 ## Outcome statuses

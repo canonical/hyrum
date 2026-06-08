@@ -1,3 +1,9 @@
+---
+myst:
+  html_meta:
+    description: Read the hyrum summary table and verbose offender list, and decide what to do about each outcome status.
+---
+
 # How to interpret results
 
 After a run, hyrum prints a summary table and an optional verbose offender list. This guide explains what each status means and how to act on it.

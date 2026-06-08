@@ -1,3 +1,9 @@
+---
+myst:
+  html_meta:
+    description: Complete reference for the hyrum command-line interface, including every option, argument, and exit code.
+---
+
 # CLI reference
 
 ## Synopsis

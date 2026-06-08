@@ -1,3 +1,9 @@
+---
+myst:
+  html_meta:
+    description: How hyrum relates to ops, Charmcraft, tox, make, and the wider Juju charm tooling ecosystem.
+---
+
 # Relationship to charm tooling
 
 This page describes how hyrum relates to the other tools you'll meet around it.

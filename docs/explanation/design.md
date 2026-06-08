@@ -1,3 +1,9 @@
+---
+myst:
+  html_meta:
+    description: Why hyrum separates patching from running, how the async worker pool is structured, and how outcomes are classified.
+---
+
 # Architecture and design
 
 ## The patcher–runner model

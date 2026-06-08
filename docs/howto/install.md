@@ -1,3 +1,9 @@
+---
+myst:
+  html_meta:
+    description: Install hyrum from PyPI with pip or uv, or from a local checkout for development.
+---
+
 # How to install hyrum
 
 ## Install from PyPI

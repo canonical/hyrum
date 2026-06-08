@@ -1,3 +1,9 @@
+---
+myst:
+  html_meta:
+    description: A ten-minute tutorial that walks you through installing hyrum, preparing a small charm cache, running a check, and reading the report.
+---
+
 # First run: test a charm with hyrum
 
 In this tutorial you will install hyrum, prepare a small charm cache, run a check, and read the resulting report. The whole thing takes about ten minutes.

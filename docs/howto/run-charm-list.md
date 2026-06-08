@@ -1,3 +1,9 @@
+---
+myst:
+  html_meta:
+    description: Build a charm cache from the charm-list CSV files and run hyrum across the whole fleet.
+---
+
 # How to run against the charm list
 
 The `charm-list/` directory in the hyrum repository contains CSV files listing known charm repositories. Use these to build and maintain a large cache, then run hyrum across the whole fleet.
