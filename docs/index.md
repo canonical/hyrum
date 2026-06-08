@@ -17,7 +17,7 @@ The primary use case is pointing every charm's `ops` dependency at a development
 ## Install
 
 ```text
-pip install hyrum
+uv tool install hyrum
 ```
 
 ## Quick start

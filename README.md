@@ -7,7 +7,7 @@ Bulk-run a check (typically lint or unit tests) across many charm repositories, 
 ## Install
 
 ```text
-pip install hyrum
+uv tool install hyrum
 ```
 
 ## Quick start
@@ -23,7 +23,3 @@ hyrum unit --no-patch
 ## Documentation
 
 Full documentation — including a tutorial, how-to guides, CLI reference, and background explanation — is in the [`docs/`](docs/) directory.
-
-## License
-
-Apache 2.0. See [`LICENSE.txt`](LICENSE.txt).
