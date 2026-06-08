@@ -11,6 +11,7 @@ In this tutorial you will install hyrum, prepare a small charm cache, run a chec
 ## What you need
 
 - Python 3.11 or later
+- [uv](https://docs.astral.sh/uv/) installed and on your PATH
 - `tox` or `make` installed and on your PATH
 - `git` installed and on your PATH
 - An internet connection (to clone a charm)
