@@ -108,7 +108,7 @@ def _parse_ops_source(arg: str) -> dict[str, str | None]:
         url, branch = _split_url_branch(arg.removeprefix('git+'))
         return {'url': url, 'branch': branch}
     if arg.startswith('file://'):
-        return {'path': _resolve_path(arg[len('file://') :])}
+        return {'path': _resolve_path(arg.removeprefix('file://'))}
     if '://' in arg:
         url, branch = _split_url_branch(arg)
         return {'url': url, 'branch': branch}
