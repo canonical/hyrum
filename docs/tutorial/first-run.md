@@ -17,12 +17,10 @@ In this tutorial you will install hyrum, prepare a small charm cache, run a chec
 
 ## Install hyrum
 
-Create a virtual environment and install hyrum:
+Install hyrum with [uv](https://docs.astral.sh/uv/):
 
 ```text
-python3 -m venv .venv
-source .venv/bin/activate
-pip install hyrum
+uv tool install hyrum
 ```
 
 Verify the install:
