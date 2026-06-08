@@ -51,10 +51,24 @@ _COMPANION_PACKAGES: dict[str, tuple[str, str]] = {
 
 @dataclasses.dataclass(frozen=True)
 class OpsSource:
-    """Where to pull ``ops`` from when patching a charm."""
+    """Where to pull ``ops`` from when patching a charm.
+
+    Three source kinds, picked by which fields are set:
+
+    - **git** (default): ``url`` plus optional ``branch`` — pulled via
+      PEP 508 ``git+<url>[@branch]`` URLs. Companions come from the
+      same ref via ``#subdirectory=<sub>``.
+    - **path**: ``path`` — local operator checkout, expressed as a
+      ``file://`` URL. Companions resolved by ``#subdirectory=<sub>``.
+    - **pypi**: ``version`` — pin ops to a PyPI version. Companion
+      packages are left untouched, since their versioning is independent
+      of ``ops``.
+    """
 
     url: str = 'https://github.com/canonical/operator'
     branch: str | None = None
+    version: str | None = None
+    path: str | None = None
     poetry_executable: Sequence[str] = dataclasses.field(default_factory=lambda: ('poetry',))
     uv_executable: Sequence[str] = dataclasses.field(default_factory=lambda: ('uv',))
     lock_timeout: int = 600
@@ -68,15 +82,80 @@ class OpsSource:
     uv fetch or select a satisfying interpreter on demand.
     """
 
-    def pep508_url(self) -> str:
-        """Return the ``git+<url>[@branch]`` URL for the ops package."""
-        if self.branch:
-            return f'git+{self.url}@{self.branch}'
-        return f'git+{self.url}'
+    def __post_init__(self) -> None:
+        if sum(x is not None for x in (self.version, self.path)) > 1:
+            raise ValueError('OpsSource: set at most one of `version` and `path`')
 
-    def companion_pep508_url(self, subdir: str) -> str:
-        """Return the PEP 508 URL for a companion package living in ``subdir``."""
-        return f'{self.pep508_url()}#subdirectory={subdir}'
+    @property
+    def kind(self) -> str:
+        """Which source kind is in use: ``'git'``, ``'path'``, or ``'pypi'``."""
+        if self.version is not None:
+            return 'pypi'
+        if self.path is not None:
+            return 'path'
+        return 'git'
+
+    def _url(self, *, subdir: str | None = None) -> str:
+        if self.kind == 'path':
+            assert self.path is not None
+            url = f'file://{self.path}'
+        else:
+            url = f'git+{self.url}'
+            if self.branch:
+                url = f'{url}@{self.branch}'
+        if subdir:
+            url = f'{url}#subdirectory={subdir}'
+        return url
+
+    def pep508_dep(
+        self, name: str, *, extras: Sequence[str] = (), subdir: str | None = None
+    ) -> str:
+        """Full PEP 508 requirement line for ``name``."""
+        extras_str = f'[{",".join(sorted(extras))}]' if extras else ''
+        if self.kind == 'pypi':
+            return f'{name}{extras_str}=={self.version}'
+        return f'{name}{extras_str} @ {self._url(subdir=subdir)}'
+
+    def overrides_companions(self) -> bool:
+        """Whether companion packages should be swapped in alongside ops.
+
+        Git/path point at an operator checkout whose companions are URL
+        workspace deps and must come from the same ref. PyPI ops resolves
+        companions from PyPI normally.
+        """
+        return self.kind != 'pypi'
+
+    def uv_source_inline(self, *, subdir: str | None = None) -> str:
+        """Right-hand side for ``pkg = ...`` in ``[tool.uv.sources]``."""
+        if self.kind == 'path':
+            parts = [f'path = "{self.path}"']
+        else:
+            parts = [f'git = "{self.url}"']
+            if self.branch:
+                parts.append(f'branch = "{self.branch}"')
+        if subdir:
+            parts.append(f'subdirectory = "{subdir}"')
+        return '{ ' + ', '.join(parts) + ' }'
+
+    def poetry_dep_inline(self, *, extras: Sequence[str] = (), subdir: str | None = None) -> str:
+        """Right-hand side for ``pkg = ...`` in ``[tool.poetry.dependencies]``."""
+        if self.kind == 'pypi':
+            if not extras:
+                return f'"=={self.version}"'
+            extras_repr = ', '.join(repr(e) for e in sorted(extras))
+            return f'{{ version = "=={self.version}", extras = [{extras_repr}] }}'
+        if self.kind == 'path':
+            parts = [f'path = "{self.path}"']
+        else:
+            parts = [f'git = "{self.url}"']
+            if self.branch:
+                parts.append(f'branch = "{self.branch}"')
+        if subdir:
+            parts.append(f'subdirectory = "{subdir}"')
+        if extras:
+            extras_repr = ', '.join(repr(e) for e in sorted(extras))
+            parts.append(f'extras = [{extras_repr}]')
+        return '{' + ', '.join(parts) + '}'
 
 
 class OpsSourcePatcher:
@@ -251,16 +330,19 @@ def _patch_requirements_file(path: pathlib.Path, ops: OpsSource) -> None:
         if req.name == 'ops':
             ops_extras.update(req.extras)
             continue
-        # Drop companion packages — they'll be re-added from git below.
-        if req.name in {pkg for pkg, _ in _COMPANION_PACKAGES.values()}:
+        # Drop companion packages only when we'll re-add them from the
+        # patched source below; for PyPI mode they resolve normally.
+        if ops.overrides_companions() and req.name in {
+            pkg for pkg, _ in _COMPANION_PACKAGES.values()
+        }:
             continue
         kept.append(raw)
 
-    extras_str = f'[{",".join(sorted(ops_extras))}]' if ops_extras else ''
-    kept.append(f'ops{extras_str} @ {ops.pep508_url()}')
-    for extra, (pkg, subdir) in _COMPANION_PACKAGES.items():
-        if extra in ops_extras:
-            kept.append(f'{pkg} @ {ops.companion_pep508_url(subdir)}')
+    kept.append(ops.pep508_dep('ops', extras=sorted(ops_extras)))
+    if ops.overrides_companions():
+        for extra, (pkg, subdir) in _COMPANION_PACKAGES.items():
+            if extra in ops_extras:
+                kept.append(ops.pep508_dep(pkg, subdir=subdir))
 
     path.write_text('\n'.join(kept) + '\n')
 
@@ -341,8 +423,7 @@ def _strip_companion_declarations(content: str, pkg_name: str) -> str:
 def _patch_pyproject_pep621(original: str, ops: OpsSource, ops_extras: set[str]) -> str:
     """Patch a PEP 621 ``[project.dependencies]`` pyproject (non-uv)."""
     stripped = _strip_ops_declarations(original)
-    extras_str = f'[{",".join(sorted(ops_extras))}]' if ops_extras else ''
-    ops_pep508 = f'ops{extras_str} @ {ops.pep508_url()}'
+    ops_pep508 = ops.pep508_dep('ops', extras=sorted(ops_extras))
     return stripped.replace(
         'dependencies = [',
         f'dependencies = [\n  "{ops_pep508}",',
@@ -363,22 +444,23 @@ def _patch_pyproject_uv(original: str, ops: OpsSource, ops_extras: set[str]) -> 
     (e.g. via ``coordinated-workers``) otherwise fails ``uv lock`` with
     "URL dependencies must be expressed as direct requirements".
     """
-    del ops_extras  # uv hoists all companions unconditionally.
-    source_lines: list[str] = []
-    if ops.branch:
-        source_lines.append(f'ops = {{ git = "{ops.url}", branch = "{ops.branch}" }}')
-    else:
-        source_lines.append(f'ops = {{ git = "{ops.url}" }}')
+    if ops.kind == 'pypi':
+        # PyPI ops pulls companions from PyPI normally — no source block,
+        # no companion hoisting. Just rewrite the ops version pin in
+        # [project.dependencies].
+        stripped = _strip_ops_declarations(original)
+        ops_pep508 = ops.pep508_dep('ops', extras=sorted(ops_extras))
+        return stripped.replace(
+            'dependencies = [',
+            f'dependencies = [\n  "{ops_pep508}",',
+            1,
+        )
 
+    del ops_extras  # uv hoists all companions unconditionally.
+    source_lines: list[str] = [f'ops = {ops.uv_source_inline()}']
     companion_direct: list[str] = []
     for pkg, subdir in _COMPANION_PACKAGES.values():
-        if ops.branch:
-            source_lines.append(
-                f'{pkg} = {{ git = "{ops.url}", '
-                f'branch = "{ops.branch}", subdirectory = "{subdir}" }}'
-            )
-        else:
-            source_lines.append(f'{pkg} = {{ git = "{ops.url}", subdirectory = "{subdir}" }}')
+        source_lines.append(f'{pkg} = {ops.uv_source_inline(subdir=subdir)}')
         companion_direct.append(pkg)
 
     block = '\n'.join(source_lines)
@@ -410,26 +492,15 @@ def _patch_pyproject_uv(original: str, ops: OpsSource, ops_extras: set[str]) -> 
 
 
 def _patch_pyproject_poetry(original: str, ops: OpsSource, ops_extras: set[str]) -> str:
-    extras_list = (
-        f', extras = [{", ".join(repr(e) for e in sorted(ops_extras))}]' if ops_extras else ''
-    )
-    if ops.branch:
-        ops_toml = f'\nops = {{git = "{ops.url}", branch = "{ops.branch}"{extras_list}}}\n'
-    else:
-        ops_toml = f'\nops = {{git = "{ops.url}"{extras_list}}}\n'
+    ops_toml = f'\nops = {ops.poetry_dep_inline(extras=sorted(ops_extras))}\n'
 
     content = _strip_ops_declarations(original)
-    for extra, (pkg, subdir) in _COMPANION_PACKAGES.items():
-        if extra not in ops_extras:
-            continue
-        content = _strip_companion_declarations(content, pkg)
-        if ops.branch:
-            ops_toml += (
-                f'\n{pkg} = {{git = "{ops.url}", '
-                f'branch = "{ops.branch}", subdirectory = "{subdir}"}}\n'
-            )
-        else:
-            ops_toml += f'\n{pkg} = {{git = "{ops.url}", subdirectory = "{subdir}"}}\n'
+    if ops.overrides_companions():
+        for extra, (pkg, subdir) in _COMPANION_PACKAGES.items():
+            if extra not in ops_extras:
+                continue
+            content = _strip_companion_declarations(content, pkg)
+            ops_toml += f'\n{pkg} = {ops.poetry_dep_inline(subdir=subdir)}\n'
 
     return content.replace(
         '[tool.poetry.dependencies]',

@@ -22,7 +22,7 @@ Some examples:
 
 - feat: add a `make` runner alongside the existing `tox` one
 - fix: restore poetry.lock when patching is aborted by Ctrl-C
-- docs: clarify how `--ops-source-branch` interacts with charm extras
+- docs: clarify how `--ops-source` interacts with charm extras
 
 We consider this project too small to use scopes, so we don't use them.
 
