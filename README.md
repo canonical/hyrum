@@ -63,6 +63,18 @@ sudo apt-get install -y \
 uv tool install poetry
 ```
 
+A handful of charms shell out to other tools from their tox env or
+Makefile. The two that surface most often are:
+
+- **yq** (~3 charms call it from `lint`): `sudo snap install yq` or
+  `sudo apt-get install -y yq`.
+- **go** (the `ubuntu-manpages-operator` lint env runs `go vet`):
+  `sudo snap install go --classic` or `sudo apt-get install -y golang-go`.
+
+Missing either of these shows up as `failed` (not `patcher_error`)
+with a `command not found` line in the per-charm log — install the
+tool to surface the underlying charm result.
+
 Some charms also pull C/Rust extensions whose latest releases pre-date
 the host's Python version. PyO3 < 0.23 can't build against Python 3.14
 unless you opt in with the stable-ABI escape hatch (`unit` in
