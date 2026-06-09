@@ -408,7 +408,6 @@ openstack-charmers,layer-openstack-api,https://git.launchpad.net/~openstack-char
 ,hook-service-operator,https://github.com/canonical/hook-service-operator,,auto-discover
 ,hpct-slurm-client-operator,https://github.com/canonical/hpct-slurm-client-operator,,auto-discover
 ,hpct-slurm-server-operator,https://github.com/canonical/hpct-slurm-server-operator,,auto-discover
-,iam-bundle,https://github.com/canonical/iam-bundle,,auto-discover
 ,identity-saml-provider-operator,https://github.com/canonical/identity-saml-provider-operator,,auto-discover
 ,infra-backup-operator,https://github.com/canonical/infra-backup-operator,,auto-discover
 ,ingress-configurator-operator,https://github.com/canonical/ingress-configurator-operator,,auto-discover
@@ -465,8 +464,6 @@ openstack-charmers,layer-openstack-api,https://git.launchpad.net/~openstack-char
 ,otel-ebpf-profiler-operator,https://github.com/canonical/otel-ebpf-profiler-operator,,auto-discover
 ,penpot-operator,https://github.com/canonical/penpot-operator,,auto-discover
 ,polar-signals-cloud-integrator-operator,https://github.com/canonical/polar-signals-cloud-integrator-operator,,auto-discover
-,postgresql-bundle,https://github.com/canonical/postgresql-bundle,,auto-discover
-,postgresql-k8s-bundle,https://github.com/canonical/postgresql-k8s-bundle,,auto-discover
 ,postgresql-test-app,https://github.com/canonical/postgresql-test-app,,auto-discover
 ,postgresql-watcher-operator,https://github.com/canonical/postgresql-watcher-operator,,auto-discover
 ,rawfile-localpv-operator,https://github.com/canonical/rawfile-localpv-operator,,auto-discover

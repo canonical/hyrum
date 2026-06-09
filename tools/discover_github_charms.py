@@ -14,12 +14,14 @@ GitHub returns in the response headers.
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import io
 import json
 import logging
 import os
 import pathlib
+import re
 import sys
 import time
 import typing
@@ -48,16 +50,14 @@ CHARM_MARKERS = ('charmcraft.yaml', 'metadata.yaml')
 # docs sites that happen to ship metadata.yaml, scaffolding/template charms with
 # placeholder code, empty stubs, etc. Anyone reviewing a candidate row can add
 # the owner/name pair here to keep it out of future discovery runs.
-KNOWN_NON_CHARMS: frozenset[tuple[str, str]] = frozenset(
-    {
-        ('canonical', 'data-platform-charms-template'),
-        ('canonical', 'documentation-style-guide'),
-        ('canonical', 'sandbox1'),
-        ('canonical', 'sandbox2'),
-        ('canonical', 'test-kubeflow-automation'),
-        ('juju', 'charm-developer-docs'),
-    }
-)
+KNOWN_NON_CHARMS: frozenset[tuple[str, str]] = frozenset({
+    ('canonical', 'data-platform-charms-template'),
+    ('canonical', 'documentation-style-guide'),
+    ('canonical', 'sandbox1'),
+    ('canonical', 'sandbox2'),
+    ('canonical', 'test-kubeflow-automation'),
+    ('juju', 'charm-developer-docs'),
+})
 
 CSV_FIELDS = ('Org', 'Charm Name', 'Repository', 'Default Branch', 'Marker', 'Archived')
 
@@ -165,10 +165,29 @@ def discover(
         if info.get('is_template'):
             logger.info('Dropping template repo %s/%s', owner, name)
             continue
-        row['Default Branch'] = info.get('default_branch') or ''
+        default_branch = info.get('default_branch') or ''
+        # Charm bundles match the discovery filter (they ship charmcraft.yaml)
+        # but are not standalone consumer charms — they reference other
+        # charms by name. hyrum's enumerator handles bundles separately
+        # (iter_bundle), so drop them here to keep the curated list pure.
+        if row['Marker'] == 'charmcraft.yaml' and default_branch:
+            text = client.file_text(owner, name, 'charmcraft.yaml', default_branch)
+            if text and _CHARMCRAFT_TYPE_BUNDLE_RE.search(text):
+                logger.info('Dropping bundle %s/%s', owner, name)
+                continue
+        row['Default Branch'] = default_branch
         row['Archived'] = 'yes' if info.get('archived') else 'no'
         rows.append(row)
     return rows
+
+
+# Matches `type: bundle` as a top-level YAML key. The regex is anchored at
+# start-of-line (multiline mode) to avoid matching e.g. a comment or a value
+# embedded in a longer string.
+_CHARMCRAFT_TYPE_BUNDLE_RE = re.compile(
+    r'^\s*type\s*:\s*bundle\b',
+    re.MULTILINE,
+)
 
 
 def write_csv(path: pathlib.Path, rows: list[dict[str, str]]) -> None:
@@ -225,6 +244,28 @@ class GitHubClient:
             if exc.code == 404:
                 return None
             logger.warning('%s/%s: HTTP %s', owner, name, exc.code)
+            return None
+
+    def file_text(self, owner: str, name: str, path: str, ref: str) -> str | None:
+        """Return the decoded contents of ``path`` at ``ref``, or ``None`` if absent."""
+        url = (
+            f'https://api.github.com/repos/{owner}/{name}/contents/'
+            f'{urllib.parse.quote(path)}?ref={urllib.parse.quote(ref)}'
+        )
+        try:
+            data, _ = self._get(url)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return None
+            logger.warning('%s/%s:%s: HTTP %s', owner, name, path, exc.code)
+            return None
+        content = data.get('content')
+        encoding = data.get('encoding')
+        if not isinstance(content, str) or encoding != 'base64':
+            return None
+        try:
+            return base64.b64decode(content).decode('utf-8', errors='replace')
+        except (ValueError, UnicodeDecodeError):
             return None
 
     def _get(self, url: str) -> tuple[dict[str, typing.Any], dict[str, str]]:
