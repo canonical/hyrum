@@ -167,16 +167,25 @@ def _build_runner(
     choice: runners.RunnerChoice,
     tox_executable: str,
     make_executable: str,
+    uv_executable: str,
     timeout: int,
+    auto_python: bool,
 ):
     if choice is runners.RunnerChoice.TOX:
-        return tox.ToxRunner(executable=tox_executable, timeout=timeout)
+        return tox.ToxRunner(
+            executable=tox_executable,
+            timeout=timeout,
+            auto_python=auto_python,
+            uv_executable=tuple(uv_executable.split()),
+        )
     if choice is runners.RunnerChoice.MAKE:
         return make_runner.MakeRunner(executable=make_executable, timeout=timeout)
     return runners.auto(
         tox_executable=tox_executable,
         make_executable=make_executable,
         timeout=timeout,
+        auto_python=auto_python,
+        uv_executable=tuple(uv_executable.split()),
     )
 
 
@@ -318,8 +327,8 @@ def _select_repos(
     default=True,
     show_default=True,
     help=(
-        "Run poetry lock under an interpreter that satisfies the charm's "
-        'requires-python (via uv run --python X.Y). Requires uv on PATH.'
+        'Run poetry lock and tox under an interpreter that satisfies the '
+        "charm's requires-python (via uv run --python X.Y). Requires uv on PATH."
     ),
 )
 @click.option(
@@ -430,7 +439,9 @@ def main(
         choice=runners.RunnerChoice(runner_choice),
         tox_executable=tox_executable,
         make_executable=make_executable,
+        uv_executable=uv_executable,
         timeout=timeout,
+        auto_python=auto_python,
     )
 
     if log_dir is not None:
