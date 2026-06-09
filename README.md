@@ -65,11 +65,13 @@ uv tool install poetry
 
 Some charms also pull C/Rust extensions whose latest releases pre-date
 the host's Python version. PyO3 < 0.23 can't build against Python 3.14
-unless you opt in with the stable-ABI escape hatch:
+unless you opt in with the stable-ABI escape hatch (`unit` in
+`testenv:unit.…` is the tox env name `hyrum` invokes via `tox -e unit`,
+i.e. the charm's unit-test environment):
 
 ```bash
 export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
-TOX_OVERRIDE='testenv:unit.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY'
+export TOX_OVERRIDE='testenv:unit.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY'
 ```
 
 If you also want `-Werror` semantics (warnings promoted to errors),
@@ -77,8 +79,7 @@ inject `PYTHONWARNINGS=error` via `pass_env`, not `set_env`:
 
 ```bash
 export PYTHONWARNINGS=error
-TOX_OVERRIDE='testenv:unit.pass_env+=PYTHONWARNINGS
-testenv:unit.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY'
+export TOX_OVERRIDE='testenv:unit.pass_env+=PYTHONWARNINGS;testenv:unit.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY'
 ```
 
 The intuitive form `set_env+=PYTHONWARNINGS=error` looks correct but
