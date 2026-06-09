@@ -8,9 +8,11 @@ import itertools
 import logging
 import os
 import pathlib
+import re
 import sys
 
 import click
+import packaging.version
 import rich.logging
 import rich.text
 
@@ -86,11 +88,65 @@ def _apply_host_env_defaults(target: str, env: dict[str, str] | None = None) -> 
     return env
 
 
+_GITHUB_SHORTHAND_RE = re.compile(r'^([A-Za-z0-9][A-Za-z0-9._-]*):([^\s]+)$')
+_URL_WITH_BRANCH_RE = re.compile(r'^(https?://[^@\s]+)@([^@\s]+)$')
+
+
+def _parse_ops_source(arg: str) -> dict[str, str | None]:
+    """Parse ``--ops-source`` into kwargs for :class:`patchers.OpsSource`.
+
+    Accepted forms:
+
+    - ``2.17.0`` — PyPI version (any PEP 440 version specifier).
+    - ``git+<url>[@branch]`` — explicit git URL (the form ``pip`` and ``uv`` print).
+    - ``<url>[@branch]`` — bare ``https://…`` git URL with optional branch.
+    - ``owner:branch`` — GitHub shorthand, expands to
+      ``https://github.com/<owner>/operator`` at the given branch.
+    - ``file://<path>`` or a bare path (``/abs``, ``./rel``, ``~/x``) — local operator checkout.
+    """
+    arg = arg.strip()
+    if not arg:
+        raise click.UsageError('--ops-source: empty value')
+
+    if arg.startswith('git+'):
+        url, branch = _split_url_branch(arg.removeprefix('git+'))
+        return {'url': url, 'branch': branch}
+    if arg.startswith('file://'):
+        return {'path': _resolve_path(arg.removeprefix('file://'))}
+    if '://' in arg:
+        url, branch = _split_url_branch(arg)
+        return {'url': url, 'branch': branch}
+    if arg.startswith(('/', './', '../', '~')):
+        return {'path': _resolve_path(arg)}
+    m = _GITHUB_SHORTHAND_RE.match(arg)
+    if m and '/' not in m.group(1):
+        return {'url': f'https://github.com/{m.group(1)}/operator', 'branch': m.group(2)}
+    try:
+        packaging.version.Version(arg)
+    except packaging.version.InvalidVersion as exc:
+        raise click.UsageError(
+            f'--ops-source: cannot parse {arg!r} as a version, URL, '
+            'owner:branch shorthand, or path'
+        ) from exc
+    return {'version': arg}
+
+
+def _split_url_branch(arg: str) -> tuple[str, str | None]:
+    m = _URL_WITH_BRANCH_RE.match(arg)
+    if m:
+        return m.group(1), m.group(2)
+    return arg, None
+
+
+def _resolve_path(raw: str) -> str:
+    """Expand ``~`` and resolve to an absolute path."""
+    return str(pathlib.Path(raw).expanduser().resolve())
+
+
 def _build_patcher(
     *,
     no_patch: bool,
     ops_source: str,
-    ops_source_branch: str | None,
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
@@ -98,9 +154,12 @@ def _build_patcher(
 ):
     if no_patch:
         return patchers.NullPatcher()
+    parsed = _parse_ops_source(ops_source)
     ops = patchers.OpsSource(
-        url=ops_source,
-        branch=ops_source_branch,
+        url=parsed.get('url') or 'https://github.com/canonical/operator',
+        branch=parsed.get('branch'),
+        version=parsed.get('version'),
+        path=parsed.get('path'),
         poetry_executable=tuple(poetry_executable.split()),
         uv_executable=tuple(uv_executable.split()),
         lock_timeout=lock_timeout,
@@ -231,9 +290,15 @@ def _select_repos(
     '--ops-source',
     default='https://github.com/canonical/operator',
     show_default=True,
-    help='Git URL of the operator repository to swap in.',
+    help=(
+        'Where to pull ops from. Accepts: a PyPI version (``2.17.0``); a '
+        'git URL with optional ``@branch`` (``https://…/operator@fix/X`` or '
+        '``git+https://…/operator@fix/X``); the GitHub shorthand '
+        '``owner:branch`` (expands to ``https://github.com/<owner>/operator`` '
+        'at that branch); or a local path (``/abs/operator``, ``~/operator``, '
+        '``file:///abs/operator``).'
+    ),
 )
-@click.option('--ops-source-branch', default=None, help='Branch of --ops-source to use.')
 @click.option(
     '--poetry-executable',
     default='poetry',
@@ -329,7 +394,6 @@ def check(
     timeout: int,
     no_patch: bool,
     ops_source: str,
-    ops_source_branch: str | None,
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
@@ -362,7 +426,6 @@ def check(
     patcher = _build_patcher(
         no_patch=no_patch,
         ops_source=ops_source,
-        ops_source_branch=ops_source_branch,
         poetry_executable=poetry_executable,
         uv_executable=uv_executable,
         lock_timeout=lock_timeout,
