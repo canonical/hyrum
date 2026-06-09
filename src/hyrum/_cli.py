@@ -329,16 +329,25 @@ def _build_runner(
     choice: runners.RunnerChoice,
     tox_executable: str,
     make_executable: str,
+    uv_executable: str,
     timeout: int,
+    auto_python: bool,
 ):
     if choice is runners.RunnerChoice.TOX:
-        return tox.ToxRunner(executable=tox_executable, timeout=timeout)
+        return tox.ToxRunner(
+            executable=tox_executable,
+            timeout=timeout,
+            auto_python=auto_python,
+            uv_executable=tuple(uv_executable.split()),
+        )
     if choice is runners.RunnerChoice.MAKE:
         return make_runner.MakeRunner(executable=make_executable, timeout=timeout)
     return runners.auto(
         tox_executable=tox_executable,
         make_executable=make_executable,
         timeout=timeout,
+        auto_python=auto_python,
+        uv_executable=tuple(uv_executable.split()),
     )
 
 
@@ -527,8 +536,9 @@ def _add_check_subparser(
         action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            "Run poetry lock under an interpreter that satisfies the charm's "
-            'requires-python (via uv run --python X.Y). Requires uv on PATH. [default: enabled]'
+            'Run poetry lock and tox under an interpreter that satisfies the '
+            "charm's requires-python (via uv run --python X.Y). Requires uv on PATH."
+            ' [default: enabled]'
         ),
     )
     verbosity_group = parser.add_mutually_exclusive_group()
@@ -667,7 +677,9 @@ def _run_check(args: argparse.Namespace) -> int:
         choice=runners.RunnerChoice(args.runner_choice),
         tox_executable=args.tox_executable,
         make_executable=args.make_executable,
+        uv_executable=args.uv_executable,
         timeout=args.timeout,
+        auto_python=args.auto_python,
     )
 
     if args.log_dir is not None:
