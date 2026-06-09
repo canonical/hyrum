@@ -112,6 +112,60 @@ async def test_tox_runner_passes_executable_through(tmp_path: pathlib.Path, spaw
     assert argv[:4] == ('uvx', 'tox', '-e', 'lint')
 
 
+async def test_tox_runner_auto_python_wraps_when_pyproject_requires_python(
+    tmp_path: pathlib.Path, spawner
+):
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="c"\nversion="0"\nrequires-python=">=3.10"\n'
+    )
+    s = spawner(FakeProc(returncode=0))
+    await runners.ToxRunner(auto_python=True).run(tmp_path, 'lint')
+    argv, _ = s.calls[0]
+    # uv run --no-project --python 3.10 -- tox -e lint
+    assert argv[:6] == ('uv', 'run', '--no-project', '--python', '3.10', '--')
+    assert argv[6:] == ('tox', '-e', 'lint')
+
+
+async def test_tox_runner_auto_python_does_not_wrap_without_pyproject(
+    tmp_path: pathlib.Path, spawner
+):
+    s = spawner(FakeProc(returncode=0))
+    await runners.ToxRunner(auto_python=True).run(tmp_path, 'lint')
+    argv, _ = s.calls[0]
+    assert argv == ('tox', '-e', 'lint')
+
+
+async def test_tox_runner_auto_python_does_not_wrap_without_requires_python(
+    tmp_path: pathlib.Path, spawner
+):
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname="c"\nversion="0"\n')
+    s = spawner(FakeProc(returncode=0))
+    await runners.ToxRunner(auto_python=True).run(tmp_path, 'lint')
+    argv, _ = s.calls[0]
+    assert argv == ('tox', '-e', 'lint')
+
+
+async def test_tox_runner_disable_auto_python(tmp_path: pathlib.Path, spawner):
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="c"\nversion="0"\nrequires-python=">=3.10"\n'
+    )
+    s = spawner(FakeProc(returncode=0))
+    await runners.ToxRunner(auto_python=False).run(tmp_path, 'lint')
+    argv, _ = s.calls[0]
+    assert argv == ('tox', '-e', 'lint')
+
+
+async def test_tox_runner_auto_python_honours_uv_executable(tmp_path: pathlib.Path, spawner):
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="c"\nversion="0"\nrequires-python=">=3.12"\n'
+    )
+    s = spawner(FakeProc(returncode=0))
+    await runners.ToxRunner(uv_executable='custom-uv --quiet').run(tmp_path, 'lint')
+    argv, _ = s.calls[0]
+    assert argv[:2] == ('custom-uv', '--quiet')
+    assert '3.12' in argv
+
+
 # ---- MakeRunner --------------------------------------------------------------
 
 
