@@ -37,6 +37,67 @@ tests are explicitly out of scope.
 - Running integration tests.
 - Acting as a general-purpose CI orchestrator.
 
+## Host prerequisites
+
+A non-trivial fraction of charms in the curated list pull C/Rust
+extensions that `pip` / `uv` will build from source if no wheel is
+available for the host's Python. On a fresh Ubuntu host, missing build
+tools surface as `failed` outcomes with messages like *"command
+'x86_64-linux-gnu-gcc' failed: No such file"* or *"fatal error: Python.h
+/ ffi.h: No such file"*, which is noise rather than a charm regression.
+
+To get a clean signal against the curated charm list, install:
+
+```bash
+sudo apt-get install -y \
+    build-essential \
+    pkg-config \
+    libffi-dev \
+    libpq-dev \
+    libmariadb-dev \
+    python3-dev   # or python3.<minor>-dev matching the Python uv selects
+
+# Poetry is invoked by ~5 % of charms' tox envs; install it if you want
+# those to run instead of failing with "No such file or directory:
+# 'poetry'".
+uv tool install poetry
+```
+
+Some charms also pull C/Rust extensions whose latest releases pre-date
+the host's Python version. PyO3 < 0.23 can't build against Python 3.14
+unless you opt in with the stable-ABI escape hatch (`unit` in
+`testenv:unit.…` is the tox env name `hyrum` invokes via `tox -e unit`,
+i.e. the charm's unit-test environment):
+
+```bash
+export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+export TOX_OVERRIDE='testenv:unit.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY'
+```
+
+If you also want `-Werror` semantics (warnings promoted to errors),
+inject `PYTHONWARNINGS=error` via `pass_env`, not `set_env`:
+
+```bash
+export PYTHONWARNINGS=error
+export TOX_OVERRIDE='testenv:unit.pass_env+=PYTHONWARNINGS;testenv:unit.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY'
+```
+
+The intuitive form `set_env+=PYTHONWARNINGS=error` looks correct but
+silently drops anything the charm's `[testenv]` set via `set_env` (most
+commonly `PYTHONPATH`), so tests that do `from charm import …` fail at
+collection with `ModuleNotFoundError` — a misleading "regression" that
+isn't a warning at all. `pass_env+=` doesn't touch `set_env`, so the
+charm's PYTHONPATH stays intact and the warning still propagates.
+
+Empirically (Ubuntu Resolute, system Python 3.14, 145 runnable charms in
+the curated list as of 2026-05): a host with none of these installed
+passes ~40 %; adding `build-essential` + `python3.14-dev` lifts that to
+~60 %; the full apt list above gets to ~64 %; the PyO3 forward-compat
+flag adds ~3 % more, topping out around **67 %**. The residual ~33 % is
+genuine charm-side breakage (test failures, dependencies pinned to
+versions that don't build on the host Python) and is not something
+`hyrum` itself can move.
+
 ## Usage
 
 ```bash
@@ -48,7 +109,12 @@ uv sync --all-groups
 # (~/.cache/hyrum/charms), with ops swapped to the `fix/X` branch of
 # canonical/operator. Override the cache folder with --cache-folder or
 # the HYRUM_CHARMS environment variable.
-hyrum unit --workers 8 --ops-source-branch fix/X
+hyrum unit --workers 8 --ops-source canonical:fix/X
+
+# --ops-source also accepts: a PyPI version (`2.17.0`), a `git+<url>[@branch]`
+# reference, a plain `https://…/operator[@branch]` URL, the `owner:branch`
+# GitHub shorthand, or a local checkout (`/path/to/operator`,
+# `~/operator`, `file:///path/to/operator`).
 
 # Force the make runner (default is auto-detect: tox.ini -> tox,
 # Makefile -> make, fall back to the other if the target is missing):
@@ -63,6 +129,10 @@ hyrum unit --framework scenario
 # Always exit 0, even if some charms fail (default is exit non-zero on
 # any failure):
 hyrum unit --no-fail
+
+# Dump each charm's stdout, stderr, and run metadata to a per-charm
+# file under the given directory for offline triage:
+hyrum unit --log-dir ~/hyrum-runs/logs
 ```
 
 Output statuses:

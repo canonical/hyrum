@@ -145,11 +145,9 @@ dependencies = [
 [package.dev-dependencies]
 lint = [
     { name = "codespell" },
+    { name = "pyright" },
     { name = "ruff" },
     { name = "zizmor" },
-]
-static = [
-    { name = "pyright" },
 ]
 unit = [
     { name = "coverage" },
@@ -168,10 +166,10 @@ requires-dist = [
 [package.metadata.requires-dev]
 lint = [
     { name = "codespell", specifier = ">=2.2" },
+    { name = "pyright", specifier = ">=1.1.380" },
     { name = "ruff", specifier = ">=0.6" },
     { name = "zizmor", specifier = ">=1.11" },
 ]
-static = [{ name = "pyright", specifier = ">=1.1.380" }]
 unit = [
     { name = "coverage", specifier = ">=7" },
     { name = "pytest", specifier = ">=8" },
