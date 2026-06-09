@@ -113,6 +113,69 @@ def test_pyproject_pep621_injects_git_dep(tmp_path: pathlib.Path, ops_branch: pa
         assert '"requests"' in patched
 
 
+# ---- pyproject.toml: PEP 621 optional-dependencies (temporal-style) ----------
+
+
+def test_pyproject_pep621_optional_deps_rewritten(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
+):
+    """Charms without ``[project.dependencies]`` but with ops in an extra."""
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n\n'
+        '[project.optional-dependencies]\n'
+        'charm = [\n  "ops==2.21.1",\n  "requests",\n]\n'
+        'unit = [\n  "ops[testing]==2.21.1",\n]\n'
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        patched = _read(py)
+        assert '"ops @ git+https://github.com/canonical/operator@fix/X"' in patched
+        assert '"ops[testing] @ git+https://github.com/canonical/operator@fix/X"' in patched
+        # Non-ops entries unchanged.
+        assert '"requests"' in patched
+        # Pinned versions gone.
+        assert '"ops==2.21.1"' not in patched
+        assert '"ops[testing]==2.21.1"' not in patched
+
+
+def test_pyproject_pep735_dependency_groups_rewritten(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
+):
+    """Charms using PEP 735 ``[dependency-groups]`` (pgbouncer-style)."""
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n\n'
+        '[dependency-groups]\n'
+        'charm = [\n  "ops==2.23.1",\n  "jinja2==3.1.6",\n]\n'
+        'libs = [\n  "ops>=2.23.1",\n]\n'
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        patched = _read(py)
+        assert '"ops @ git+https://github.com/canonical/operator@fix/X"' in patched
+        assert '"jinja2==3.1.6"' in patched
+        assert '"ops==2.23.1"' not in patched
+        assert '"ops>=2.23.1"' not in patched
+
+
+def test_pyproject_pep621_keywords_ops_not_rewritten(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
+):
+    """``keywords = ["ops"]`` under [project] must not be misidentified as a dep."""
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        '[project]\nname = "c"\nversion = "0"\n'
+        'keywords = ["ops", "charm"]\n'
+        'dependencies = [\n  "ops==2.10",\n]\n'
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        patched = _read(py)
+        # keywords entry preserved verbatim.
+        assert 'keywords = ["ops", "charm"]' in patched
+        # The real dep was rewritten.
+        assert '"ops @ git+https://github.com/canonical/operator@fix/X"' in patched
+        assert '"ops==2.10"' not in patched
+
+
 # ---- pyproject.toml: uv ------------------------------------------------------
 
 
@@ -127,8 +190,10 @@ def test_pyproject_uv_adds_tool_uv_sources(tmp_path: pathlib.Path, ops_branch: p
         assert '[tool.uv.sources]' in patched
         assert 'ops = { git = "https://github.com/canonical/operator"' in patched
         assert 'branch = "fix/X"' in patched
-        # ops dep stays in [project.dependencies] for uv.
-        assert 'ops>=2.10' in patched
+        # The version-pinned ops dep is rewritten in-place to the git URL so
+        # hard pins (``ops==X.Y``) don't conflict with HEAD ops.
+        assert 'ops>=2.10' not in patched
+        assert '"ops @ git+https://github.com/canonical/operator@fix/X"' in patched
 
 
 def test_pyproject_uv_always_hoists_all_companions(
@@ -185,6 +250,61 @@ def test_pyproject_uv_bumps_low_requires_python(
     with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
         patched = _read(py)
         assert 'requires-python = ">=3.10"' in patched
+
+
+def test_pyproject_uv_dep_groups_recognised_and_hoisted(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
+):
+    """PEP 735 [dependency-groups]-only pyproject is patched as uv flavour.
+
+    Mirrors the pgbouncer-operator layout: minimal [project] metadata, ops
+    declared in two named dep-groups, [tool.uv] marker present. Companions
+    must end up in both ops-bearing groups, plus the source block.
+    """
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
+        '[dependency-groups]\n'
+        'charm = [\n  "ops==2.23.1",\n  "jinja2==3.1.6",\n]\n'
+        'libs = [\n  "ops>=2.23.1",\n  "cosl",\n]\n'
+        'lint = [\n  "codespell",\n]\n\n'
+        '[tool.uv]\n'
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        patched = _read(py)
+        assert '[tool.uv.sources]' in patched
+        assert 'ops = { git = "https://github.com/canonical/operator"' in patched
+        # Companions injected into each ops-bearing group.
+        charm_block = patched.split('charm = [', 1)[1].split(']', 1)[0]
+        assert '"ops-scenario"' in charm_block
+        assert '"ops-tracing"' in charm_block
+        libs_block = patched.split('libs = [', 1)[1].split(']', 1)[0]
+        assert '"ops-scenario"' in libs_block
+        assert '"ops-tracing"' in libs_block
+        # lint group has no ops, so companions don't leak into it.
+        lint_block = patched.split('lint = [', 1)[1].split(']', 1)[0]
+        assert 'ops-scenario' not in lint_block
+        assert 'ops-tracing' not in lint_block
+    assert 'ops==2.23.1' in _read(py)
+    assert 'codespell' in _read(py)
+
+
+def test_pyproject_uv_dep_groups_without_project_dependencies(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
+    """A pure PEP 735 layout (no [project.dependencies] at all) still patches."""
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
+        '[dependency-groups]\n'
+        'charm = [\n  "ops==2.23.1",\n]\n\n[tool.uv]\n'
+    )
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        patched = _read(py)
+        assert '[tool.uv.sources]' in patched
+        charm_block = patched.split('charm = [', 1)[1].split(']', 1)[0]
+        assert '"ops-scenario"' in charm_block
+        assert '"ops-tracing"' in charm_block
 
 
 # ---- pyproject.toml: poetry --------------------------------------------------
