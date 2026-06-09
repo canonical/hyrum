@@ -44,6 +44,21 @@ DEFAULT_ORGS = (
 # We search for both markers because some older charms ship metadata.yaml only.
 CHARM_MARKERS = ('charmcraft.yaml', 'metadata.yaml')
 
+# Repos that match a charm marker but are not consumer charms hyrum should run:
+# docs sites that happen to ship metadata.yaml, scaffolding/template charms with
+# placeholder code, empty stubs, etc. Anyone reviewing a candidate row can add
+# the owner/name pair here to keep it out of future discovery runs.
+KNOWN_NON_CHARMS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ('canonical', 'data-platform-charms-template'),
+        ('canonical', 'documentation-style-guide'),
+        ('canonical', 'sandbox1'),
+        ('canonical', 'sandbox2'),
+        ('canonical', 'test-kubeflow-automation'),
+        ('juju', 'charm-developer-docs'),
+    }
+)
+
 CSV_FIELDS = ('Org', 'Charm Name', 'Repository', 'Default Branch', 'Marker', 'Archived')
 
 
@@ -106,6 +121,9 @@ def discover(
                 owner = (repo.get('owner') or {}).get('login') or ''
                 name = repo.get('name') or ''
                 if not owner or not name:
+                    continue
+                if (owner, name) in KNOWN_NON_CHARMS:
+                    logger.info('Dropping known-non-charm %s/%s', owner, name)
                     continue
                 # Prefer charmcraft.yaml hits when the same repo matches twice.
                 key = (owner, name)
