@@ -4,6 +4,8 @@ import asyncio
 import dataclasses
 import os
 import pathlib
+import shutil
+import sys
 
 import pytest
 
@@ -218,6 +220,69 @@ async def test_tox_runner_keeps_existing_tox_overrides(
     ]
 
 
+async def test_tox_runner_auto_python_wraps_when_pyproject_requires_python(
+    tmp_path: pathlib.Path, spawner
+):
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="c"\nversion="0"\nrequires-python=">=3.10"\n'
+    )
+    s = spawner(FakeProc(returncode=0))
+    await runners.ToxRunner(auto_python=True).run(tmp_path, 'lint')
+    argv, _ = s.calls[0]
+    # uv run --no-project --python 3.10 --with tox -- tox -e lint
+    assert argv[:8] == (
+        'uv',
+        'run',
+        '--no-project',
+        '--python',
+        '3.10',
+        '--with',
+        'tox',
+        '--',
+    )
+    assert argv[8:] == ('tox', '-e', 'lint')
+
+
+async def test_tox_runner_auto_python_does_not_wrap_without_pyproject(
+    tmp_path: pathlib.Path, spawner
+):
+    s = spawner(FakeProc(returncode=0))
+    await runners.ToxRunner(auto_python=True).run(tmp_path, 'lint')
+    argv, _ = s.calls[0]
+    assert argv == ('tox', '-e', 'lint')
+
+
+async def test_tox_runner_auto_python_does_not_wrap_without_requires_python(
+    tmp_path: pathlib.Path, spawner
+):
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname="c"\nversion="0"\n')
+    s = spawner(FakeProc(returncode=0))
+    await runners.ToxRunner(auto_python=True).run(tmp_path, 'lint')
+    argv, _ = s.calls[0]
+    assert argv == ('tox', '-e', 'lint')
+
+
+async def test_tox_runner_disable_auto_python(tmp_path: pathlib.Path, spawner):
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="c"\nversion="0"\nrequires-python=">=3.10"\n'
+    )
+    s = spawner(FakeProc(returncode=0))
+    await runners.ToxRunner(auto_python=False).run(tmp_path, 'lint')
+    argv, _ = s.calls[0]
+    assert argv == ('tox', '-e', 'lint')
+
+
+async def test_tox_runner_auto_python_honours_uv_executable(tmp_path: pathlib.Path, spawner):
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname="c"\nversion="0"\nrequires-python=">=3.12"\n'
+    )
+    s = spawner(FakeProc(returncode=0))
+    await runners.ToxRunner(uv_executable='custom-uv --quiet').run(tmp_path, 'lint')
+    argv, _ = s.calls[0]
+    assert argv[:2] == ('custom-uv', '--quiet')
+    assert '3.12' in argv
+
+
 # ---- MakeRunner --------------------------------------------------------------
 
 
@@ -428,3 +493,34 @@ async def test_auto_prefers_tox_when_a_charm_has_both(tmp_path: pathlib.Path, sp
     result = await runners.auto().run(tmp_path, 'unit')
     assert result.runner == 'tox'
     assert result.status is runners.RunStatus.PASSED
+
+
+# ---- auto-Python, for real ---------------------------------------------------
+
+# The wrap is a string of uv flags, and every test above asserts the string.
+# That is exactly as green when the flags are the wrong ones: `uv run --python`
+# without `--with` substitutes the interpreter for `python` alone and leaves a
+# console script like tox running under whatever installed it. This one runs
+# the real thing and looks at the interpreter tox reports. It is opt-in because
+# it downloads an interpreter and installs tox into an ephemeral environment.
+_UV_INTEGRATION = os.environ.get('HYRUM_UV_INTEGRATION') == '1'
+
+
+@pytest.mark.uv_integration
+@pytest.mark.skipif(not _UV_INTEGRATION, reason='set HYRUM_UV_INTEGRATION=1 to run')
+@pytest.mark.skipif(shutil.which('uv') is None, reason='uv is not installed')
+async def test_tox_runner_auto_python_really_changes_the_interpreter(tmp_path: pathlib.Path):
+    wanted = (3, 10)
+    assert wanted != sys.version_info[:2], 'pick a version hyrum is not running under'
+    (tmp_path / 'pyproject.toml').write_text(
+        f'[project]\nname="c"\nversion="0"\n'
+        f'requires-python=">={wanted[0]}.{wanted[1]},<{wanted[0]}.{wanted[1] + 1}"\n'
+    )
+    (tmp_path / 'tox.ini').write_text(
+        '[testenv:lint]\n'
+        'skip_install = true\n'
+        'commands = python -c "import sys; print(sys.version_info[:2])"\n'
+    )
+    result = await runners.ToxRunner(auto_python=True, timeout=600).run(tmp_path, 'lint')
+    assert result.status is runners.RunStatus.PASSED, result.output.decode(errors='replace')
+    assert f'({wanted[0]}, {wanted[1]})' in result.output.decode(errors='replace')

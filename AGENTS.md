@@ -79,6 +79,12 @@ above.
   capture stderr into the stdout pipe, so `RunResult.output` is a single
   transcript in the order the process wrote it; the `-nq` probe is the one
   place that keeps the streams apart, because it reads stderr as a signal.
+- `_python_version` — reads a charm's minimum `requires-python` and builds
+  the `uv run --python X.Y --with <pkg> --` prefix that runs a command under
+  it. Shared by the tox runner (auto-Python at run time) and the ops patcher
+  (auto-Python at lock time). The `--with` is what makes the prefix do
+  anything: uv substitutes the interpreter for `python` alone, so a console
+  script resolved from `PATH` otherwise keeps its own.
 - `pool` — async worker pool, `Outcome` dataclass with `patcher_error` and
   `runner_error` as statuses distinct from `failed` (so infrastructure
   problems don't get mis-attributed to the charm). The `check` subcommand
