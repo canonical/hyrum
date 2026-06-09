@@ -42,7 +42,8 @@ GITHUB_REPO_URL = 'https://api.github.com/repos'
 
 AUTO_SOURCE = 'auto'
 MANUAL_SOURCE = 'manual'
-VALID_SOURCES = frozenset({AUTO_SOURCE, MANUAL_SOURCE})
+AUTO_DISCOVER_SOURCE = 'auto-discover'
+VALID_SOURCES = frozenset({AUTO_SOURCE, MANUAL_SOURCE, AUTO_DISCOVER_SOURCE})
 
 CSV_FIELDS = (
     'Team',
@@ -325,7 +326,7 @@ def read_csv(path: pathlib.Path) -> list[dict[str, str]]:
 
 
 def write_csv(path: pathlib.Path, rows: list[dict[str, str]]) -> None:
-    """Write ``rows`` to ``path`` with LF line endings."""
+    """Write ``rows`` to ``path``."""
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=CSV_FIELDS, lineterminator='\n')
     writer.writeheader()
