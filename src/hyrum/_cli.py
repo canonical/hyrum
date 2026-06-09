@@ -449,11 +449,18 @@ def _build_runner(
     choice: runners.RunnerChoice,
     tox_executable: str,
     make_executable: str,
+    uv_executable: str,
     timeout: int,
+    auto_python: bool,
     prefer: Sequence[str] = ('tox', 'make'),
 ):
     if choice is runners.RunnerChoice.TOX:
-        return tox.ToxRunner(executable=tox_executable, timeout=timeout)
+        return tox.ToxRunner(
+            executable=tox_executable,
+            timeout=timeout,
+            auto_python=auto_python,
+            uv_executable=tuple(uv_executable.split()),
+        )
     if choice is runners.RunnerChoice.MAKE:
         return make_runner.MakeRunner(executable=make_executable, timeout=timeout)
     return runners.auto(
@@ -461,6 +468,8 @@ def _build_runner(
         make_executable=make_executable,
         timeout=timeout,
         prefer=prefer,
+        auto_python=auto_python,
+        uv_executable=tuple(uv_executable.split()),
     )
 
 
@@ -507,6 +516,25 @@ def _available_backends(
     if not available:
         sys.exit(f'hyrum: error: no runner available: {", ".join(missing)} not found on PATH.')
     return tuple(available)
+
+
+def _auto_python_available(uv_executable: str) -> bool:
+    """Return whether ``--auto-python`` can work, warning once if it cannot.
+
+    ``--auto-python`` shells out to uv for every charm that declares a
+    lower bound on ``requires-python``, so a host without uv would produce
+    one ``runner_error`` per charm for a single missing program. Losing the
+    interpreter selection is not worth losing the run over, so this warns
+    and the caller carries on with auto-Python off.
+    """
+    missing_program = _missing_program(uv_executable)
+    if missing_program is None:
+        return True
+    logger.warning(
+        "%s is not installed; running under hyrum's own interpreter (--auto-python needs uv)",
+        missing_program,
+    )
+    return False
 
 
 # A ref that ``git ls-remote`` cannot see but git can still check out: a full
@@ -943,8 +971,9 @@ def _add_check_subparser(
         action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            "Run poetry lock under an interpreter that satisfies the charm's "
-            'requires-python (via uv run --python X.Y). Requires uv on PATH. [default: enabled]'
+            'Run poetry lock and tox under an interpreter that satisfies the '
+            "charm's requires-python (via uv run --python X.Y). Requires uv on PATH."
+            ' [default: enabled]'
         ),
     )
     verbosity_group = parser.add_mutually_exclusive_group()
@@ -1192,18 +1221,23 @@ def _run_check(args: argparse.Namespace) -> int:
     patcher_desc = _describe_patches(patch_specs)
     choice = runners.RunnerChoice(args.runner_choice)
     prefer = ('tox', 'make')
+    auto_python = args.auto_python
     if args.preflight:
         prefer = _available_backends(
             choice,
             tox_executable=args.tox_executable,
             make_executable=args.make_executable,
         )
+        if auto_python:
+            auto_python = _auto_python_available(args.uv_executable)
     runner = _build_runner(
         choice=choice,
         tox_executable=args.tox_executable,
         make_executable=args.make_executable,
+        uv_executable=args.uv_executable,
         timeout=args.timeout,
         prefer=prefer,
+        auto_python=auto_python,
     )
 
     if args.log_dir is not None:

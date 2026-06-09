@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import pathlib
 import shutil
@@ -1106,6 +1107,26 @@ def test_available_backends_checks_the_program_not_the_whole_command(monkeypatch
         runners.RunnerChoice.TOX, tox_executable='uvx tox', make_executable='make'
     )
     assert backends == ('tox',)
+
+
+def test_auto_python_available_when_uv_is_installed(monkeypatch):
+    monkeypatch.setattr(shutil, 'which', _installed('uv'))
+    assert cli._auto_python_available('uv')
+
+
+def test_auto_python_is_dropped_when_uv_is_missing(monkeypatch, caplog):
+    # uv is not a runner backend: losing the interpreter selection is worth a
+    # warning, not the run. Without this the fleet reports one runner_error
+    # per charm for a single missing program.
+    monkeypatch.setattr(shutil, 'which', _installed('tox', 'make'))
+    with caplog.at_level(logging.WARNING):
+        assert not cli._auto_python_available('uv')
+    assert 'uv is not installed' in caplog.text
+
+
+def test_auto_python_available_checks_the_program_not_the_whole_command(monkeypatch):
+    monkeypatch.setattr(shutil, 'which', _installed('custom-uv'))
+    assert cli._auto_python_available('custom-uv --quiet')
 
 
 # ---- preflight: --patch git refs ---------------------------------------------

@@ -8,6 +8,7 @@ import pathlib
 import time
 from collections.abc import Sequence
 
+from hyrum import _python_version
 from hyrum._runners import base
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,24 @@ _TOX_NO_ENV_RETURNCODE = 254
 
 
 class ToxRunner:
-    """Run a target via ``tox -e <target>``."""
+    """Run a target via ``tox -e <target>``.
+
+    When ``auto_python`` is set, the invocation is wrapped in
+    ``uv run --python X.Y --with tox -- tox ...`` matching the charm's
+    ``requires-python``. This lets the testenv's tools resolve under an
+    interpreter the charm actually supports, instead of the (often-newer)
+    interpreter hyrum itself runs under.
+
+    The ``--with tox`` is load-bearing: without it uv substitutes the
+    interpreter for ``python`` alone, and ``tox``, being a console script
+    with its own shebang, would go on running under the interpreter that
+    installed it. See :func:`hyrum._python_version.wrap_with_uv_python`.
+
+    Wrapping a ``--tox-executable`` that is an absolute path, or one that
+    already names an interpreter (``python -m tox``), does nothing: the
+    ephemeral environment ``--with`` builds is only reachable through
+    ``PATH``.
+    """
 
     name = 'tox'
 
@@ -27,9 +45,13 @@ class ToxRunner:
         *,
         executable: str | Sequence[str] = 'tox',
         timeout: int = 1800,
+        auto_python: bool = True,
+        uv_executable: str | Sequence[str] = 'uv',
     ):
         self._executable = base.split_executable(executable)
         self._timeout = timeout
+        self._auto_python = auto_python
+        self._uv_executable = base.split_executable(uv_executable)
 
     @classmethod
     def detect(cls, repo: pathlib.Path) -> bool:
@@ -38,8 +60,24 @@ class ToxRunner:
 
     async def run(self, repo: pathlib.Path, target: str) -> base.RunResult:
         """Invoke ``tox -e <target>`` in ``repo`` and capture the result."""
-        argv = [*self._executable, '-e', target]
-        logger.info('tox %s in %s', target, repo)
+        base_argv: list[str] = [*self._executable, '-e', target]
+        py_version: tuple[int, int] | None = None
+        if self._auto_python:
+            py_version = _python_version.min_python_for_repo(repo)
+        argv = list(
+            _python_version.wrap_with_uv_python(
+                base_argv,
+                py_version,
+                self._uv_executable,
+                with_packages=('tox',),
+            )
+        )
+        if py_version is not None:
+            logger.info(
+                'tox %s in %s (under uv python %d.%d)', target, repo, py_version[0], py_version[1]
+            )
+        else:
+            logger.info('tox %s in %s', target, repo)
         started = time.monotonic()
         try:
             proc = await asyncio.create_subprocess_exec(

@@ -70,6 +70,12 @@ above.
 - `runners/` — `ToxRunner`, `MakeRunner`, `auto()` per-charm with fallback.
   GNU make's missing-target ambiguity is handled by probing with
   `make -nq` and falling back to stderr inspection.
+- `_python_version` — reads a charm's minimum `requires-python` and builds
+  the `uv run --python X.Y --with <pkg> --` prefix that runs a command under
+  it. Shared by the tox runner (auto-Python at run time) and the ops patcher
+  (auto-Python at lock time). The `--with` is what makes the prefix do
+  anything: uv substitutes the interpreter for `python` alone, so a console
+  script resolved from `PATH` otherwise keeps its own.
 - `pool` — async worker pool, `Outcome` dataclass with `patcher_error` and
   `runner_error` as statuses distinct from `failed` (so infrastructure
   problems don't get mis-attributed to the charm). The `check` subcommand
