@@ -13,9 +13,13 @@ def make_charm(
     tox: bool = True,
     makefile: bool = False,
     requirements: bool = False,
+    python: bool = True,
 ) -> pathlib.Path:
     root.mkdir(parents=True, exist_ok=True)
     (root / 'charmcraft.yaml').write_text('type: charm\n')
+    if python:
+        (root / 'src').mkdir(exist_ok=True)
+        (root / 'src' / 'charm.py').write_text('# placeholder for has_python filter\n')
     if tox:
         (root / 'tox.ini').write_text('[tox]\nenvlist = unit\n')
     if makefile:

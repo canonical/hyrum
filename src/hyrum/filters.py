@@ -75,3 +75,26 @@ def has_runnable_target(repo: pathlib.Path) -> SkipReason:
     if (repo / 'tox.ini').exists() or (repo / 'Makefile').exists():
         return None
     return 'no tox.ini or Makefile'
+
+
+def has_python(repo: pathlib.Path) -> SkipReason:
+    """Skip charms with no Python source.
+
+    A few charms in the curated list are written in Go (e.g. the
+    ``cluster-api-*`` provider charms): ``ops`` patching has nothing to
+    bite on, so they surface as ``patcher_error`` further down. Catch
+    them up front. Looks two levels deep so a top-level docs/.tox-only
+    repo without ``src/`` is still classified correctly.
+    """
+    for path in repo.iterdir():
+        if path.name.startswith('.'):
+            continue
+        if path.is_file() and path.suffix == '.py':
+            return None
+        if path.is_dir():
+            try:
+                if any(child.suffix == '.py' for child in path.iterdir()):
+                    return None
+            except (OSError, PermissionError):
+                continue
+    return 'no Python files'
