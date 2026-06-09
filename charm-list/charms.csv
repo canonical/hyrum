@@ -390,12 +390,10 @@ openstack-charmers,layer-openstack-api,https://git.launchpad.net/~openstack-char
 ,cve-scanner-operator,https://github.com/canonical/cve-scanner-operator,,auto-discover
 ,data-integrator,https://github.com/canonical/data-integrator,,auto-discover
 ,data-kubeflow-integrator,https://github.com/canonical/data-kubeflow-integrator,,auto-discover
-,data-platform-charms-template,https://github.com/canonical/data-platform-charms-template,,auto-discover
 ,data-platform-libs,https://github.com/canonical/data-platform-libs,,auto-discover
 ,datahub-k8s-operator,https://github.com/canonical/datahub-k8s-operator,,auto-discover
 ,ddeb-retriever-operator,https://github.com/canonical/ddeb-retriever-operator,,auto-discover
 ,docker-registry-charm,https://github.com/canonical/docker-registry-charm,,auto-discover
-,documentation-style-guide,https://github.com/canonical/documentation-style-guide,,auto-discover
 ,forgejo-k8s-operator,https://github.com/canonical/forgejo-k8s-operator,,auto-discover
 ,forgejo-runner-k8s-operator,https://github.com/canonical/forgejo-runner-k8s-operator,,auto-discover
 ,gatus-k8s-operator,https://github.com/canonical/gatus-k8s-operator,,auto-discover
@@ -477,7 +475,6 @@ openstack-charmers,layer-openstack-api,https://git.launchpad.net/~openstack-char
 ,role-distributor-operator,https://github.com/canonical/role-distributor-operator,,auto-discover
 ,ros2bag-fileserver-k8s-operator,https://github.com/canonical/ros2bag-fileserver-k8s-operator,,auto-discover
 ,s3proxy-k8s-operator,https://github.com/canonical/s3proxy-k8s-operator,,auto-discover
-,sandbox1,https://github.com/canonical/sandbox1,,auto-discover
 ,script-exporter-operator,https://github.com/canonical/script-exporter-operator,,auto-discover
 ,sloth-k8s-operator,https://github.com/canonical/sloth-k8s-operator,,auto-discover
 ,snmp-exporter-operator,https://github.com/canonical/snmp-exporter-operator,,auto-discover
@@ -485,7 +482,6 @@ openstack-charmers,layer-openstack-api,https://git.launchpad.net/~openstack-char
 ,sysbench-operator,https://github.com/canonical/sysbench-operator,,auto-discover
 ,template-connect-integrator,https://github.com/canonical/template-connect-integrator,,auto-discover
 ,tenant-service-operator,https://github.com/canonical/tenant-service-operator,,auto-discover
-,test-kubeflow-automation,https://github.com/canonical/test-kubeflow-automation,,auto-discover
 ,tls-certificates-interface,https://github.com/canonical/tls-certificates-interface,,auto-discover
 ,tls-certificates-interface-demo,https://github.com/canonical/tls-certificates-interface-demo,,auto-discover
 ,tls-constraints-operator,https://github.com/canonical/tls-constraints-operator,,auto-discover
@@ -549,7 +545,6 @@ openstack-charmers,layer-openstack-api,https://git.launchpad.net/~openstack-char
 ,upki-mirror-k8s-operator,https://github.com/jnsgruk/upki-mirror-k8s-operator,,auto-discover
 ,zinc-k8s-operator,https://github.com/jnsgruk/zinc-k8s-operator,,auto-discover
 ,bundleservice-charm,https://github.com/juju/bundleservice-charm,,auto-discover
-,charm-developer-docs,https://github.com/juju/charm-developer-docs,,auto-discover
 ,juju-controller,https://github.com/juju/juju-controller,,auto-discover
 ,juju-gui-charm,https://github.com/juju/juju-gui-charm,,auto-discover
 ,jujushell-charm,https://github.com/juju/jujushell-charm,,auto-discover
