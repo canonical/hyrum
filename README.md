@@ -109,7 +109,12 @@ uv sync --all-groups
 # (~/.cache/hyrum/charms), with ops swapped to the `fix/X` branch of
 # canonical/operator. Override the cache folder with --cache-folder or
 # the HYRUM_CHARMS environment variable.
-hyrum unit --workers 8 --ops-source-branch fix/X
+hyrum unit --workers 8 --ops-source canonical:fix/X
+
+# --ops-source also accepts: a PyPI version (`2.17.0`), a `git+<url>[@branch]`
+# reference, a plain `https://…/operator[@branch]` URL, the `owner:branch`
+# GitHub shorthand, or a local checkout (`/path/to/operator`,
+# `~/operator`, `file:///path/to/operator`).
 
 # Force the make runner (default is auto-detect: tox.ini -> tox,
 # Makefile -> make, fall back to the other if the target is missing):

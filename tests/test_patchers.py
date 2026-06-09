@@ -226,6 +226,108 @@ def test_pyproject_poetry_with_testing_extra(
         assert 'subdirectory = "testing"' in patched
 
 
+# ---- OpsSource: PyPI version mode -------------------------------------------
+
+
+@pytest.fixture
+def ops_pypi() -> patchers.OpsSource:
+    return patchers.OpsSource(version='2.17.0')
+
+
+@pytest.fixture
+def ops_path(tmp_path: pathlib.Path) -> patchers.OpsSource:
+    return patchers.OpsSource(path=str(tmp_path / 'operator'))
+
+
+def test_ops_source_rejects_multiple_kinds():
+    with pytest.raises(ValueError, match='at most one'):
+        patchers.OpsSource(version='2.17.0', path='/x')
+
+
+def test_ops_source_kind_property():
+    assert patchers.OpsSource().kind == 'git'
+    assert patchers.OpsSource(version='2.17.0').kind == 'pypi'
+    assert patchers.OpsSource(path='/x').kind == 'path'
+
+
+def test_requirements_pypi_pins_version_and_leaves_companions(
+    tmp_path: pathlib.Path, ops_pypi: patchers.OpsSource
+):
+    req = tmp_path / 'requirements.txt'
+    req.write_text('ops>=2.10\nops-scenario>=7\nrequests==2.32\n')
+    with patchers.OpsSourcePatcher(ops_pypi).apply(tmp_path):
+        patched = _read(req)
+        assert 'ops==2.17.0' in patched
+        assert 'git+' not in patched
+        # Companion left untouched — PyPI ops resolves companions from PyPI.
+        assert 'ops-scenario>=7' in patched
+        assert 'requests==2.32' in patched
+    assert _read(req) == 'ops>=2.10\nops-scenario>=7\nrequests==2.32\n'
+
+
+def test_requirements_path_uses_file_url(tmp_path: pathlib.Path, ops_path: patchers.OpsSource):
+    req = tmp_path / 'requirements.txt'
+    req.write_text('ops>=2.10\n')
+    with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
+        patched = _read(req)
+        assert f'ops @ file://{tmp_path / "operator"}' in patched
+
+
+def test_requirements_pypi_carries_extras(tmp_path: pathlib.Path, ops_pypi: patchers.OpsSource):
+    req = tmp_path / 'requirements.txt'
+    req.write_text('ops[testing,tracing]\n')
+    with patchers.OpsSourcePatcher(ops_pypi).apply(tmp_path):
+        patched = _read(req)
+        assert 'ops[testing,tracing]==2.17.0' in patched
+
+
+def test_pyproject_uv_pypi_rewrites_dependency(
+    tmp_path: pathlib.Path, ops_pypi: patchers.OpsSource
+):
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
+        'dependencies = [\n  "ops>=2.10",\n]\n\n[tool.uv]\n'
+    )
+    with patchers.OpsSourcePatcher(ops_pypi).apply(tmp_path):
+        patched = _read(py)
+        # No source block, no companion hoisting.
+        assert '[tool.uv.sources]' not in patched
+        assert 'ops-scenario' not in patched
+        assert '"ops==2.17.0"' in patched
+        assert 'ops>=2.10' not in patched
+
+
+def test_pyproject_poetry_pypi_uses_version_string(
+    tmp_path: pathlib.Path, ops_pypi: patchers.OpsSource, monkeypatch
+):
+    monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        '[tool.poetry]\nname = "c"\nversion = "0"\ndescription = ""\n'
+        'authors = ["x <x@x>"]\n\n[tool.poetry.dependencies]\npython = "^3.10"\n'
+        'ops = "^2.10"\n'
+    )
+    with patchers.OpsSourcePatcher(ops_pypi).apply(tmp_path):
+        patched = _read(py)
+        assert 'ops = "==2.17.0"' in patched
+        assert 'git = ' not in patched
+        assert 'ops = "^2.10"' not in patched
+
+
+def test_pyproject_uv_path_emits_path_source(tmp_path: pathlib.Path, ops_path: patchers.OpsSource):
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
+        'dependencies = [\n  "ops>=2.10",\n]\n\n[tool.uv]\n'
+    )
+    with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
+        patched = _read(py)
+        assert f'ops = {{ path = "{tmp_path / "operator"}" }}' in patched
+        # Companions still hoisted with the same path + subdirectory.
+        assert 'subdirectory = "testing"' in patched
+
+
 # ---- error paths -------------------------------------------------------------
 
 
