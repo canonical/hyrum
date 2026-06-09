@@ -142,6 +142,11 @@ def discover(
                 info.get('visibility') or 'unknown',
             )
             continue
+        # GitHub-flagged template repos exist to be forked, not run; they
+        # ship with placeholder code that does not lint cleanly.
+        if info.get('is_template'):
+            logger.info('Dropping template repo %s/%s', owner, name)
+            continue
         row['Default Branch'] = info.get('default_branch') or ''
         row['Archived'] = 'yes' if info.get('archived') else 'no'
         rows.append(row)

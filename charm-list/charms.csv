@@ -466,7 +466,6 @@ openstack-charmers,layer-openstack-api,https://git.launchpad.net/~openstack-char
 ,opentelemetry-collector-integrator-operator,https://github.com/canonical/opentelemetry-collector-integrator-operator,,auto-discover
 ,otel-ebpf-profiler-operator,https://github.com/canonical/otel-ebpf-profiler-operator,,auto-discover
 ,penpot-operator,https://github.com/canonical/penpot-operator,,auto-discover
-,platform-engineering-charm-template,https://github.com/canonical/platform-engineering-charm-template,,auto-discover
 ,polar-signals-cloud-integrator-operator,https://github.com/canonical/polar-signals-cloud-integrator-operator,,auto-discover
 ,postgresql-bundle,https://github.com/canonical/postgresql-bundle,,auto-discover
 ,postgresql-k8s-bundle,https://github.com/canonical/postgresql-k8s-bundle,,auto-discover
