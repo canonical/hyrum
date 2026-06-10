@@ -17,7 +17,6 @@ classifiers = [
 ]
 dependencies = [
     "packaging>=24.0",
-    "pyyaml>=6.0",
 ]
 
 [project.scripts]
