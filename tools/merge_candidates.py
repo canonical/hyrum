@@ -55,18 +55,30 @@ def main(argv: list[str] | None = None) -> int:
 
     rows = read_csv(args.csv)
     validate(rows)
-    seen = {normalise_url(row['Repository']) for row in rows}
+    # Dedupe per charm (repo + charm name), so multi-charm monorepos can contribute
+    # one row per charm. A row matching by URL alone is also treated as a duplicate
+    # to stay backward-compatible with single-charm entries that pre-date this script.
+    seen_charms = {(normalise_url(row['Repository']), row['Charm Name']) for row in rows}
+    seen_urls = {normalise_url(row['Repository']) for row in rows}
 
     added: list[dict[str, str]] = []
     for path in args.candidates:
         for candidate in read_candidates(path):
             url = candidate['Repository']
-            if normalise_url(url) in seen:
+            charm_name = candidate['Charm Name']
+            key = (normalise_url(url), charm_name)
+            if key in seen_charms:
                 continue
-            seen.add(normalise_url(url))
+            # Skip single-charm repos already tracked under a different name to avoid
+            # introducing duplicates when the existing row pre-dates name normalisation.
+            # Multi-charm monorepos opt out by setting ``Charm Path``.
+            if not candidate.get('Charm Path') and normalise_url(url) in seen_urls:
+                continue
+            seen_charms.add(key)
+            seen_urls.add(normalise_url(url))
             added.append({
                 'Team': candidate.get('Team', ''),
-                'Charm Name': candidate['Charm Name'],
+                'Charm Name': charm_name,
                 'Repository': url,
                 'Branch (if not the default)': '',
                 'Source': AUTO_DISCOVER_SOURCE,
