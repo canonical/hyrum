@@ -3,8 +3,6 @@ from __future__ import annotations
 import io
 import pathlib
 
-import rich.console
-
 from hyrum import pool, report
 
 
@@ -17,14 +15,13 @@ def _render(
     no_headers: bool = False,
 ):
     buf = io.StringIO()
-    console = rich.console.Console(file=buf, width=120, force_terminal=False)
     report.render(
         outcomes,
         base=base,
         target=target,
         verbose=verbose,
         no_headers=no_headers,
-        console=console,
+        out=buf,
     )
     return buf.getvalue()
 

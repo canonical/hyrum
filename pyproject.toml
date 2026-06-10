@@ -16,10 +16,8 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
 ]
 dependencies = [
-    "click>=8.1.7",
     "packaging>=24.0",
     "pyyaml>=6.0",
-    "rich>=13.7",
 ]
 
 [project.scripts]

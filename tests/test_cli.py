@@ -4,12 +4,22 @@ import os
 import pathlib
 
 import pytest
-from click import testing
 
 from hyrum import cli, runners
 from hyrum.runners import tox
 
 from .conftest import make_charm
+
+
+def invoke(args: list[str], capsys) -> tuple[int, str, str]:
+    """Run the CLI in-process, returning (exit code, stdout, stderr)."""
+    code = 0
+    try:
+        cli.main(args)
+    except SystemExit as exc:
+        code = exc.code if isinstance(exc.code, int) else 1
+    out, err = capsys.readouterr()
+    return code, out, err
 
 
 @pytest.mark.parametrize(
@@ -77,7 +87,7 @@ def test_parse_ops_source_rejects_garbage():
         cli._parse_ops_source('definitely not a version or url')
 
 
-def test_cli_end_to_end_with_stubbed_runner(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_end_to_end_with_stubbed_runner(monkeypatch, capsys, tmp_path: pathlib.Path):
     """Drives the full CLI: enumerate -> patch -> stub runner -> render."""
     cache = tmp_path / 'cache'
     cache.mkdir()
@@ -96,8 +106,7 @@ def test_cli_end_to_end_with_stubbed_runner(monkeypatch, tmp_path: pathlib.Path)
 
     monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
+    code, out, _ = invoke(
         [
             'unit',
             '--cache-folder',
@@ -106,9 +115,10 @@ def test_cli_end_to_end_with_stubbed_runner(monkeypatch, tmp_path: pathlib.Path)
             '--workers',
             '2',
         ],
+        capsys,
     )
-    assert result.exit_code == 0, result.output
-    assert 'passed' in result.output
+    assert code == 0, out
+    assert 'passed' in out
 
 
 async def _fail_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
@@ -122,34 +132,33 @@ async def _fail_run(self, repo, target):  # noqa: RUF029 — async to satisfy Ru
     )
 
 
-def test_cli_exits_nonzero_by_default_on_failure(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_exits_nonzero_by_default_on_failure(monkeypatch, capsys, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
 
     monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
+    code, out, _ = invoke(
         [
             'unit',
             '--cache-folder',
             str(cache),
             '--no-patch',
         ],
+        capsys,
     )
-    assert result.exit_code == 1, result.output
+    assert code == 1, out
 
 
-def test_cli_no_fail_forces_exit_zero(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_no_fail_forces_exit_zero(monkeypatch, capsys, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
 
     monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
+    code, out, _ = invoke(
         [
             'unit',
             '--cache-folder',
@@ -157,11 +166,12 @@ def test_cli_no_fail_forces_exit_zero(monkeypatch, tmp_path: pathlib.Path):
             '--no-patch',
             '--no-fail',
         ],
+        capsys,
     )
-    assert result.exit_code == 0, result.output
+    assert code == 0, out
 
 
-def test_cli_quiet_suppresses_report(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_quiet_suppresses_report(monkeypatch, capsys, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
@@ -178,41 +188,41 @@ def test_cli_quiet_suppresses_report(monkeypatch, tmp_path: pathlib.Path):
 
     monkeypatch.setattr(tox.ToxRunner, 'run', pass_run)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
+    code, out, _ = invoke(
         ['unit', '--cache-folder', str(cache), '--no-patch', '--quiet'],
+        capsys,
     )
-    assert result.exit_code == 0, result.output
-    assert 'passed' not in result.output
-    assert 'hyrum:' not in result.output
+    assert code == 0, out
+    assert 'passed' not in out
+    assert 'hyrum:' not in out
 
 
-def test_cli_quiet_reports_failure_to_stderr(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_quiet_reports_failure_to_stderr(monkeypatch, capsys, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
 
     monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
+    code, _, err = invoke(
         ['unit', '--cache-folder', str(cache), '--no-patch', '--quiet'],
+        capsys,
     )
-    assert result.exit_code == 1
-    assert 'did not pass' in result.stderr
+    assert code == 1
+    assert 'did not pass' in err
 
 
-def test_cli_verbosity_flags_are_mutually_exclusive(tmp_path: pathlib.Path):
+def test_cli_verbosity_flags_are_mutually_exclusive(capsys, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
+    code, _, err = invoke(
         ['unit', '--cache-folder', str(cache), '--no-patch', '--quiet', '--verbose'],
+        capsys,
     )
-    assert result.exit_code != 0
-    assert 'mutually exclusive' in result.output
+    assert code != 0
+    assert 'mutually exclusive' in err
 
 
 def test_apply_host_env_defaults_sets_pyo3_and_tox_override():
@@ -244,7 +254,7 @@ def test_apply_host_env_defaults_uses_target_in_override():
     assert 'testenv:static.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY' in env['TOX_OVERRIDE']
 
 
-def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, capsys, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
@@ -264,8 +274,7 @@ def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathli
 
     monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
+    code, out, _ = invoke(
         [
             'unit',
             '--cache-folder',
@@ -273,7 +282,8 @@ def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathli
             '--no-patch',
             '--no-host-env-defaults',
         ],
+        capsys,
     )
-    assert result.exit_code == 0, result.output
+    assert code == 0, out
     assert 'PYO3_USE_ABI3_FORWARD_COMPATIBILITY' not in os.environ
     assert 'TOX_OVERRIDE' not in os.environ
