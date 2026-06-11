@@ -27,7 +27,7 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: |
           uv sync --frozen --no-dev
-          uvx --from cyclonedx-bom cyclonedx-py environment .venv \
+          uv run --project .github/sbom cyclonedx-py environment .venv \
             --output-format JSON \
             --output-file sbom.cdx.json
       # Two separate attestations: SLSA provenance (how it was built)
