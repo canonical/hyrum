@@ -1,0 +1,6 @@
+[project]
+name = "hyrum-sbom"
+version = "0"
+requires-python = ">=3.11"
+dependencies = ["cyclonedx-bom>=6"]
+description = "Isolated lockfile for cyclonedx-py used by the publish workflows."

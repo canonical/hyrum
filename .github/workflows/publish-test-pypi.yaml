@@ -1,0 +1,53 @@
+name: publish-test-pypi
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Build and publish to Test PyPI (trusted publishing)
+    runs-on: ubuntu-latest
+    environment:
+      name: publish-test-pypi
+      url: https://test.pypi.org/p/hyrum
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
+        with:
+          enable-cache: false
+      - run: uv build
+      - name: Generate CycloneDX SBOM
+        run: |
+          uv sync --frozen --no-dev
+          uv run --project .github/sbom cyclonedx-py environment .venv \
+            --output-format JSON \
+            --output-file sbom.cdx.json
+      # Two separate attestations: SLSA provenance (how it was built)
+      # and CycloneDX SBOM (what's inside). attest-build-provenance
+      # doesn't accept sbom-path, so the SBOM predicate needs its own call.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: 'dist/*'
+      - name: Attest SBOM
+        uses: actions/attest-sbom@v2
+        with:
+          subject-path: 'dist/*'
+          sbom-path: sbom.cdx.json
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom
+          path: sbom.cdx.json
+          if-no-files-found: error
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/

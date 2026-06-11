@@ -16,3 +16,11 @@ updates:
       - "dependencies"
     cooldown:
       default-days: 7
+  - package-ecosystem: "uv"
+    directory: "/.github/sbom"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"
+    cooldown:
+      default-days: 7
