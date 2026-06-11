@@ -42,7 +42,7 @@ lint = [
     "ruff>=0.6",
     "codespell>=2.2",
     "zizmor>=1.11",
-    "pyright>=1.1.380",
+    "pyright>=1.1.410",
 ]
 unit = [
     "pytest>=8",
