@@ -137,3 +137,6 @@ convention = "google"
 testpaths = ["tests"]
 addopts = "-ra"
 asyncio_mode = "auto"
+# Promote warnings to errors so deprecations and resource-cleanup bugs surface
+# in CI rather than leaking into the charm baselines hyrum produces.
+filterwarnings = ["error"]
