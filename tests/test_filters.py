@@ -67,3 +67,16 @@ def test_not_legacy_skips_classic_hook_charm(charm_cache):
     repo = make_charm(charm_cache / 'a')
     (repo / 'hooks').mkdir()
     assert filters.not_legacy(repo) == 'legacy (reactive/hooks) charm'
+
+
+def test_not_legacy_skips_reactive_under_src(charm_cache):
+    repo = make_charm(charm_cache / 'a')
+    (repo / 'src' / 'reactive').mkdir(parents=True)
+    assert filters.not_legacy(repo) == 'legacy (reactive/hooks) charm'
+
+
+def test_not_legacy_skips_src_layer_yaml(charm_cache):
+    repo = make_charm(charm_cache / 'a')
+    (repo / 'src').mkdir(exist_ok=True)
+    (repo / 'src' / 'layer.yaml').write_text('includes: []\n')
+    assert filters.not_legacy(repo) == 'legacy (reactive/hooks) charm'
