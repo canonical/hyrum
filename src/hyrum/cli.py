@@ -20,10 +20,16 @@ import hyrum
 from hyrum import config as config_loader
 from hyrum import enumerate as enum_mod
 from hyrum import filters as filt
-from hyrum import frameworks, patchers, pool, report, runners
+from hyrum import frameworks, get_charms, patchers, pool, report, runners
 from hyrum.runners import make_runner, tox
 
 logger = logging.getLogger('hyrum')
+
+
+@click.group()
+@click.version_option(hyrum.__version__)
+def main() -> None:
+    """Bulk-run a check across many charm repositories with a dependency swapped out."""
 
 
 def _iso_utc(dt: datetime.datetime) -> rich.text.Text:
@@ -220,8 +226,7 @@ def _select_repos(
     return repos, skipped
 
 
-@click.command()
-@click.version_option(hyrum.__version__)
+@main.command('check')
 @click.option(
     '--cache-folder',
     envvar='HYRUM_CHARMS',
@@ -375,7 +380,7 @@ def _select_repos(
         'do not get mis-attributed to the charm.'
     ),
 )
-def main(
+def check(
     cache_folder: pathlib.Path,
     config_path: pathlib.Path,
     target: str,
@@ -464,3 +469,6 @@ def main(
 
     if not no_fail and not pool.passed(results):
         sys.exit(1)
+
+
+main.add_command(get_charms.get_charms)

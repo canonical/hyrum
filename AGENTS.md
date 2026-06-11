@@ -48,10 +48,14 @@ above.
 
 ## Architecture
 
-- Entry point: `hyrum.cli:main` (a single Click command).
-- `enumerate` / `filters` / `frameworks` / `config` — repo selection. Charm
-  collection curation is **out of scope**; the tool expects a pre-populated
-  cache folder.
+- Entry point: `hyrum.cli:main` — a Click group with two subcommands:
+  `check` (the core bulk-runner) and `get-charms` (clones/pulls every
+  repository listed in `charm-list/charms.csv` into the cache folder).
+- `enumerate` / `filters` / `frameworks` / `config` — repo selection. The
+  `hyrum check` subcommand does not curate the charm collection; it
+  expects a pre-populated cache folder. `hyrum get-charms` populates it.
+- `get_charms` — distributed cache-population subcommand: shallow-clones
+  or pulls every repository in the CSV concurrently via `asyncio`.
 - `patchers/` — `Patcher` protocol, `NullPatcher`, `PatcherStack`,
   `OpsSourcePatcher`. The protocol is deliberately narrow so a future
   charm-library patcher (vendored `lib/charms/…/v<n>/<file>.py` swapped from a
@@ -63,6 +67,10 @@ above.
   status distinct from `failed` (so infrastructure problems don't get
   mis-attributed to the charm).
 - `report` — Rich tally + verbose offender lists.
+- `tools/` — stdlib-only maintenance scripts that are **not** shipped in the
+  hyrum wheel. `tools/update_charm_list.py` refreshes
+  `charm-list/charms.csv` from Charmhub. Keep additions stdlib-only so they
+  can run without a wheel install.
 
 Scope during the 26.10 cycle is **lint and unit tests only**. Do not add
 integration-test support.

@@ -20,12 +20,19 @@ def test_cli_version_runs():
 def test_cli_help_runs():
     result = testing.CliRunner().invoke(cli.main, ['--help'])
     assert result.exit_code == 0
+    assert 'check' in result.output
+    assert 'get-charms' in result.output
+
+
+def test_cli_check_help_runs():
+    result = testing.CliRunner().invoke(cli.main, ['check', '--help'])
+    assert result.exit_code == 0
     assert '--cache-folder' in result.output
     assert 'TARGET' in result.output
     assert '--runner' in result.output
 
 
-def test_cli_requires_target():
+def test_cli_requires_subcommand():
     result = testing.CliRunner().invoke(cli.main, [])
     assert result.exit_code != 0
-    assert 'TARGET' in result.output or 'Missing argument' in result.output
+    assert 'Missing command' in result.output or 'Usage' in result.output
