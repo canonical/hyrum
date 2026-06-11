@@ -229,7 +229,7 @@ def test_get_charms_reports_error_when_csv_missing(tmp_path: pathlib.Path):
     missing = tmp_path / 'does-not-exist.csv'
     result = testing.CliRunner().invoke(
         get_charms.get_charms,
-        ['--csv', str(missing), '--cache-folder', str(tmp_path / 'c')],
+        ['--source', str(missing), '--cache-folder', str(tmp_path / 'c')],
     )
     assert result.exit_code != 0
     assert 'not found' in result.output
@@ -247,7 +247,7 @@ def test_get_charms_creates_cache_folder_and_drives_clone(tmp_path: pathlib.Path
 
     result = testing.CliRunner().invoke(
         get_charms.get_charms,
-        ['--csv', str(csv_path), '--cache-folder', str(cache)],
+        ['--source', str(csv_path), '--cache-folder', str(cache)],
     )
 
     assert result.exit_code == 0, result.output
