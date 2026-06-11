@@ -59,8 +59,13 @@ def not_legacy(repo: pathlib.Path) -> SkipReason:
     Reactive charms have a ``reactive/`` directory; classic hook charms
     have a ``hooks/`` directory. Both predate ``ops`` and are out of
     scope for ``hyrum``.
+
+    Some reactive charms keep their layout under ``src/`` instead of the
+    top level (``src/reactive/`` + ``src/layer.yaml``); detect those too.
     """
     if (repo / 'reactive').exists() or (repo / 'hooks').exists():
+        return 'legacy (reactive/hooks) charm'
+    if (repo / 'src' / 'reactive').exists() or (repo / 'src' / 'layer.yaml').exists():
         return 'legacy (reactive/hooks) charm'
     return None
 
