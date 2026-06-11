@@ -39,7 +39,7 @@ packages = ["src/hyrum"]
 # ---------------------------------------------------------------------------
 [dependency-groups]
 lint = [
-    "ruff>=0.6",
+    "ruff>=0.15.16",
     "codespell>=2.2",
     "zizmor>=1.11",
     "pyright>=1.1.410",
