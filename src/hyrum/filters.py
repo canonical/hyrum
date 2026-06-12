@@ -78,23 +78,15 @@ def has_runnable_target(repo: pathlib.Path) -> SkipReason:
 
 
 def has_python(repo: pathlib.Path) -> SkipReason:
-    """Skip charms with no Python source.
+    """Skip charms with no Python manifest.
 
     A few charms in the curated list are written in Go (e.g. the
     ``cluster-api-*`` provider charms): ``ops`` patching has nothing to
     bite on, so they surface as ``patcher_error`` further down. Catch
-    them up front. Looks two levels deep so a top-level docs/.tox-only
-    repo without ``src/`` is still classified correctly.
+    them up front by looking for a top-level ``pyproject.toml`` or
+    ``requirements.txt`` — the two manifests ``ops`` patching can
+    actually rewrite.
     """
-    for path in repo.iterdir():
-        if path.name.startswith('.'):
-            continue
-        if path.is_file() and path.suffix == '.py':
-            return None
-        if path.is_dir():
-            try:
-                if any(child.suffix == '.py' for child in path.iterdir()):
-                    return None
-            except (OSError, PermissionError):
-                continue
-    return 'no Python files'
+    if (repo / 'pyproject.toml').exists() or (repo / 'requirements.txt').exists():
+        return None
+    return 'no Python manifest'

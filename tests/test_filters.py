@@ -52,14 +52,13 @@ def test_has_runnable_target_with_neither(charm_cache):
     assert filters.has_runnable_target(repo) == 'no tox.ini or Makefile'
 
 
-def test_has_python_passes_with_default_src_charm(charm_cache):
+def test_has_python_passes_with_pyproject(charm_cache):
     repo = make_charm(charm_cache / 'a')
     assert filters.has_python(repo) is None
 
 
-def test_has_python_passes_top_level_py(charm_cache):
-    repo = make_charm(charm_cache / 'a', python=False)
-    (repo / 'something.py').write_text('# hi\n')
+def test_has_python_passes_with_requirements_txt(charm_cache):
+    repo = make_charm(charm_cache / 'a', python=False, requirements=True)
     assert filters.has_python(repo) is None
 
 
@@ -68,14 +67,7 @@ def test_has_python_skips_go_only_charm(charm_cache):
     (repo / 'main.go').write_text('package main\n')
     (repo / 'controllers').mkdir()
     (repo / 'controllers' / 'controller.go').write_text('package controllers\n')
-    assert filters.has_python(repo) == 'no Python files'
-
-
-def test_has_python_ignores_dotdirs(charm_cache):
-    repo = make_charm(charm_cache / 'a', python=False)
-    (repo / '.tox').mkdir()
-    (repo / '.tox' / 'env.py').write_text('# noise\n')
-    assert filters.has_python(repo) == 'no Python files'
+    assert filters.has_python(repo) == 'no Python manifest'
 
 
 def test_not_legacy_passes_ops_charm(charm_cache):

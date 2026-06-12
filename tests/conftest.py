@@ -19,7 +19,10 @@ def make_charm(
     (root / 'charmcraft.yaml').write_text('type: charm\n')
     if python:
         (root / 'src').mkdir(exist_ok=True)
-        (root / 'src' / 'charm.py').write_text('# placeholder for has_python filter\n')
+        (root / 'src' / 'charm.py').write_text('# placeholder src charm\n')
+        (root / 'pyproject.toml').write_text(
+            '[project]\nname = "c"\nversion = "0"\ndependencies = ["ops>=2.10"]\n'
+        )
     if tox:
         (root / 'tox.ini').write_text('[tox]\nenvlist = unit\n')
     if makefile:
