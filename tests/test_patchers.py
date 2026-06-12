@@ -103,7 +103,8 @@ def test_restore_on_exception(tmp_path: pathlib.Path, ops_main: patchers.OpsSour
 
 def test_pyproject_pep621_injects_git_dep(tmp_path: pathlib.Path, ops_branch: patchers.OpsSource):
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -111,7 +112,8 @@ def test_pyproject_pep621_injects_git_dep(tmp_path: pathlib.Path, ops_branch: pa
           "ops>=2.10",
           "requests",
         ]
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         patched = _read(py)
         assert '"ops @ git+https://github.com/canonical/operator@fix/X"' in patched
@@ -127,7 +129,8 @@ def test_pyproject_pep621_optional_deps_rewritten(
 ):
     """Charms without ``[project.dependencies]`` but with ops in an extra."""
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -141,7 +144,8 @@ def test_pyproject_pep621_optional_deps_rewritten(
         unit = [
           "ops[testing]==2.21.1",
         ]
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         patched = _read(py)
         assert '"ops @ git+https://github.com/canonical/operator@fix/X"' in patched
@@ -158,7 +162,8 @@ def test_pyproject_pep735_dependency_groups_rewritten(
 ):
     """Charms using PEP 735 ``[dependency-groups]`` (pgbouncer-style)."""
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -172,7 +177,8 @@ def test_pyproject_pep735_dependency_groups_rewritten(
         libs = [
           "ops>=2.23.1",
         ]
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         patched = _read(py)
         assert '"ops @ git+https://github.com/canonical/operator@fix/X"' in patched
@@ -186,7 +192,8 @@ def test_pyproject_pep621_keywords_ops_not_rewritten(
 ):
     """``keywords = ["ops"]`` under [project] must not be misidentified as a dep."""
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -194,7 +201,8 @@ def test_pyproject_pep621_keywords_ops_not_rewritten(
         dependencies = [
           "ops==2.10",
         ]
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         patched = _read(py)
         # keywords entry preserved verbatim.
@@ -209,7 +217,8 @@ def test_pyproject_pep621_keywords_ops_not_rewritten(
 
 def test_pyproject_uv_adds_tool_uv_sources(tmp_path: pathlib.Path, ops_branch: patchers.OpsSource):
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -220,7 +229,8 @@ def test_pyproject_uv_adds_tool_uv_sources(tmp_path: pathlib.Path, ops_branch: p
 
         [tool.uv]
         dev-dependencies = []
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         patched = _read(py)
         assert '[tool.uv.sources]' in patched
@@ -241,7 +251,8 @@ def test_pyproject_uv_always_hoists_all_companions(
     its workspace siblings) unless they appear at the top-level pyproject.
     """
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -252,7 +263,8 @@ def test_pyproject_uv_always_hoists_all_companions(
 
         [tool.uv]
         dev-dependencies = []
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         patched = _read(py)
         assert '[tool.uv.sources]' in patched
@@ -270,7 +282,8 @@ def test_pyproject_uv_transitive_ops_dep_still_gets_companions(
 ):
     """A charm that pulls ops only transitively still gets companions hoisted."""
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -280,7 +293,8 @@ def test_pyproject_uv_transitive_ops_dep_still_gets_companions(
         ]
 
         [tool.uv]
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
         patched = _read(py)
         # ops itself is hoisted as a source so uv resolves the transitive dep from git.
@@ -294,7 +308,8 @@ def test_pyproject_uv_bumps_low_requires_python(
     tmp_path: pathlib.Path, ops_main: patchers.OpsSource
 ):
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -304,7 +319,8 @@ def test_pyproject_uv_bumps_low_requires_python(
         ]
 
         [tool.uv]
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
         patched = _read(py)
         assert 'requires-python = ">=3.10"' in patched
@@ -320,7 +336,8 @@ def test_pyproject_uv_dep_groups_recognised_and_hoisted(
     must end up in both ops-bearing groups, plus the source block.
     """
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -339,7 +356,8 @@ def test_pyproject_uv_dep_groups_recognised_and_hoisted(
         ]
 
         [tool.uv]
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         patched = _read(py)
         assert '[tool.uv.sources]' in patched
@@ -364,7 +382,8 @@ def test_pyproject_uv_dep_groups_without_project_dependencies(
 ):
     """A pure PEP 735 layout (no [project.dependencies] at all) still patches."""
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -375,7 +394,8 @@ def test_pyproject_uv_dep_groups_without_project_dependencies(
         ]
 
         [tool.uv]
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
         patched = _read(py)
         assert '[tool.uv.sources]' in patched
@@ -393,7 +413,8 @@ def test_pyproject_poetry_injects_git_under_dependencies(
     # Skip the poetry lock subprocess for unit tests.
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [tool.poetry]
         name = "c"
         version = "0"
@@ -403,7 +424,8 @@ def test_pyproject_poetry_injects_git_under_dependencies(
         [tool.poetry.dependencies]
         python = "^3.10"
         ops = "^2.10"
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         patched = _read(py)
         assert 'ops = {git = "https://github.com/canonical/operator", branch = "fix/X"}' in patched
@@ -416,7 +438,8 @@ def test_pyproject_poetry_with_testing_extra(
 ):
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [tool.poetry]
         name = "c"
         version = "0"
@@ -426,7 +449,8 @@ def test_pyproject_poetry_with_testing_extra(
         [tool.poetry.dependencies]
         python = "^3.10"
         ops = { version = "^2.10", extras = ["testing"] }
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
         patched = _read(py)
         assert 'ops = {git = "https://github.com/canonical/operator"' in patched
@@ -494,7 +518,8 @@ def test_pyproject_uv_pypi_rewrites_dependency(
     tmp_path: pathlib.Path, ops_pypi: patchers.OpsSource
 ):
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -504,7 +529,8 @@ def test_pyproject_uv_pypi_rewrites_dependency(
         ]
 
         [tool.uv]
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_pypi).apply(tmp_path):
         patched = _read(py)
         # No source block, no companion hoisting.
@@ -519,7 +545,8 @@ def test_pyproject_poetry_pypi_uses_version_string(
 ):
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [tool.poetry]
         name = "c"
         version = "0"
@@ -529,7 +556,8 @@ def test_pyproject_poetry_pypi_uses_version_string(
         [tool.poetry.dependencies]
         python = "^3.10"
         ops = "^2.10"
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_pypi).apply(tmp_path):
         patched = _read(py)
         assert 'ops = "==2.17.0"' in patched
@@ -539,7 +567,8 @@ def test_pyproject_poetry_pypi_uses_version_string(
 
 def test_pyproject_uv_path_emits_path_source(tmp_path: pathlib.Path, ops_path: patchers.OpsSource):
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -549,7 +578,8 @@ def test_pyproject_uv_path_emits_path_source(tmp_path: pathlib.Path, ops_path: p
         ]
 
         [tool.uv]
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
         patched = _read(py)
         assert f'ops = {{ path = "{tmp_path / "operator"}" }}' in patched
@@ -582,7 +612,8 @@ def test_lockfile_snapshots_restored(
 ):
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -592,7 +623,8 @@ def test_lockfile_snapshots_restored(
         ]
 
         [tool.uv]
-    """))
+    """)
+    )
     lock = tmp_path / 'uv.lock'
     lock.write_text('# original lock\n')
     with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
@@ -696,7 +728,8 @@ def test_poetry_lock_wrapped_with_uv_run_when_requires_python_present(
 
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [tool.poetry]
         name = "c"
         version = "0"
@@ -706,7 +739,8 @@ def test_poetry_lock_wrapped_with_uv_run_when_requires_python_present(
         [tool.poetry.dependencies]
         python = "^3.12"
         ops = "^2.10"
-    """))
+    """)
+    )
     ops = patchers.OpsSource(branch='b')
     with patchers.OpsSourcePatcher(ops).apply(tmp_path):
         pass
@@ -730,7 +764,8 @@ def test_poetry_lock_not_wrapped_when_auto_python_disabled(tmp_path: pathlib.Pat
 
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [tool.poetry]
         name = "c"
         version = "0"
@@ -740,7 +775,8 @@ def test_poetry_lock_not_wrapped_when_auto_python_disabled(tmp_path: pathlib.Pat
         [tool.poetry.dependencies]
         python = "^3.12"
         ops = "^2.10"
-    """))
+    """)
+    )
     ops = patchers.OpsSource(branch='b', auto_python=False)
     with patchers.OpsSourcePatcher(ops).apply(tmp_path):
         pass
@@ -755,7 +791,8 @@ def test_poetry_lock_not_wrapped_when_no_python_constraint(tmp_path: pathlib.Pat
 
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [tool.poetry]
         name = "c"
         version = "0"
@@ -764,7 +801,8 @@ def test_poetry_lock_not_wrapped_when_no_python_constraint(tmp_path: pathlib.Pat
 
         [tool.poetry.dependencies]
         ops = "^2.10"
-    """))
+    """)
+    )
     ops = patchers.OpsSource(branch='b')
     with patchers.OpsSourcePatcher(ops).apply(tmp_path):
         pass
@@ -779,7 +817,8 @@ def test_uv_lock_passes_python_when_requires_python_present(tmp_path: pathlib.Pa
 
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -789,7 +828,8 @@ def test_uv_lock_passes_python_when_requires_python_present(tmp_path: pathlib.Pa
         ]
 
         [tool.uv]
-    """))
+    """)
+    )
     (tmp_path / 'uv.lock').write_text('# original\n')
     ops = patchers.OpsSource(branch='b')
     with patchers.OpsSourcePatcher(ops).apply(tmp_path):
@@ -809,7 +849,8 @@ def test_uv_lock_python_reflects_patched_requires_python(tmp_path: pathlib.Path,
 
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -819,7 +860,8 @@ def test_uv_lock_python_reflects_patched_requires_python(tmp_path: pathlib.Path,
         ]
 
         [tool.uv]
-    """))
+    """)
+    )
     (tmp_path / 'uv.lock').write_text('# original\n')
     ops = patchers.OpsSource(branch='b')
     with patchers.OpsSourcePatcher(ops).apply(tmp_path):
@@ -835,7 +877,8 @@ def test_uv_lock_unpinned_when_auto_python_disabled(tmp_path: pathlib.Path, monk
 
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -845,7 +888,8 @@ def test_uv_lock_unpinned_when_auto_python_disabled(tmp_path: pathlib.Path, monk
         ]
 
         [tool.uv]
-    """))
+    """)
+    )
     (tmp_path / 'uv.lock').write_text('# original\n')
     ops = patchers.OpsSource(branch='b', auto_python=False)
     with patchers.OpsSourcePatcher(ops).apply(tmp_path):
@@ -861,7 +905,8 @@ def test_uv_lock_unpinned_when_no_python_constraint(tmp_path: pathlib.Path, monk
 
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -870,7 +915,8 @@ def test_uv_lock_unpinned_when_no_python_constraint(tmp_path: pathlib.Path, monk
         ]
 
         [tool.uv]
-    """))
+    """)
+    )
     (tmp_path / 'uv.lock').write_text('# original\n')
     ops = patchers.OpsSource(branch='b')
     with patchers.OpsSourcePatcher(ops).apply(tmp_path):
@@ -911,7 +957,8 @@ def test_lockfile_created_during_patch_is_removed_on_exit(
 
     monkeypatch.setattr('hyrum.patchers.ops_source._run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
-    py.write_text(textwrap.dedent("""\
+    py.write_text(
+        textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
@@ -921,7 +968,8 @@ def test_lockfile_created_during_patch_is_removed_on_exit(
         ]
 
         [tool.uv]
-    """))
+    """)
+    )
     with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         # _run_lock is only called when uv.lock already existed; here it
         # won't run, so no cleanup necessary in this case.
