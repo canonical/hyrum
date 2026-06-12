@@ -63,6 +63,12 @@ sudo apt-get install -y \
 uv tool install poetry
 ```
 
+A handful of charms shell out to other tools such as `yq` or `go` from
+their tox env or Makefile. Those aren't installed up-front since they
+only affect a few charms in the curated list; they show up as `failed`
+(not `patcher_error`) with a `command not found` line in the per-charm
+log. Install the missing tool to surface the underlying charm result.
+
 Some charms also pull C/Rust extensions whose latest releases pre-date
 the host's Python version. PyO3 < 0.23 can't build against Python 3.14
 unless you opt in with the stable-ABI escape hatch (`unit` in
