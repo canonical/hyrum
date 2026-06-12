@@ -42,7 +42,8 @@ GITHUB_REPO_URL = 'https://api.github.com/repos'
 
 AUTO_SOURCE = 'auto'
 MANUAL_SOURCE = 'manual'
-VALID_SOURCES = frozenset({AUTO_SOURCE, MANUAL_SOURCE})
+AUTO_DISCOVER_SOURCE = 'auto-discover'
+VALID_SOURCES = frozenset({AUTO_SOURCE, MANUAL_SOURCE, AUTO_DISCOVER_SOURCE})
 
 CSV_FIELDS = (
     'Team',
@@ -118,10 +119,12 @@ def validate(rows: list[dict[str, str]]) -> None:
 
     Checked invariants: every row has a non-empty ``Charm Name`` and
     ``Repository``, ``Source`` is one of ``VALID_SOURCES``, and no two rows
-    share a ``Repository`` after URL normalisation.
+    share the same ``(Repository, Charm Name)`` pair after URL normalisation
+    — multi-charm monorepos legitimately produce several rows with the same
+    Repository value, distinguished by Charm Name.
     """
     errors: list[str] = []
-    seen: dict[str, int] = {}
+    seen: dict[tuple[str, str], int] = {}
     for index, row in enumerate(rows, start=2):  # +1 header, +1 1-indexed
         name = (row.get('Charm Name') or '').strip()
         url = (row.get('Repository') or '').strip()
@@ -133,11 +136,14 @@ def validate(rows: list[dict[str, str]]) -> None:
         if source not in VALID_SOURCES:
             valid = ', '.join(repr(s) for s in sorted(VALID_SOURCES))
             errors.append(f'row {index}: Source must be one of {valid}, got {source!r}')
-        if not url:
+        if not url or not name:
             continue
-        key = normalise_url(url)
+        key = (normalise_url(url), name)
         if key in seen:
-            errors.append(f'row {index}: duplicate Repository {url!r} (also row {seen[key]})')
+            errors.append(
+                f'row {index}: duplicate (Repository, Charm Name) {url!r}/{name!r} '
+                f'(also row {seen[key]})'
+            )
         else:
             seen[key] = index
     if errors:
@@ -325,7 +331,7 @@ def read_csv(path: pathlib.Path) -> list[dict[str, str]]:
 
 
 def write_csv(path: pathlib.Path, rows: list[dict[str, str]]) -> None:
-    """Write ``rows`` to ``path`` with LF line endings."""
+    """Write ``rows`` to ``path``."""
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=CSV_FIELDS, lineterminator='\n')
     writer.writeheader()

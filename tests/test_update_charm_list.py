@@ -115,7 +115,7 @@ def test_validate_rejects_unknown_source():
         uut.validate(rows)
 
 
-def test_validate_rejects_duplicate_urls():
+def test_validate_rejects_duplicate_charm_in_same_repo():
     rows = [
         {
             'Team': '',
@@ -126,14 +126,34 @@ def test_validate_rejects_duplicate_urls():
         },
         {
             'Team': '',
-            'Charm Name': 'foo-clone',
+            'Charm Name': 'foo',
             'Repository': 'https://github.com/canonical/foo.git/',
             'Branch (if not the default)': '',
             'Source': 'manual',
         },
     ]
-    with pytest.raises(ValueError, match='duplicate Repository'):
+    with pytest.raises(ValueError, match='duplicate'):
         uut.validate(rows)
+
+
+def test_validate_allows_monorepo_with_distinct_charm_names():
+    rows = [
+        {
+            'Team': '',
+            'Charm Name': 'scheduler',
+            'Repository': 'https://github.com/canonical/airflow-core-operators',
+            'Branch (if not the default)': '',
+            'Source': 'auto-discover',
+        },
+        {
+            'Team': '',
+            'Charm Name': 'triggerer',
+            'Repository': 'https://github.com/canonical/airflow-core-operators',
+            'Branch (if not the default)': '',
+            'Source': 'auto-discover',
+        },
+    ]
+    uut.validate(rows)
 
 
 def test_run_rejects_invalid_csv(tmp_path: pathlib.Path):
