@@ -63,7 +63,7 @@ sudo apt-get install -y \
 uv tool install poetry
 ```
 
-A handful of charms shell out to other tools (e.g. `yq`, `go`) from
+A handful of charms shell out to other tools such as `yq` or `go` from
 their tox env or Makefile. Those aren't installed up-front since they
 only affect a few charms in the curated list; they show up as `failed`
 (not `patcher_error`) with a `command not found` line in the per-charm
