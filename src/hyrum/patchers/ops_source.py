@@ -222,7 +222,7 @@ class OpsSourcePatcher:
             original_text = snapshots[pyproject] or ''
 
             if flavour == 'uv':
-                new_text = _patch_pyproject_uv(original_text, self.ops, ops_extras)
+                new_text = _patch_pyproject_uv(original_text, parsed, self.ops, ops_extras)
             elif flavour == 'poetry':
                 new_text = _patch_pyproject_poetry(original_text, self.ops, ops_extras)
             elif flavour == 'pep621':
@@ -375,6 +375,15 @@ def _collect_pyproject_ops_extras(data: dict[str, Any]) -> set[str]:
         for dep_str in opts:
             extras.update(_ops_extras_from_pep508_line(str(dep_str)))
 
+    # PEP 735 [dependency-groups]: same shape as optional-dependencies but at
+    # top-level. Used by uv-managed charms that don't put deps under [project].
+    dep_groups: Any = data.get('dependency-groups', {})
+    if isinstance(dep_groups, dict):
+        for group_value in dep_groups.values():
+            if isinstance(group_value, list):
+                for dep_str in group_value:
+                    extras.update(_ops_extras_from_pep508_line(str(dep_str)))
+
     return extras
 
 
@@ -422,18 +431,173 @@ def _strip_companion_declarations(content: str, pkg_name: str) -> str:
     return ''.join(out_lines)
 
 
+# Match quoted PEP 508 ops entries inside TOML arrays. The trailing lookahead
+# constrains the match to a spot where TOML actually expects an array element
+# — closing quote followed by a comma or array-close — so config values that
+# just happen to be ``"ops"`` (like ``keywords = ["ops"]``) are skipped unless
+# we're already inside a dep section.
+_OPS_PEP508_RE = re.compile(
+    r"""
+    "               # opening quote of the array element
+    \s* ops         # the package name (TOML allows leading whitespace in the string)
+    (?![\w-])       # not followed by a name char: excludes ops-scenario, ops_helper, ...
+    (\[[^\]"]*\])?  # capture the optional extras, e.g. [testing]
+    [^"]*           # rest of the spec: version, marker, URL, ...
+    "               # closing quote
+    (?= \s* [,\]] ) # array-element context: comma or closing bracket follows
+    """,
+    re.VERBOSE,
+)
+_OPS_SCENARIO_PEP508_RE = re.compile(
+    r"""
+    "  \s* ops-scenario (?![\w-])  # the package name, not a longer namesake
+    [^"]*  "                       # rest of the spec, then closing quote
+    (?= \s* [,\]] )                # array-element context
+    """,
+    re.VERBOSE,
+)
+_OPS_TRACING_PEP508_RE = re.compile(
+    r"""
+    "  \s* ops-tracing (?![\w-])
+    [^"]*  "
+    (?= \s* [,\]] )
+    """,
+    re.VERBOSE,
+)
+
+_SECTION_HEADER_RE = re.compile(r'^\s*\[([^\]]+)\]\s*$')
+_DEPS_ARRAY_OPENER_RE = re.compile(r'\s*dependencies\s*=\s*\[')
+_NAMED_ARRAY_OPENER_RE = re.compile(r'\s*[A-Za-z_][\w-]*\s*=\s*\[')
+
+
+def _rewrite_pep508_ops_strings(text: str, ops: OpsSource) -> str:
+    """Rewrite quoted PEP 508 ops entries in-place to point at the git source.
+
+    Targets ``"ops..."`` / ``"ops-scenario..."`` / ``"ops-tracing..."``
+    strings inside sections that hold dep arrays — ``[project]``
+    ``dependencies``, ``[project.optional-dependencies]``, and
+    ``[dependency-groups]``. Other quoted ops-mentions
+    (e.g. ``keywords = ["ops"]``, ``description = "ops charm"``) are left alone.
+    """
+    repl_scenario = f'"{ops.pep508_dep("ops-scenario", subdir="testing")}"'
+    repl_tracing = f'"{ops.pep508_dep("ops-tracing", subdir="tracing")}"'
+
+    def repl_ops(match: re.Match[str]) -> str:
+        raw_extras = match.group(1) or ''
+        extras = [e.strip() for e in raw_extras.strip('[]').split(',') if e.strip()]
+        return f'"{ops.pep508_dep("ops", extras=extras)}"'
+
+    section = ''
+    bracket_depth = 0
+    in_dep_array = False
+    out_lines: list[str] = []
+
+    for raw in text.splitlines(keepends=True):
+        header = _SECTION_HEADER_RE.match(raw)
+        if header:
+            section = header.group(1).strip()
+            bracket_depth = 0
+            in_dep_array = False
+            out_lines.append(raw)
+            continue
+
+        opt_or_group = (
+            section == 'project.optional-dependencies'
+            or section.startswith('project.optional-dependencies.')
+            or section == 'dependency-groups'
+            or section.startswith('dependency-groups.')
+        )
+        is_project = section == 'project'
+
+        # Detect the start of a dep array on this line. Under [project] only
+        # ``dependencies = [`` qualifies; under opt-deps / dep-groups any
+        # ``name = [`` is a dep array by structure.
+        opens_dep_array = False
+        if bracket_depth == 0 and (
+            (is_project and _DEPS_ARRAY_OPENER_RE.match(raw))
+            or (opt_or_group and _NAMED_ARRAY_OPENER_RE.match(raw))
+        ):
+            opens_dep_array = True
+
+        line_in_dep_array = in_dep_array or opens_dep_array
+        if line_in_dep_array:
+            raw = _OPS_PEP508_RE.sub(repl_ops, raw)
+            raw = _OPS_SCENARIO_PEP508_RE.sub(lambda _m: repl_scenario, raw)
+            raw = _OPS_TRACING_PEP508_RE.sub(lambda _m: repl_tracing, raw)
+
+        # Update bracket depth from the (possibly rewritten) line.
+        opens = raw.count('[')
+        closes = raw.count(']')
+        bracket_depth = max(0, bracket_depth + opens - closes)
+        if opens_dep_array and bracket_depth > 0:
+            in_dep_array = True
+        if bracket_depth == 0:
+            in_dep_array = False
+
+        out_lines.append(raw)
+    return ''.join(out_lines)
+
+
 def _patch_pyproject_pep621(original: str, ops: OpsSource, ops_extras: set[str]) -> str:
-    """Patch a PEP 621 ``[project.dependencies]`` pyproject (non-uv)."""
-    stripped = _strip_ops_declarations(original)
-    ops_pep508 = ops.pep508_dep('ops', extras=sorted(ops_extras))
-    return stripped.replace(
-        'dependencies = [',
-        f'dependencies = [\n  "{ops_pep508}",',
-        1,
-    )
+    """Patch a PEP 621 pyproject (non-uv).
+
+    Handles deps in any of the standard PEP 621 / PEP 735 locations:
+    ``[project.dependencies]``, ``[project.optional-dependencies]``, and
+    ``[dependency-groups]``. Each ``"ops..."`` PEP 508 string in those
+    arrays is replaced in-place with the git-source form; the
+    surrounding extras (e.g. ``[testing]``) are preserved.
+    """
+    out = _rewrite_pep508_ops_strings(original, ops)
+    # If the rewrite didn't touch anything but ops *should* be present
+    # (callers told us the charm uses ops, via discovered extras or by the
+    # mere fact we're here), fall back to injecting a top-level dep so the
+    # tox run picks ours up. This preserves prior behaviour for charms with
+    # ``dependencies = [\n  "ops",\n  ...]`` where the literal string never
+    # appeared because the line was something like ``"ops>=2.10",`` — the
+    # rewriter handles that natively, so this fallback is mainly for empty
+    # / unusual layouts.
+    if out == original:
+        ops_pep508 = ops.pep508_dep('ops', extras=sorted(ops_extras))
+        out = out.replace(
+            'dependencies = [',
+            f'dependencies = [\n  "{ops_pep508}",',
+            1,
+        )
+    return out
 
 
-def _patch_pyproject_uv(original: str, ops: OpsSource, ops_extras: set[str]) -> str:
+def _ops_bearing_dep_group_names(parsed: dict[str, Any]) -> list[str]:
+    """Names of PEP 735 ``[dependency-groups]`` arrays that list ``ops``.
+
+    Only direct declarations count; an entry like ``{include-group = "x"}``
+    that transitively pulls ops is not picked up.
+    """
+    names: list[str] = []
+    groups: Any = parsed.get('dependency-groups', {})
+    if not isinstance(groups, dict):
+        return names
+    for name, entries in groups.items():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, str):
+                continue
+            try:
+                req = packaging.requirements.Requirement(entry)
+            except packaging.requirements.InvalidRequirement:
+                continue
+            if req.name == 'ops':
+                names.append(str(name))
+                break
+    return names
+
+
+def _patch_pyproject_uv(
+    original: str,
+    parsed: dict[str, Any],
+    ops: OpsSource,
+    ops_extras: set[str],
+) -> str:
     """Patch a uv-managed pyproject.
 
     uv resolves the dependency graph itself, so the canonical way to
@@ -445,6 +609,17 @@ def _patch_pyproject_uv(original: str, ops: OpsSource, ops_extras: set[str]) -> 
     the top-level pyproject. A charm that pulls ``ops`` transitively
     (e.g. via ``coordinated-workers``) otherwise fails ``uv lock`` with
     "URL dependencies must be expressed as direct requirements".
+
+    The companion direct-deps are injected into every dep-list that
+    declares ``ops`` — both ``[project.dependencies]`` and any PEP 735
+    ``[dependency-groups].<name>`` arrays — so the hoist sits in the
+    same resolution scope as ``ops`` itself.
+
+    Direct ``"ops..."`` PEP 508 strings under
+    ``[project.optional-dependencies]`` / ``[dependency-groups]`` are
+    rewritten to their git-source forms so hard version pins
+    (``"ops==2.21.1"``) don't conflict with the dev ops version uv would
+    otherwise have to satisfy.
     """
     if ops.kind == 'pypi':
         # PyPI ops pulls companions from PyPI normally — no source block,
@@ -465,28 +640,53 @@ def _patch_pyproject_uv(original: str, ops: OpsSource, ops_extras: set[str]) -> 
         source_lines.append(f'{pkg} = {ops.uv_source_inline(subdir=subdir)}')
         companion_direct.append(pkg)
 
+    out = _rewrite_pep508_ops_strings(original, ops)
+
     block = '\n'.join(source_lines)
-    if '[tool.uv.sources]' in original:
-        out = original.replace(
+    if '[tool.uv.sources]' in out:
+        out = out.replace(
             '[tool.uv.sources]',
             f'[tool.uv.sources]\n{block}',
             1,
         )
     else:
-        out = original.rstrip('\n') + f'\n\n[tool.uv.sources]\n{block}\n'
+        out = out.rstrip('\n') + f'\n\n[tool.uv.sources]\n{block}\n'
 
-    if companion_direct:
-        dep_entries = ', '.join(f'"{d}"' for d in companion_direct)
-        out = out.replace(
-            'dependencies = [',
+    dep_entries = ', '.join(f'"{d}"' for d in companion_direct)
+    # PEP 621 project deps. Anchored at start-of-line so we don't match
+    # the trailing "dependencies = [" inside e.g. build-constraint-dependencies.
+    if 'dependencies' in parsed.get('project', {}):
+        out = re.sub(
+            r"""(?xm)
+            ^ dependencies   # array name, must start the line
+            \s* = \s* \[     # the array opener
+            """,
             f'dependencies = [\n  {dep_entries},',
-            1,
+            out,
+            count=1,
+        )
+    # PEP 735 dep-groups that declare ops directly. Same anchoring.
+    for group_name in _ops_bearing_dep_group_names(parsed):
+        out = re.sub(
+            rf"""(?xm)
+            ^ {re.escape(group_name)}   # the named group, must start the line
+            \s* = \s* \[                # the array opener
+            """,
+            f'{group_name} = [\n    {dep_entries},',
+            out,
+            count=1,
         )
 
     # ops HEAD requires Python >=3.10; uv validates against every declared
     # interpreter version, so a lower requires-python causes spurious fails.
     out = re.sub(
-        r'requires-python\s*=\s*"[~>]=3\.[89](\.\d+)?"',
+        r"""(?x)
+        requires-python \s* = \s*
+        "                          # opening quote of the version specifier
+        [~>] = 3 \. [89]           # ~=3.8/3.9 or >=3.8/3.9 — the values we lift
+        (?: \. \d+ )?              # optional patch component, e.g. >=3.9.2
+        "                          # closing quote
+        """,
         'requires-python = ">=3.10"',
         out,
     )
@@ -512,13 +712,26 @@ def _patch_pyproject_poetry(original: str, ops: OpsSource, ops_extras: set[str])
 
 
 def _detect_pyproject_flavour(parsed: dict[str, Any], uv_lock_present: bool) -> str:
-    """Return ``"uv"`` / ``"poetry"`` / ``"pep621"`` / ``"unknown"``."""
-    has_pep621_deps = 'dependencies' in parsed.get('project', {})
+    """Return ``"uv"`` / ``"poetry"`` / ``"pep621"`` / ``"unknown"``.
+
+    A pyproject is treated as ``uv`` if it carries the uv signal (a
+    ``[tool.uv]`` table or a ``uv.lock``) alongside deps declared in any
+    of the standard PEP 621 / PEP 735 locations:
+    ``[project.dependencies]``, ``[project.optional-dependencies]``, or
+    ``[dependency-groups]``.
+    """
+    project = parsed.get('project', {})
+    has_project_table = isinstance(project, dict) and bool(project)
+    has_pep621_deps = (
+        'dependencies' in project
+        or 'optional-dependencies' in project
+        or 'dependency-groups' in parsed
+    )
     if has_pep621_deps and (uv_lock_present or 'uv' in parsed.get('tool', {})):
         return 'uv'
     if 'poetry' in parsed.get('tool', {}):
         return 'poetry'
-    if has_pep621_deps:
+    if has_pep621_deps or has_project_table:
         return 'pep621'
     return 'unknown'
 
