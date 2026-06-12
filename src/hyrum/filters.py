@@ -59,8 +59,13 @@ def not_legacy(repo: pathlib.Path) -> SkipReason:
     Reactive charms have a ``reactive/`` directory; classic hook charms
     have a ``hooks/`` directory. Both predate ``ops`` and are out of
     scope for ``hyrum``.
+
+    Some reactive charms keep their layout under ``src/`` instead of the
+    top level (``src/reactive/`` + ``src/layer.yaml``); detect those too.
     """
     if (repo / 'reactive').exists() or (repo / 'hooks').exists():
+        return 'legacy (reactive/hooks) charm'
+    if (repo / 'src' / 'reactive').exists() or (repo / 'src' / 'layer.yaml').exists():
         return 'legacy (reactive/hooks) charm'
     return None
 
@@ -75,3 +80,18 @@ def has_runnable_target(repo: pathlib.Path) -> SkipReason:
     if (repo / 'tox.ini').exists() or (repo / 'Makefile').exists():
         return None
     return 'no tox.ini or Makefile'
+
+
+def has_python(repo: pathlib.Path) -> SkipReason:
+    """Skip charms with no Python manifest.
+
+    A few charms in the curated list are written in Go (e.g. the
+    ``cluster-api-*`` provider charms): ``ops`` patching has nothing to
+    bite on, so they surface as ``patcher_error`` further down. Catch
+    them up front by looking for a top-level ``pyproject.toml`` or
+    ``requirements.txt`` — the two manifests ``ops`` patching can
+    actually rewrite.
+    """
+    if (repo / 'pyproject.toml').exists() or (repo / 'requirements.txt').exists():
+        return None
+    return 'no Python manifest'
