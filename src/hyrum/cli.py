@@ -191,6 +191,7 @@ def _select_repos(
     """Return (repos to run, list of (repo, skip-reason) pairs)."""
     chain: list[filt.Filter] = [
         filt.not_legacy,
+        filt.has_python,
         filt.regex_filter(repo_re),
         filt.ignore_filter(config.ignore, base=cache),
         filt.has_runnable_target,
