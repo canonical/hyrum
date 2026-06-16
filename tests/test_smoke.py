@@ -27,7 +27,7 @@ def test_cli_help_runs():
 def test_cli_check_help_runs():
     result = testing.CliRunner().invoke(cli.main, ['check', '--help'])
     assert result.exit_code == 0
-    assert '--cache-folder' in result.output
+    assert '--charms-folder' in result.output
     assert 'TARGET' in result.output
     assert '--runner' in result.output
 

@@ -26,12 +26,6 @@ from hyrum.runners import make_runner, tox
 logger = logging.getLogger('hyrum')
 
 
-@click.group()
-@click.version_option(hyrum.__version__)
-def main() -> None:
-    """Bulk-run a check across many charm repositories with a dependency swapped out."""
-
-
 def _iso_utc(dt: datetime.datetime) -> rich.text.Text:
     return rich.text.Text(dt.astimezone(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ'))
 
@@ -226,9 +220,18 @@ def _select_repos(
     return repos, skipped
 
 
+@click.group()
+@click.version_option(hyrum.__version__)
+def main() -> None:
+    """Bulk-run a check across many charm repositories with a dependency swapped out."""
+
+
+main.add_command(get_charms.get_charms)
+
+
 @main.command('check')
 @click.option(
-    '--cache-folder',
+    '--charms-folder',
     envvar='HYRUM_CHARMS',
     default=lambda: pathlib.Path('~/.cache/hyrum/charms').expanduser(),
     show_default='~/.cache/hyrum/charms',
@@ -381,7 +384,7 @@ def _select_repos(
     ),
 )
 def check(
-    cache_folder: pathlib.Path,
+    charms_folder: pathlib.Path,
     config_path: pathlib.Path,
     target: str,
     runner_choice: str,
@@ -415,7 +418,7 @@ def check(
 
     cfg = config_loader.load(config_path)
     repos, skipped = _select_repos(
-        cache_folder,
+        charms_folder,
         config=cfg,
         repo_re=repo,
         limit=limit,
@@ -449,7 +452,7 @@ def check(
             target=target,
             workers=workers,
             log_dir=log_dir,
-            log_base=cache_folder,
+            log_base=charms_folder,
         )
     )
     pool.add_skipped(results, skipped)
@@ -458,7 +461,7 @@ def check(
     if not quiet:
         report.render(
             results,
-            base=cache_folder,
+            base=charms_folder,
             target=target,
             verbose=verbose,
             no_headers=no_headers,
@@ -469,6 +472,3 @@ def check(
 
     if not no_fail and not pool.passed(results):
         sys.exit(1)
-
-
-main.add_command(get_charms.get_charms)

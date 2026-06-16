@@ -109,7 +109,7 @@ hyrum get-charms
 
 # Run `tox -e unit` across every charm in the default cache
 # (~/.cache/hyrum/charms), with ops swapped to the `fix/X` branch of
-# canonical/operator. Override the cache folder with --cache-folder or
+# canonical/operator. Override the charms folder with --charms-folder or
 # the HYRUM_CHARMS environment variable.
 hyrum check unit --workers 8 --ops-source fix/X
 
