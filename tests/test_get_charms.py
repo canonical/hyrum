@@ -127,9 +127,7 @@ async def test_process_rows_includes_branch_flag_in_clone(tmp_path: pathlib.Path
     assert argv[-1] == str((tmp_path / 'canonical' / 'foo-24.04').resolve())
 
 
-async def test_process_rows_skips_rows_without_repository(
-    tmp_path: pathlib.Path, spawner, caplog
-):
+async def test_process_rows_skips_rows_without_repository(tmp_path: pathlib.Path, spawner, caplog):
     # No procs queued: any subprocess call would fail the FakeSpawner assertion.
     spawner()
     rows = [

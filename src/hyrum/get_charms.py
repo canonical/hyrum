@@ -147,9 +147,7 @@ async def _clone(dest: pathlib.Path, name: str, repository: str, branch: str | N
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        logger.error(
-            'Could not clone %s from %s: %r', name, repository, _decode_stderr(stderr)
-        )
+        logger.error('Could not clone %s from %s: %r', name, repository, _decode_stderr(stderr))
         return False
     return True
 
