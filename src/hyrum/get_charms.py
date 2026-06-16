@@ -14,12 +14,21 @@ from __future__ import annotations
 import asyncio
 import csv
 import logging
+import os
 import pathlib
 import typing
 
 import click
 
 logger = logging.getLogger(__name__)
+
+
+_GIT_ENV = {**os.environ, 'GIT_TERMINAL_PROMPT': '0', 'GIT_ASKPASS': '/bin/true'}
+"""Environment for git subprocesses: never prompt for credentials.
+
+Without this, a single private/moved repo on a tty would block on getpass
+and stall the whole TaskGroup.
+"""
 
 
 CharmRow = typing.TypedDict(
@@ -65,9 +74,15 @@ def _default_source() -> pathlib.Path:
     type=click.Path(file_okay=False, path_type=pathlib.Path),
     help='Charms directory to download into. [env: HYRUM_CHARMS]',
 )
-def get_charms(source: pathlib.Path, dest: pathlib.Path) -> None:
+@click.option(
+    '--quiet',
+    is_flag=True,
+    help='Suppress non-error output.',
+)
+def get_charms(source: pathlib.Path, dest: pathlib.Path, quiet: bool) -> None:
     """Populate the charms directory by cloning or pulling every charm listed in the CSV."""
-    logging.basicConfig(level=logging.INFO, format='%(levelname)s %(name)s: %(message)s')
+    level = logging.ERROR if quiet else logging.INFO
+    logging.basicConfig(level=level, format='%(levelname)s %(name)s: %(message)s')
 
     if not source.exists():
         raise click.UsageError(f'Charm list not found: {source}')
@@ -117,7 +132,13 @@ async def _pull(dest: pathlib.Path, name: str) -> bool:
     """Fast-forward ``dest`` to its upstream. Returns True on success."""
     logger.info('Pulling %s in %s', name, dest)
     proc = await asyncio.create_subprocess_exec(
-        'git', 'pull', '--quiet', cwd=dest.resolve(), stderr=asyncio.subprocess.PIPE
+        'git',
+        'pull',
+        '--quiet',
+        cwd=dest.resolve(),
+        stdin=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+        env=_GIT_ENV,
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
@@ -143,7 +164,11 @@ async def _clone(dest: pathlib.Path, name: str, repository: str, branch: str | N
     argv.extend([repository, str(dest.resolve())])
     dest.parent.mkdir(parents=True, exist_ok=True)
     proc = await asyncio.create_subprocess_exec(
-        *argv, cwd=dest.parent, stderr=asyncio.subprocess.PIPE
+        *argv,
+        cwd=dest.parent,
+        stdin=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+        env=_GIT_ENV,
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
