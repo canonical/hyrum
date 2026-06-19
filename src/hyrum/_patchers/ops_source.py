@@ -35,7 +35,7 @@ from typing import Any
 
 import packaging.requirements
 
-from hyrum.patchers import base
+from hyrum._patchers import base
 
 logger = logging.getLogger(__name__)
 

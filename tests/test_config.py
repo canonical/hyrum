@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from hyrum import config
+from hyrum import _config as config
 
 
 def test_missing_returns_empty(tmp_path: pathlib.Path):

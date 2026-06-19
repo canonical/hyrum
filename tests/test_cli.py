@@ -6,8 +6,9 @@ import pathlib
 import pytest
 from click import testing
 
-from hyrum import cli, runners
-from hyrum.runners import tox
+from hyrum import _cli as cli
+from hyrum import _runners as runners
+from hyrum._runners import tox
 
 from .conftest import make_charm
 

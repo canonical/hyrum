@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from hyrum import frameworks
+from hyrum import _frameworks as frameworks
 
 
 def _make_minimal_charm(root: pathlib.Path) -> pathlib.Path:

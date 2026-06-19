@@ -6,7 +6,7 @@ import pathlib
 
 import pytest
 
-from hyrum import runners
+from hyrum import _runners as runners
 
 # ---- fake asyncio subprocess plumbing ----------------------------------------
 

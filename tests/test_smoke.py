@@ -3,7 +3,6 @@
 from click import testing
 
 import hyrum
-from hyrum import cli
 
 
 def test_version_string():
@@ -12,20 +11,20 @@ def test_version_string():
 
 
 def test_cli_version_runs():
-    result = testing.CliRunner().invoke(cli.main, ['--version'])
+    result = testing.CliRunner().invoke(hyrum.main, ['--version'])
     assert result.exit_code == 0
     assert hyrum.__version__ in result.output
 
 
 def test_cli_help_runs():
-    result = testing.CliRunner().invoke(cli.main, ['--help'])
+    result = testing.CliRunner().invoke(hyrum.main, ['--help'])
     assert result.exit_code == 0
     assert 'check' in result.output
     assert 'get-charms' in result.output
 
 
 def test_cli_check_help_runs():
-    result = testing.CliRunner().invoke(cli.main, ['check', '--help'])
+    result = testing.CliRunner().invoke(hyrum.main, ['check', '--help'])
     assert result.exit_code == 0
     assert '--charms-dir' in result.output
     assert 'TARGET' in result.output
@@ -33,6 +32,6 @@ def test_cli_check_help_runs():
 
 
 def test_cli_requires_subcommand():
-    result = testing.CliRunner().invoke(cli.main, [])
+    result = testing.CliRunner().invoke(hyrum.main, [])
     assert result.exit_code != 0
     assert 'Missing command' in result.output or 'Usage' in result.output

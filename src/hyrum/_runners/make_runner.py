@@ -21,7 +21,7 @@ import pathlib
 import time
 from collections.abc import Sequence
 
-from hyrum.runners import base
+from hyrum._runners import base
 
 logger = logging.getLogger(__name__)
 

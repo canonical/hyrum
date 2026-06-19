@@ -6,7 +6,7 @@ import enum
 import pathlib
 from collections.abc import Sequence
 
-from hyrum.runners import base, make_runner, tox
+from hyrum._runners import base, make_runner, tox
 
 
 class RunnerChoice(enum.StrEnum):

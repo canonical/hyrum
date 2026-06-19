@@ -5,7 +5,8 @@ import pathlib
 
 import rich.console
 
-from hyrum import pool, report
+from hyrum import _pool as pool
+from hyrum import _report as report
 
 
 def _render(

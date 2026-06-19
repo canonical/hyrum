@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pathlib
 
-from hyrum import filters
+from hyrum import _filters as filters
 
 from .conftest import make_charm
 

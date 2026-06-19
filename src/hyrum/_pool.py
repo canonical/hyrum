@@ -23,7 +23,8 @@ import pathlib
 from collections.abc import Iterable
 from typing import Final
 
-from hyrum import patchers, runners
+from hyrum import _patchers as patchers
+from hyrum import _runners as runners
 
 logger = logging.getLogger(__name__)
 

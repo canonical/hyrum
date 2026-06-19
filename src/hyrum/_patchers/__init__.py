@@ -13,13 +13,13 @@ Patchers compose via :class:`PatcherStack`, which applies each in
 order and unwinds in reverse on exit.
 """
 
-from hyrum.patchers.base import (
+from hyrum._patchers.base import (
     NullPatcher,
     Patcher,
     PatcherError,
     PatcherStack,
 )
-from hyrum.patchers.ops_source import OpsSource, OpsSourcePatcher
+from hyrum._patchers.ops_source import OpsSource, OpsSourcePatcher
 
 __all__ = [
     'NullPatcher',
