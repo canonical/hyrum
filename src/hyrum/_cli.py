@@ -16,12 +16,17 @@ import packaging.version
 import rich.logging
 import rich.text
 
-import hyrum
-from hyrum import config as config_loader
-from hyrum import enumerate as enum_mod
-from hyrum import filters as filt
-from hyrum import frameworks, get_charms, patchers, pool, report, runners
-from hyrum.runners import make_runner, tox
+from hyrum import _config as config_loader
+from hyrum import _enumerate as enum_mod
+from hyrum import _filters as filt
+from hyrum import _frameworks as frameworks
+from hyrum import _get_charms as get_charms
+from hyrum import _patchers as patchers
+from hyrum import _pool as pool
+from hyrum import _report as report
+from hyrum import _runners as runners
+from hyrum import _version
+from hyrum._runners import make_runner, tox
 
 logger = logging.getLogger('hyrum')
 
@@ -222,7 +227,7 @@ def _select_repos(
 
 
 @click.group()
-@click.version_option(hyrum.__version__)
+@click.version_option(_version.__version__)
 def main() -> None:
     """Bulk-run a check across many charm repositories with a dependency swapped out."""
 

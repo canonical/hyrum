@@ -10,7 +10,7 @@ import rich.console
 import rich.markup
 import rich.table
 
-from hyrum import pool
+from hyrum import _pool as pool
 
 _STATUS_STYLES = {
     'passed': 'green',

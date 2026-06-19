@@ -11,7 +11,7 @@ import click
 import pytest
 from click import testing
 
-from hyrum import get_charms
+from hyrum import _get_charms as get_charms
 
 
 @dataclasses.dataclass

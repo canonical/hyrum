@@ -4,7 +4,9 @@ import pathlib
 
 import pytest
 
-from hyrum import patchers, pool, runners
+from hyrum import _patchers as patchers
+from hyrum import _pool as pool
+from hyrum import _runners as runners
 
 
 class StubRunner:

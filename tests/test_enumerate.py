@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from hyrum import enumerate as enum_mod
+from hyrum import _enumerate as enum_mod
 
 from .conftest import make_charm
 
