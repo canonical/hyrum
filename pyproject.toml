@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-hyrum = "hyrum:main"
+hyrum = "hyrum._cli:main"
 
 [build-system]
 requires = ["hatchling"]

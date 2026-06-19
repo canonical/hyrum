@@ -4,7 +4,6 @@ Named for Hyrum's law: the tool exists to find out which consumers were
 relying on observable behaviour of a dependency before you change it.
 """
 
-from hyrum._cli import main
 from hyrum._version import __version__
 
-__all__ = ['__version__', 'main']
+__all__ = ['__version__']
