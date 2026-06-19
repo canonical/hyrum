@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
-import datetime
+import csv
 import itertools
 import logging
 import os
 import pathlib
 import re
 import sys
+import time
+from collections.abc import Sequence
 
-import click
 import packaging.version
-import rich.logging
-import rich.text
 
 from hyrum import _config as config_loader
 from hyrum import _enumerate as enum_mod
@@ -31,16 +31,18 @@ from hyrum._runners import make_runner, tox
 logger = logging.getLogger('hyrum')
 
 
-def _iso_utc(dt: datetime.datetime) -> rich.text.Text:
-    return rich.text.Text(dt.astimezone(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ'))
+class _UTCFormatter(logging.Formatter):
+    converter = time.gmtime
 
 
 def _configure_logging(level: int) -> None:
-    logging.basicConfig(
-        level=level,
-        format='%(message)s',
-        handlers=[rich.logging.RichHandler(show_path=False, log_time_format=_iso_utc)],
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        _UTCFormatter(fmt='%(asctime)s %(levelname)s %(message)s', datefmt='%Y-%m-%dT%H:%M:%SZ')
     )
+    root = logging.getLogger()
+    root.handlers[:] = [handler]
+    root.setLevel(level)
 
 
 def _resolve_log_level(*, quiet: bool, verbose: bool, verbosity: str | None) -> int:
@@ -91,6 +93,10 @@ _GITHUB_SHORTHAND_RE = re.compile(r'^([A-Za-z0-9][A-Za-z0-9._-]*):([^\s]+)$')
 _URL_WITH_BRANCH_RE = re.compile(r'^(https?://[^@\s]+)@([^@\s]+)$')
 
 
+class _UsageError(Exception):
+    """Raised for invalid CLI usage; converted to a parser.error() by ``main``."""
+
+
 def _parse_ops_source(arg: str) -> dict[str, str | None]:
     """Parse ``--ops-source`` into kwargs for :class:`patchers.OpsSource`.
 
@@ -105,7 +111,7 @@ def _parse_ops_source(arg: str) -> dict[str, str | None]:
     """
     arg = arg.strip()
     if not arg:
-        raise click.UsageError('--ops-source: empty value')
+        raise _UsageError('--ops-source: empty value')
 
     if arg.startswith('git+'):
         url, branch = _split_url_branch(arg.removeprefix('git+'))
@@ -123,7 +129,7 @@ def _parse_ops_source(arg: str) -> dict[str, str | None]:
     try:
         packaging.version.Version(arg)
     except packaging.version.InvalidVersion as exc:
-        raise click.UsageError(
+        raise _UsageError(
             f'--ops-source: cannot parse {arg!r} as a version, URL, '
             'owner:branch shorthand, or path'
         ) from exc
@@ -226,255 +232,345 @@ def _select_repos(
     return repos, skipped
 
 
-@click.group()
-@click.version_option(_version.__version__)
-def main() -> None:
-    """Bulk-run a check across many charm repositories with a dependency swapped out."""
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f'{value} is not a positive integer')
+    return number
 
 
-main.add_command(get_charms.get_charms)
+def _non_negative_int(value: str) -> int:
+    number = int(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError(f'{value} is not a non-negative integer')
+    return number
 
 
-@main.command('check')
-@click.option(
-    '--charms-dir',
-    envvar='HYRUM_CHARMS',
-    default=lambda: pathlib.Path('~/.cache/hyrum/charms').expanduser(),
-    show_default='~/.cache/hyrum/charms',
-    type=click.Path(exists=True, file_okay=False, path_type=pathlib.Path),
-    help='Directory containing pre-cloned charm repositories. [env: HYRUM_CHARMS]',
-)
-@click.option(
-    '--config',
-    'config_path',
-    type=click.Path(dir_okay=False, path_type=pathlib.Path),
-    default=pathlib.Path('hyrum.toml'),
-    show_default=True,
-    help='TOML config file (only the [ignore] table is read today).',
-)
-@click.argument('target')
-@click.option('--repo', default='.*', show_default=True, help='Regex on the repo name.')
-@click.option(
-    '--limit',
-    default=0,
-    type=click.IntRange(0),
-    help='Stop after this many charms (0 = all).',
-)
-@click.option(
-    '--framework',
-    type=click.Choice(list(frameworks.supported_frameworks()), case_sensitive=False),
-    default=None,
-    help='Only run for charms using this testing framework.',
-)
-@click.option(
-    '--workers',
-    default=1,
-    type=click.IntRange(1),
-    show_default=True,
-    help='Number of charms to process concurrently.',
-)
-@click.option(
-    '--runner',
-    'runner_choice',
-    type=click.Choice([c.value for c in runners.RunnerChoice]),
-    default=runners.RunnerChoice.AUTO.value,
-    show_default=True,
-    help='auto = tox if tox.ini, else make; falls back if the target is missing.',
-)
-@click.option('--tox-executable', default='tox', show_default=True, help='Tox command.')
-@click.option('--make-executable', default='make', show_default=True, help='Make command.')
-@click.option(
-    '--timeout',
-    default=1800,
-    type=click.IntRange(1),
-    show_default=True,
-    help='Per-charm timeout in seconds.',
-)
-@click.option(
-    '--no-patch/--patch',
-    default=False,
-    help='Skip the dependency-swap; run against whatever the charm already pins.',
-)
-@click.option(
-    '--ops-source',
-    default='https://github.com/canonical/operator',
-    show_default=True,
-    help=(
-        'Where to pull ops from. Accepts: a PyPI version (``2.17.0``); a '
-        'git URL with optional ``@branch`` (``https://…/operator@fix/X`` or '
-        '``git+https://…/operator@fix/X``); the GitHub shorthand '
-        '``owner:branch`` (expands to ``https://github.com/<owner>/operator`` '
-        'at that branch); or a local path (``/abs/operator``, ``~/operator``, '
-        '``file:///abs/operator``).'
-    ),
-)
-@click.option(
-    '--poetry-executable',
-    default='poetry',
-    show_default=True,
-    help='Poetry command, used to regenerate the lockfile after patching.',
-)
-@click.option(
-    '--uv-executable',
-    default='uv',
-    show_default=True,
-    help='uv command, used to regenerate the lockfile after patching.',
-)
-@click.option(
-    '--lock-timeout',
-    default=600,
-    type=click.IntRange(1),
-    show_default=True,
-    help='Timeout for poetry/uv lock during patching. Independent of --timeout.',
-)
-@click.option(
-    '--auto-python/--no-auto-python',
-    default=True,
-    show_default=True,
-    help=(
-        "Run poetry lock under an interpreter that satisfies the charm's "
-        'requires-python (via uv run --python X.Y). Requires uv on PATH.'
-    ),
-)
-@click.option(
-    '--quiet',
-    is_flag=True,
-    default=False,
-    help='No output except errors. Exit code still reflects pass/fail.',
-)
-@click.option(
-    '--verbose',
-    is_flag=True,
-    default=False,
-    help='Descriptive detail: include the per-charm offender list in the report.',
-)
-@click.option(
-    '--verbosity',
-    type=click.Choice(['debug', 'trace'], case_sensitive=False),
-    default=None,
-    help=(
-        'Developer-level detail. Use debug for execution detail; trace reserved for '
-        'future code-level detail (currently aliased to debug).'
-    ),
-)
-@click.option(
-    '--log-dir',
-    type=click.Path(file_okay=False, path_type=pathlib.Path),
-    default=None,
-    help=(
-        "Write each charm's runner stdout/stderr to a per-charm file under "
-        'this directory. Useful for triaging failures without rerunning. '
-        'File names use the repo path with ``/`` flattened to ``__``.'
-    ),
-)
-@click.option(
-    '--no-headers',
-    is_flag=True,
-    default=False,
-    help='Suppress header row in the summary table.',
-)
-@click.option(
-    '--no-fail',
-    is_flag=True,
-    default=False,
-    help='Always exit 0, even if some charms failed (default: exit non-zero on any failure).',
-)
-@click.option(
-    '--host-env-defaults/--no-host-env-defaults',
-    default=True,
-    show_default=True,
-    help=(
-        'Inject sensible default env vars (e.g. PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1) '
-        'plus matching TOX_OVERRIDE pass_env entries so common host build issues '
-        'do not get mis-attributed to the charm.'
-    ),
-)
-def check(
-    charms_dir: pathlib.Path,
-    config_path: pathlib.Path,
-    target: str,
-    runner_choice: str,
-    repo: str,
-    limit: int,
-    framework: str | None,
-    workers: int,
-    tox_executable: str,
-    make_executable: str,
-    timeout: int,
-    no_patch: bool,
-    ops_source: str,
-    poetry_executable: str,
-    uv_executable: str,
-    lock_timeout: int,
-    auto_python: bool,
-    log_dir: pathlib.Path | None,
-    quiet: bool,
-    verbose: bool,
-    verbosity: str | None,
-    no_headers: bool,
-    no_fail: bool,
-    host_env_defaults: bool,
-) -> None:
-    """Run TARGET (a tox environment or make target, e.g. unit, lint) across many charm repos."""
-    if sum([quiet, verbose, verbosity is not None]) > 1:
-        raise click.UsageError('--quiet, --verbose, and --verbosity are mutually exclusive.')
-    _configure_logging(_resolve_log_level(quiet=quiet, verbose=verbose, verbosity=verbosity))
-    if host_env_defaults:
-        _apply_host_env_defaults(target)
+def _default_charms_dir() -> pathlib.Path:
+    env = os.environ.get('HYRUM_CHARMS')
+    if env:
+        return pathlib.Path(env)
+    return pathlib.Path('~/.cache/hyrum/charms').expanduser()
 
-    cfg = config_loader.load(config_path)
+
+def _add_check_subparser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    parser = subparsers.add_parser(
+        'check',
+        help='Run TARGET across many charm repos.',
+        description=(
+            'Run TARGET (a tox environment or make target, e.g. unit, lint) '
+            'across many charm repos.'
+        ),
+    )
+    parser.add_argument(
+        'target',
+        metavar='TARGET',
+        help='Tox environment or make target to run (e.g. unit, lint).',
+    )
+    parser.add_argument(
+        '--charms-dir',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'Directory containing pre-cloned charm repositories. '
+            '[env: HYRUM_CHARMS] [default: ~/.cache/hyrum/charms]'
+        ),
+    )
+    parser.add_argument(
+        '--config',
+        dest='config_path',
+        type=pathlib.Path,
+        default=pathlib.Path('hyrum.toml'),
+        help='TOML config file (only the [ignore] table is read today). [default: hyrum.toml]',
+    )
+    parser.add_argument('--repo', default='.*', help='Regex on the repo name. [default: .*]')
+    parser.add_argument(
+        '--limit',
+        type=_non_negative_int,
+        default=0,
+        help='Stop after this many charms (0 = all).',
+    )
+    parser.add_argument(
+        '--framework',
+        type=str.lower,
+        choices=list(frameworks.supported_frameworks()),
+        default=None,
+        help='Only run for charms using this testing framework.',
+    )
+    parser.add_argument(
+        '--workers',
+        type=_positive_int,
+        default=1,
+        help='Number of charms to process concurrently. [default: 1]',
+    )
+    parser.add_argument(
+        '--runner',
+        dest='runner_choice',
+        choices=[c.value for c in runners.RunnerChoice],
+        default=runners.RunnerChoice.AUTO.value,
+        help=(
+            'auto = tox if tox.ini, else make; falls back if the target is missing. '
+            '[default: auto]'
+        ),
+    )
+    parser.add_argument('--tox-executable', default='tox', help='Tox command. [default: tox]')
+    parser.add_argument('--make-executable', default='make', help='Make command. [default: make]')
+    parser.add_argument(
+        '--timeout',
+        type=_positive_int,
+        default=1800,
+        help='Per-charm timeout in seconds. [default: 1800]',
+    )
+    parser.add_argument(
+        '--no-patch',
+        action='store_true',
+        help='Skip the dependency-swap; run against whatever the charm already pins.',
+    )
+    parser.add_argument(
+        '--ops-source',
+        default='https://github.com/canonical/operator',
+        help=(
+            'Where to pull ops from. Accepts: a PyPI version (``2.17.0``); a '
+            'git URL with optional ``@branch`` (``https://…/operator@fix/X`` or '
+            '``git+https://…/operator@fix/X``); the GitHub shorthand '
+            '``owner:branch`` (expands to ``https://github.com/<owner>/operator`` '
+            'at that branch); or a local path (``/abs/operator``, ``~/operator``, '
+            '``file:///abs/operator``). '
+            '[default: https://github.com/canonical/operator]'
+        ),
+    )
+    parser.add_argument(
+        '--poetry-executable',
+        default='poetry',
+        help='Poetry command, used to regenerate the lockfile after patching. [default: poetry]',
+    )
+    parser.add_argument(
+        '--uv-executable',
+        default='uv',
+        help='uv command, used to regenerate the lockfile after patching. [default: uv]',
+    )
+    parser.add_argument(
+        '--lock-timeout',
+        type=_positive_int,
+        default=600,
+        help=(
+            'Timeout for poetry/uv lock during patching. Independent of --timeout. [default: 600]'
+        ),
+    )
+    parser.add_argument(
+        '--auto-python',
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Run poetry lock under an interpreter that satisfies the charm's "
+            'requires-python (via uv run --python X.Y). Requires uv on PATH. [default: enabled]'
+        ),
+    )
+    parser.add_argument(
+        '--quiet',
+        action='store_true',
+        help='No output except errors. Exit code still reflects pass/fail.',
+    )
+    parser.add_argument(
+        '--verbose',
+        action='store_true',
+        help='Descriptive detail: include the per-charm offender list in the report.',
+    )
+    parser.add_argument(
+        '--verbosity',
+        type=str.lower,
+        choices=['debug', 'trace'],
+        default=None,
+        help=(
+            'Developer-level detail. Use debug for execution detail; trace reserved for '
+            'future code-level detail (currently aliased to debug).'
+        ),
+    )
+    parser.add_argument(
+        '--log-dir',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            "Write each charm's runner stdout/stderr to a per-charm file under "
+            'this directory. Useful for triaging failures without rerunning. '
+            'File names use the repo path with ``/`` flattened to ``__``.'
+        ),
+    )
+    parser.add_argument(
+        '--no-headers',
+        action='store_true',
+        help='Suppress header row in the summary table.',
+    )
+    parser.add_argument(
+        '--no-fail',
+        action='store_true',
+        help=(
+            'Always exit 0, even if some charms failed (default: exit non-zero on any failure).'
+        ),
+    )
+    parser.add_argument(
+        '--host-env-defaults',
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            'Inject sensible default env vars (e.g. PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1) '
+            'plus matching TOX_OVERRIDE pass_env entries so common host build issues '
+            'do not get mis-attributed to the charm. [default: enabled]'
+        ),
+    )
+    parser.set_defaults(func=_run_check)
+    return parser
+
+
+def _add_get_charms_subparser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    parser = subparsers.add_parser(
+        'get-charms',
+        help='Populate the charms directory by cloning or pulling every charm in the CSV.',
+        description=(
+            'Populate the charms directory by cloning or pulling every charm listed in the CSV.'
+        ),
+    )
+    parser.add_argument(
+        '--source',
+        type=pathlib.Path,
+        default=None,
+        help='Path to the charm list. [default: charms.csv or charm-list/charms.csv]',
+    )
+    parser.add_argument(
+        '--dest',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'Charms directory to download into. '
+            '[env: HYRUM_CHARMS] [default: ~/.cache/hyrum/charms]'
+        ),
+    )
+    parser.add_argument('--quiet', action='store_true', help='Suppress non-error output.')
+    parser.set_defaults(func=_run_get_charms)
+    return parser
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog='hyrum',
+        description=(
+            'Bulk-run a check across many charm repositories with a dependency swapped out.'
+        ),
+    )
+    parser.add_argument('--version', action='version', version=f'hyrum {_version.__version__}')
+    subparsers = parser.add_subparsers(dest='command', metavar='COMMAND')
+    _add_check_subparser(subparsers)
+    _add_get_charms_subparser(subparsers)
+    return parser
+
+
+def _run_check(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    charms_dir: pathlib.Path = args.charms_dir or _default_charms_dir()
+    if not charms_dir.is_dir():
+        parser.error(f'--charms-dir: {charms_dir} is not a directory.')
+
+    if sum([args.quiet, args.verbose, args.verbosity is not None]) > 1:
+        parser.error('--quiet, --verbose, and --verbosity are mutually exclusive.')
+    _configure_logging(
+        _resolve_log_level(quiet=args.quiet, verbose=args.verbose, verbosity=args.verbosity)
+    )
+    if args.host_env_defaults:
+        _apply_host_env_defaults(args.target)
+
+    cfg = config_loader.load(args.config_path)
     repos, skipped = _select_repos(
         charms_dir,
         config=cfg,
-        repo_re=repo,
-        limit=limit,
-        framework=framework,
+        repo_re=args.repo,
+        limit=args.limit,
+        framework=args.framework,
     )
     logger.info('Selected %d charm(s); skipping %d up-front.', len(repos), len(skipped))
 
-    patcher = _build_patcher(
-        no_patch=no_patch,
-        ops_source=ops_source,
-        poetry_executable=poetry_executable,
-        uv_executable=uv_executable,
-        lock_timeout=lock_timeout,
-        auto_python=auto_python,
-    )
+    try:
+        patcher = _build_patcher(
+            no_patch=args.no_patch,
+            ops_source=args.ops_source,
+            poetry_executable=args.poetry_executable,
+            uv_executable=args.uv_executable,
+            lock_timeout=args.lock_timeout,
+            auto_python=args.auto_python,
+        )
+    except _UsageError as exc:
+        parser.error(str(exc))
     runner = _build_runner(
-        choice=runners.RunnerChoice(runner_choice),
-        tox_executable=tox_executable,
-        make_executable=make_executable,
-        timeout=timeout,
+        choice=runners.RunnerChoice(args.runner_choice),
+        tox_executable=args.tox_executable,
+        make_executable=args.make_executable,
+        timeout=args.timeout,
     )
 
-    if log_dir is not None:
-        log_dir.mkdir(parents=True, exist_ok=True)
+    if args.log_dir is not None:
+        args.log_dir.mkdir(parents=True, exist_ok=True)
 
     results: list[pool.Outcome] = asyncio.run(
         pool.run_pool(
             repos,
             patcher=patcher,
             runner=runner,
-            target=target,
-            workers=workers,
-            log_dir=log_dir,
+            target=args.target,
+            workers=args.workers,
+            log_dir=args.log_dir,
             log_base=charms_dir,
         )
     )
     pool.add_skipped(results, skipped)
     results.sort(key=lambda o: str(o.repo))
 
-    if not quiet:
+    if not args.quiet:
         report.render(
             results,
             base=charms_dir,
-            target=target,
-            verbose=verbose,
-            no_headers=no_headers,
+            target=args.target,
+            verbose=args.verbose,
+            no_headers=args.no_headers,
         )
     elif not pool.passed(results):
         failed = sum(1 for o in results if o.status in ('failed', 'timeout', 'patcher_error'))
-        click.echo(f'hyrum: {failed} charm(s) did not pass.', err=True)
+        print(f'hyrum: {failed} charm(s) did not pass.', file=sys.stderr)
 
-    if not no_fail and not pool.passed(results):
-        sys.exit(1)
+    if not args.no_fail and not pool.passed(results):
+        return 1
+    return 0
+
+
+def _run_get_charms(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    level = logging.ERROR if args.quiet else logging.INFO
+    _configure_logging(level)
+
+    source = args.source
+    if source is None:
+        source = get_charms.find_default_source()
+        if source is None:
+            candidates = ', '.join(str(p) for p in get_charms.DEFAULT_SOURCE_CANDIDATES)
+            parser.error(f'No charm list at default locations: {candidates}')
+    if not source.exists():
+        parser.error(f'Charm list not found: {source}')
+
+    dest = args.dest or _default_charms_dir()
+    dest.mkdir(parents=True, exist_ok=True)
+
+    with source.open(newline='', encoding='utf-8') as f:
+        rows: list[get_charms.CharmRow] = list(csv.DictReader(f))  # type: ignore[arg-type]
+    asyncio.run(get_charms.process_rows(rows, dest))
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Bulk-run a check across many charm repositories with a dependency swapped out."""
+    parser = _build_arg_parser()
+    args = parser.parse_args(argv)
+    if not getattr(args, 'command', None):
+        parser.error('a command is required (check, get-charms)')
+    rc = args.func(args, parser)
+    if rc:
+        sys.exit(rc)
