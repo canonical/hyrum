@@ -49,11 +49,12 @@ DEFAULT_SOURCE_CANDIDATES = (
 
 
 def _default_source() -> pathlib.Path:
-    """Return the first existing candidate, falling back to the last for error messages."""
+    """Return the first existing default candidate, or raise if none exist."""
     for candidate in DEFAULT_SOURCE_CANDIDATES:
         if candidate.exists():
             return candidate
-    return DEFAULT_SOURCE_CANDIDATES[-1]
+    candidates = ', '.join(str(p) for p in DEFAULT_SOURCE_CANDIDATES)
+    raise click.UsageError(f'No charm list at default locations: {candidates}')
 
 
 @click.command('get-charms')

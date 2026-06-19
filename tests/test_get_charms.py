@@ -7,6 +7,7 @@ import dataclasses
 import logging
 import pathlib
 
+import click
 import pytest
 from click import testing
 
@@ -222,9 +223,10 @@ def test_default_source_falls_back_to_charm_list(tmp_path, monkeypatch):
     assert get_charms._default_source() == pathlib.Path('charm-list/charms.csv')
 
 
-def test_default_source_returns_last_candidate_when_none_exist(tmp_path, monkeypatch):
+def test_default_source_raises_when_none_exist(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    assert get_charms._default_source() == pathlib.Path('charm-list/charms.csv')
+    with pytest.raises(click.UsageError, match='No charm list at default locations'):
+        get_charms._default_source()
 
 
 # ---- get-charms CLI ---------------------------------------------------------

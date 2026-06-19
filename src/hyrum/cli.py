@@ -232,12 +232,12 @@ main.add_command(get_charms.get_charms)
 
 @main.command('check')
 @click.option(
-    '--charms-folder',
+    '--charms-dir',
     envvar='HYRUM_CHARMS',
     default=lambda: pathlib.Path('~/.cache/hyrum/charms').expanduser(),
     show_default='~/.cache/hyrum/charms',
     type=click.Path(exists=True, file_okay=False, path_type=pathlib.Path),
-    help='Folder containing pre-cloned charm repositories. [env: HYRUM_CHARMS]',
+    help='Directory containing pre-cloned charm repositories. [env: HYRUM_CHARMS]',
 )
 @click.option(
     '--config',
@@ -385,7 +385,7 @@ main.add_command(get_charms.get_charms)
     ),
 )
 def check(
-    charms_folder: pathlib.Path,
+    charms_dir: pathlib.Path,
     config_path: pathlib.Path,
     target: str,
     runner_choice: str,
@@ -419,7 +419,7 @@ def check(
 
     cfg = config_loader.load(config_path)
     repos, skipped = _select_repos(
-        charms_folder,
+        charms_dir,
         config=cfg,
         repo_re=repo,
         limit=limit,
@@ -453,7 +453,7 @@ def check(
             target=target,
             workers=workers,
             log_dir=log_dir,
-            log_base=charms_folder,
+            log_base=charms_dir,
         )
     )
     pool.add_skipped(results, skipped)
@@ -462,7 +462,7 @@ def check(
     if not quiet:
         report.render(
             results,
-            base=charms_folder,
+            base=charms_dir,
             target=target,
             verbose=verbose,
             no_headers=no_headers,
