@@ -20,7 +20,7 @@ import hyrum
 from hyrum import config as config_loader
 from hyrum import enumerate as enum_mod
 from hyrum import filters as filt
-from hyrum import frameworks, patchers, pool, report, runners
+from hyrum import frameworks, get_charms, patchers, pool, report, runners
 from hyrum.runners import make_runner, tox
 
 logger = logging.getLogger('hyrum')
@@ -221,15 +221,23 @@ def _select_repos(
     return repos, skipped
 
 
-@click.command()
+@click.group()
 @click.version_option(hyrum.__version__)
+def main() -> None:
+    """Bulk-run a check across many charm repositories with a dependency swapped out."""
+
+
+main.add_command(get_charms.get_charms)
+
+
+@main.command('check')
 @click.option(
-    '--cache-folder',
+    '--charms-dir',
     envvar='HYRUM_CHARMS',
     default=lambda: pathlib.Path('~/.cache/hyrum/charms').expanduser(),
     show_default='~/.cache/hyrum/charms',
     type=click.Path(exists=True, file_okay=False, path_type=pathlib.Path),
-    help='Folder containing pre-cloned charm repositories. [env: HYRUM_CHARMS]',
+    help='Directory containing pre-cloned charm repositories. [env: HYRUM_CHARMS]',
 )
 @click.option(
     '--config',
@@ -376,8 +384,8 @@ def _select_repos(
         'do not get mis-attributed to the charm.'
     ),
 )
-def main(
-    cache_folder: pathlib.Path,
+def check(
+    charms_dir: pathlib.Path,
     config_path: pathlib.Path,
     target: str,
     runner_choice: str,
@@ -411,7 +419,7 @@ def main(
 
     cfg = config_loader.load(config_path)
     repos, skipped = _select_repos(
-        cache_folder,
+        charms_dir,
         config=cfg,
         repo_re=repo,
         limit=limit,
@@ -445,7 +453,7 @@ def main(
             target=target,
             workers=workers,
             log_dir=log_dir,
-            log_base=cache_folder,
+            log_base=charms_dir,
         )
     )
     pool.add_skipped(results, skipped)
@@ -454,7 +462,7 @@ def main(
     if not quiet:
         report.render(
             results,
-            base=cache_folder,
+            base=charms_dir,
             target=target,
             verbose=verbose,
             no_headers=no_headers,
