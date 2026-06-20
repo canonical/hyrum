@@ -70,11 +70,6 @@ def main(argv: list[str] | None = None) -> int:
         help='Validate the existing CSV (no network, no writes) and exit.',
     )
     parser.add_argument(
-        '--github-token',
-        default=os.environ.get('GITHUB_TOKEN'),
-        help='GitHub token for the archive/404 probes. Defaults to $GITHUB_TOKEN.',
-    )
-    parser.add_argument(
         '--log-level',
         default='INFO',
         help='Python logging level (DEBUG, INFO, WARNING).',
@@ -91,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     changed = run(
         args.csv,
         charmhub=CharmhubClient(),
-        github=GitHubClient(token=args.github_token),
+        github=GitHubClient(token=os.environ.get('GITHUB_TOKEN')),
     )
     print('changed' if changed else 'unchanged')
     return 0

@@ -11,7 +11,7 @@ a multi-charm monorepo is captured by a single row. Hits inside ``tests/``,
 treating fixture charms as evidence that a repo is a charm repo.
 
 The code-search endpoint requires authentication. Provide a token via
-``--github-token`` or ``$GITHUB_TOKEN``. Search is rate-limited (30 req/min for
+``$GITHUB_TOKEN``. Search is rate-limited (30 req/min for
 authenticated calls) — the script paginates serially and respects the limits
 GitHub returns in the response headers.
 """
@@ -91,11 +91,6 @@ def main(argv: list[str] | None = None) -> int:
         help='GitHub org to scan (repeatable). Defaults to the built-in seed list.',
     )
     parser.add_argument(
-        '--github-token',
-        default=os.environ.get('GITHUB_TOKEN'),
-        help='GitHub token. Required: code search is auth-only.',
-    )
-    parser.add_argument(
         '--include-archived',
         action='store_true',
         help='Keep archived repos in the output (default: drop them).',
@@ -104,14 +99,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=args.log_level, format='%(levelname)s %(name)s: %(message)s')
 
-    if not args.github_token:
+    token = os.environ.get('GITHUB_TOKEN')
+    if not token:
         print(
-            'error: GitHub code search requires a token (--github-token or $GITHUB_TOKEN)',
+            'error: GitHub code search requires a token; set $GITHUB_TOKEN',
             file=sys.stderr,
         )
         return 1
 
-    client = GitHubClient(token=args.github_token)
+    client = GitHubClient(token=token)
     orgs = tuple(args.orgs) if args.orgs else DEFAULT_ORGS
     rows = discover(client, orgs, include_archived=args.include_archived)
     write_csv(args.csv, rows)
