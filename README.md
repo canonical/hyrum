@@ -141,6 +141,15 @@ hyrum check unit --no-fail
 # Dump each charm's stdout, stderr, and run metadata to a per-charm
 # file under the given directory for offline triage:
 hyrum check unit --log-dir ~/hyrum-runs/logs
+
+# Save the run's outcomes to a JSON file so you can diff against a later
+# run:
+hyrum check unit --save-results baseline.json
+# ... later, after a change to ops or the charms ...
+hyrum check unit --save-results current.json
+hyrum compare baseline.json current.json
+# Same diff as a CI gate against a stored baseline:
+hyrum compare baseline.json current.json --fail-on-regression
 ```
 
 Output statuses:
