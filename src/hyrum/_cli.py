@@ -16,6 +16,7 @@ from collections.abc import Sequence
 
 import packaging.requirements
 
+from hyrum import _compare as compare_mod
 from hyrum import _config as config_loader
 from hyrum import _enumerate as enum_mod
 from hyrum import _filters as filt
@@ -24,6 +25,7 @@ from hyrum import _get_charms as get_charms
 from hyrum import _patchers as patchers
 from hyrum import _pool as pool
 from hyrum import _report as report
+from hyrum import _results as results_mod
 from hyrum import _runners as runners
 from hyrum import _version
 from hyrum._runners import make_runner, tox
@@ -676,7 +678,42 @@ def _add_check_subparser(
             'do not get mis-attributed to the charm. [default: enabled]'
         ),
     )
+    parser.add_argument(
+        '--save-results',
+        dest='save_results_path',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'After the run, write the outcomes as JSON to this path. The file can '
+            'later be fed to `hyrum compare` to diff against a subsequent run.'
+        ),
+    )
     parser.set_defaults(func=_run_check)
+    return parser
+
+
+def _add_compare_subparser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    parser = subparsers.add_parser(
+        'compare',
+        help='Diff two saved hyrum runs.',
+        description=(
+            'Diff two saved hyrum runs (status level): show new failures, resolved, new errors.'
+        ),
+    )
+    parser.add_argument('baseline', type=pathlib.Path, help='Path to the baseline results JSON.')
+    parser.add_argument('current', type=pathlib.Path, help='Path to the current results JSON.')
+    parser.add_argument(
+        '--fail-on-regression',
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            'Exit non-zero if there are any new failures or new errors versus '
+            'the baseline. [default: disabled]'
+        ),
+    )
+    parser.set_defaults(func=_run_compare)
     return parser
 
 
@@ -716,6 +753,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--version', action='version', version=f'hyrum {_version.__version__}')
     subparsers = parser.add_subparsers(dest='command', metavar='COMMAND', required=True)
     _add_check_subparser(subparsers)
+    _add_compare_subparser(subparsers)
     _add_get_charms_subparser(subparsers)
     return parser
 
@@ -779,6 +817,10 @@ def _run_check(args: argparse.Namespace) -> int:
     pool.add_skipped(results, skipped)
     results.sort(key=lambda o: str(o.repo))
 
+    if args.save_results_path is not None:
+        results_mod.save(results, args.save_results_path)
+        logger.info('Wrote %d outcome(s) to %s', len(results), args.save_results_path)
+
     if not args.quiet:
         report.render(
             results,
@@ -815,6 +857,22 @@ def _run_get_charms(args: argparse.Namespace) -> int:
     with source.open(newline='', encoding='utf-8') as f:
         rows: list[get_charms.CharmRow] = list(csv.DictReader(f))  # type: ignore[arg-type]
     asyncio.run(get_charms.process_rows(rows, dest))
+    return 0
+
+
+def _run_compare(args: argparse.Namespace) -> int:
+    try:
+        base = results_mod.load(args.baseline)
+        cur = results_mod.load(args.current)
+    except ValueError as exc:
+        print(f'hyrum: error: {exc}', file=sys.stderr)
+        return 1
+
+    result = compare_mod.diff(base, cur)
+    compare_mod.render(result)
+
+    if args.fail_on_regression and (result.new_failures or result.new_errors):
+        return 1
     return 0
 
 

@@ -456,3 +456,85 @@ def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathli
     assert rc == 0
     assert 'PYO3_USE_ABI3_FORWARD_COMPATIBILITY' not in os.environ
     assert 'TOX_OVERRIDE' not in os.environ
+
+
+def test_cli_save_results_writes_json(monkeypatch, tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+
+    async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
+        return runners.RunResult(
+            repo=repo,
+            runner=self.name,
+            target=target,
+            status=runners.RunStatus.PASSED,
+            returncode=0,
+            duration_s=0.01,
+        )
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
+    out = tmp_path / 'run.json'
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--save-results',
+        str(out),
+    ])
+    assert rc == 0
+    assert out.exists()
+
+    from hyrum import _results as results_mod
+
+    loaded = results_mod.load(out)
+    assert any(o.status == 'passed' for o in loaded)
+
+
+def test_cli_compare_subcommand_clean(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    a = [pool.Outcome(repo=pathlib.Path('/cache/alpha'), status='passed')]
+    b = [pool.Outcome(repo=pathlib.Path('/cache/alpha'), status='passed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(a, base_path)
+    results_mod.save(b, cur_path)
+
+    rc = _run(['compare', str(base_path), str(cur_path)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'No changes' in captured.out
+
+
+def test_cli_compare_fail_on_regression_exits_nonzero(tmp_path: pathlib.Path):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    base = [pool.Outcome(repo=pathlib.Path('/cache/alpha'), status='passed')]
+    cur = [pool.Outcome(repo=pathlib.Path('/cache/alpha'), status='failed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(base, base_path)
+    results_mod.save(cur, cur_path)
+
+    rc = _run(['compare', str(base_path), str(cur_path), '--fail-on-regression'])
+    assert rc == 1
+
+
+def test_cli_compare_rejects_bad_schema(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    base_path.write_text('{"version": 999, "outcomes": []}')
+    cur_path.write_text('{"version": 1, "outcomes": []}')
+
+    rc = _run(['compare', str(base_path), str(cur_path)])
+    captured = capsys.readouterr()
+    assert rc != 0
+    assert 'schema version' in captured.err
