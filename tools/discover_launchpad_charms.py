@@ -138,11 +138,13 @@ def first_marker(unique_name: str, branch: str) -> str | None:
 def write_csv(path: pathlib.Path, rows: list[dict[str, str]]) -> None:
     """Write ``rows`` to ``path``."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Buffer first so a mid-iteration error can't leave a half-written CSV on disk.
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=CSV_FIELDS, lineterminator='\n')
     writer.writeheader()
     for row in rows:
         writer.writerow({field: row.get(field, '') for field in CSV_FIELDS})
+    # newline='' disables Windows LF→CRLF translation so the committed file is LF everywhere.
     path.write_text(buffer.getvalue(), encoding='utf-8', newline='')
 
 
