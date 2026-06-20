@@ -40,8 +40,7 @@ def _relative(repo: pathlib.Path, base: pathlib.Path) -> str:
 def _use_colour(stream: TextIO) -> bool:
     if os.environ.get('NO_COLOR'):
         return False
-    isatty = getattr(stream, 'isatty', None)
-    return bool(isatty and isatty())
+    return stream.isatty()
 
 
 def _format_table(

@@ -212,7 +212,7 @@ def test_cli_verbosity_flags_are_mutually_exclusive(
     ])
     captured = capsys.readouterr()
     assert rc != 0
-    assert 'mutually exclusive' in captured.err
+    assert 'not allowed with argument' in captured.err
 
 
 def test_apply_host_env_defaults_sets_pyo3_and_tox_override():

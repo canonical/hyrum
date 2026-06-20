@@ -93,10 +93,6 @@ _GITHUB_SHORTHAND_RE = re.compile(r'^([A-Za-z0-9][A-Za-z0-9._-]*):([^\s]+)$')
 _URL_WITH_BRANCH_RE = re.compile(r'^(https?://[^@\s]+)@([^@\s]+)$')
 
 
-class _UsageError(Exception):
-    """Raised for invalid CLI usage; converted to a parser.error() by ``main``."""
-
-
 def _parse_ops_source(arg: str) -> dict[str, str | None]:
     """Parse ``--ops-source`` into kwargs for :class:`patchers.OpsSource`.
 
@@ -111,7 +107,7 @@ def _parse_ops_source(arg: str) -> dict[str, str | None]:
     """
     arg = arg.strip()
     if not arg:
-        raise _UsageError('--ops-source: empty value')
+        raise argparse.ArgumentTypeError('empty value')
 
     if arg.startswith('git+'):
         url, branch = _split_url_branch(arg.removeprefix('git+'))
@@ -129,9 +125,8 @@ def _parse_ops_source(arg: str) -> dict[str, str | None]:
     try:
         packaging.version.Version(arg)
     except packaging.version.InvalidVersion as exc:
-        raise _UsageError(
-            f'--ops-source: cannot parse {arg!r} as a version, URL, '
-            'owner:branch shorthand, or path'
+        raise argparse.ArgumentTypeError(
+            f'cannot parse {arg!r} as a version, URL, owner:branch shorthand, or path'
         ) from exc
     return {'version': arg}
 
@@ -151,7 +146,7 @@ def _resolve_path(raw: str) -> str:
 def _build_patcher(
     *,
     no_patch: bool,
-    ops_source: str,
+    ops_source: dict[str, str | None],
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
@@ -159,12 +154,11 @@ def _build_patcher(
 ):
     if no_patch:
         return patchers.NullPatcher()
-    parsed = _parse_ops_source(ops_source)
     ops = patchers.OpsSource(
-        url=parsed.get('url') or 'https://github.com/canonical/operator',
-        branch=parsed.get('branch'),
-        version=parsed.get('version'),
-        path=parsed.get('path'),
+        url=ops_source.get('url') or 'https://github.com/canonical/operator',
+        branch=ops_source.get('branch'),
+        version=ops_source.get('version'),
+        path=ops_source.get('path'),
         poetry_executable=tuple(poetry_executable.split()),
         uv_executable=tuple(uv_executable.split()),
         lock_timeout=lock_timeout,
@@ -330,6 +324,7 @@ def _add_check_subparser(
     )
     parser.add_argument(
         '--ops-source',
+        type=_parse_ops_source,
         default='https://github.com/canonical/operator',
         help=(
             'Where to pull ops from. Accepts: a PyPI version (``2.17.0``); a '
@@ -368,17 +363,18 @@ def _add_check_subparser(
             'requires-python (via uv run --python X.Y). Requires uv on PATH. [default: enabled]'
         ),
     )
-    parser.add_argument(
+    verbosity_group = parser.add_mutually_exclusive_group()
+    verbosity_group.add_argument(
         '--quiet',
         action='store_true',
         help='No output except errors. Exit code still reflects pass/fail.',
     )
-    parser.add_argument(
+    verbosity_group.add_argument(
         '--verbose',
         action='store_true',
         help='Descriptive detail: include the per-charm offender list in the report.',
     )
-    parser.add_argument(
+    verbosity_group.add_argument(
         '--verbosity',
         type=str.lower,
         choices=['debug', 'trace'],
@@ -473,8 +469,6 @@ def _run_check(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int
     if not charms_dir.is_dir():
         parser.error(f'--charms-dir: {charms_dir} is not a directory.')
 
-    if sum([args.quiet, args.verbose, args.verbosity is not None]) > 1:
-        parser.error('--quiet, --verbose, and --verbosity are mutually exclusive.')
     _configure_logging(
         _resolve_log_level(quiet=args.quiet, verbose=args.verbose, verbosity=args.verbosity)
     )
@@ -491,17 +485,14 @@ def _run_check(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int
     )
     logger.info('Selected %d charm(s); skipping %d up-front.', len(repos), len(skipped))
 
-    try:
-        patcher = _build_patcher(
-            no_patch=args.no_patch,
-            ops_source=args.ops_source,
-            poetry_executable=args.poetry_executable,
-            uv_executable=args.uv_executable,
-            lock_timeout=args.lock_timeout,
-            auto_python=args.auto_python,
-        )
-    except _UsageError as exc:
-        parser.error(str(exc))
+    patcher = _build_patcher(
+        no_patch=args.no_patch,
+        ops_source=args.ops_source,
+        poetry_executable=args.poetry_executable,
+        uv_executable=args.uv_executable,
+        lock_timeout=args.lock_timeout,
+        auto_python=args.auto_python,
+    )
     runner = _build_runner(
         choice=runners.RunnerChoice(args.runner_choice),
         tox_executable=args.tox_executable,
