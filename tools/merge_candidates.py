@@ -55,30 +55,18 @@ def main(argv: list[str] | None = None) -> int:
 
     rows = read_csv(args.csv)
     validate(rows)
-    # Dedupe per charm (repo + charm name), so multi-charm monorepos can contribute
-    # one row per charm. A row matching by URL alone is also treated as a duplicate
-    # to stay backward-compatible with single-charm entries that pre-date this script.
-    seen_charms = {(normalise_url(row['Repository']), row['Charm Name']) for row in rows}
     seen_urls = {normalise_url(row['Repository']) for row in rows}
 
     added: list[dict[str, str]] = []
     for path in args.candidates:
         for candidate in read_candidates(path):
             url = candidate['Repository']
-            charm_name = candidate['Charm Name']
-            key = (normalise_url(url), charm_name)
-            if key in seen_charms:
+            key = normalise_url(url)
+            if key in seen_urls:
                 continue
-            # Skip single-charm repos already tracked under a different name to avoid
-            # introducing duplicates when the existing row pre-dates name normalisation.
-            # Multi-charm monorepos opt out by setting ``Charm Path``.
-            if not candidate.get('Charm Path') and normalise_url(url) in seen_urls:
-                continue
-            seen_charms.add(key)
-            seen_urls.add(normalise_url(url))
+            seen_urls.add(key)
             added.append({
                 'Team': candidate.get('Team', ''),
-                'Charm Name': charm_name,
                 'Repository': url,
                 'Branch (if not the default)': '',
                 'Source': AUTO_DISCOVER_SOURCE,
@@ -88,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
         print('no new rows')
         return 0
     for row in added:
-        print(f'+ {row["Charm Name"]} {row["Repository"]}')
+        print(f'+ {row["Repository"]}')
     if args.dry_run:
         print(f'{len(added)} new row(s) (dry run; not written)')
         return 0
@@ -100,15 +88,14 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def read_candidates(path: pathlib.Path) -> list[dict[str, str]]:
-    """Read a candidate CSV. Requires at least ``Charm Name`` and ``Repository``."""
+    """Read a candidate CSV. Requires at least a ``Repository`` column."""
     with path.open(newline='', encoding='utf-8') as handle:
         reader = csv.DictReader(handle)
         rows = list(reader)
     if not rows:
         return []
-    missing = {'Charm Name', 'Repository'} - set(rows[0].keys())
-    if missing:
-        raise ValueError(f'{path}: missing required column(s): {sorted(missing)}')
+    if 'Repository' not in rows[0]:
+        raise ValueError(f'{path}: missing required column: Repository')
     return [{(k or ''): (v or '') for k, v in row.items()} for row in rows]
 
 

@@ -2,13 +2,13 @@
 
 Uses GitHub's code-search API to find every public file named ``charmcraft.yaml``
 (or ``metadata.yaml``) under one of the seed orgs, then emits one row per
-discovered charm path. Output is written to
+discovered repository. Output is written to
 ``charm-list/github-candidates.csv`` for human triage.
 
-Charms can live at the repo root, under a ``charm/`` wrapper directory, or as
-siblings inside a multi-charm monorepo (``charms/<name>/…``, ``<name>-operator/…``,
-etc.) — every layout is captured. Hits inside ``tests/``, ``test/``, ``examples/``,
-or ``example/`` directories are skipped to avoid surfacing fixture charms.
+The check command recurses into each repo to find the charms it contains, so
+a multi-charm monorepo is captured by a single row. Hits inside ``tests/``,
+``test/``, ``examples/``, or ``example/`` directories are skipped to avoid
+treating fixture charms as evidence that a repo is a charm repo.
 
 The code-search endpoint requires authentication. Provide a token via
 ``--github-token`` or ``$GITHUB_TOKEN``. Search is rate-limited (30 req/min for
@@ -67,14 +67,9 @@ KNOWN_NON_CHARMS: frozenset[tuple[str, str]] = frozenset({
 # Path segments that flag a hit as a test fixture / example rather than a real charm.
 EXCLUDED_PATH_SEGMENTS = frozenset({'tests', 'test', 'examples', 'example'})
 
-# Directory names that don't usefully identify a charm — fall back to the repo name.
-GENERIC_WRAPPER_DIRS = frozenset({'charm', 'charms', 'operator', 'operators', 'src'})
-
 CSV_FIELDS = (
     'Org',
-    'Charm Name',
     'Repository',
-    'Charm Path',
     'Default Branch',
     'Marker',
     'Archived',
@@ -127,14 +122,17 @@ def main(argv: list[str] | None = None) -> int:
 def discover(
     client: GitHubClient, orgs: typing.Iterable[str], *, include_archived: bool
 ) -> list[dict[str, str]]:
-    """Return one row per charm found under ``orgs``.
+    """Return one row per repository found under ``orgs``.
 
-    Multi-charm monorepos produce one row per charm path; single-charm repos
-    (whether the marker is at the root or under a wrapper directory) produce a
-    single row whose ``Charm Name`` matches the repo name.
+    A repo qualifies if it contains at least one ``charmcraft.yaml`` or
+    ``metadata.yaml`` outside of tests/examples. Multi-charm monorepos are
+    represented by a single row — the check command discovers the individual
+    charms by walking the cloned tree.
     """
-    # (owner, name, charm_path) -> row. charm_path is '' for a root-level charm.
-    by_charm: dict[tuple[str, str, str], dict[str, str]] = {}
+    # (owner, name) -> row. A repo is recorded the first time any non-test
+    # marker is seen inside it; later hits only upgrade Marker from
+    # metadata.yaml to charmcraft.yaml.
+    by_repo: dict[tuple[str, str], dict[str, str]] = {}
     for org in orgs:
         for marker in CHARM_MARKERS:
             logger.info('Searching org:%s filename:%s', org, marker)
@@ -152,27 +150,22 @@ def discover(
                 if (owner, name) in KNOWN_NON_CHARMS:
                     logger.info('Dropping known-non-charm %s/%s', owner, name)
                     continue
-                charm_path = path[: -len(marker)].rstrip('/')
-                key = (owner, name, charm_path)
-                # Prefer charmcraft.yaml hits when the same charm matches twice.
-                existing = by_charm.get(key)
+                key = (owner, name)
+                existing = by_repo.get(key)
                 if existing and existing['Marker'] == 'charmcraft.yaml':
                     continue
-                by_charm[key] = {
+                by_repo[key] = {
                     'Org': owner,
-                    'Charm Name': _charm_name(name, charm_path),
                     'Repository': repo.get('html_url') or f'https://github.com/{owner}/{name}',
-                    'Charm Path': charm_path,
                     'Default Branch': '',  # filled below
                     'Marker': marker,
                     'Archived': '',
                 }
 
     # Second pass: fetch each repo's metadata to record default branch + archived state.
-    # Cache per repo since monorepos contribute many rows.
     repo_info: dict[tuple[str, str], dict[str, typing.Any] | None] = {}
     rows: list[dict[str, str]] = []
-    for (owner, name, _path), row in sorted(by_charm.items()):
+    for (owner, name), row in sorted(by_repo.items()):
         if (owner, name) not in repo_info:
             repo_info[owner, name] = client.repo(owner, name)
         info = repo_info[owner, name]
@@ -226,16 +219,6 @@ _CHARMCRAFT_TYPE_BUNDLE_RE = re.compile(
 def _is_excluded_path(path: str) -> bool:
     """Return True if ``path`` lives under a tests/examples directory."""
     return any(segment in EXCLUDED_PATH_SEGMENTS for segment in path.split('/')[:-1])
-
-
-def _charm_name(repo_name: str, charm_path: str) -> str:
-    """Derive a charm name from the repo name and the directory the marker sits in."""
-    if not charm_path:
-        return repo_name
-    leaf = charm_path.rsplit('/', 1)[-1]
-    if leaf in GENERIC_WRAPPER_DIRS:
-        return repo_name
-    return leaf
 
 
 def write_csv(path: pathlib.Path, rows: list[dict[str, str]]) -> None:

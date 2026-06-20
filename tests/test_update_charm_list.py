@@ -45,7 +45,7 @@ class FakeCharmhub:
         return self.urls.get(charm)
 
 
-HEADER = 'Team,Charm Name,Repository,Branch (if not the default),Source'
+HEADER = 'Team,Repository,Branch (if not the default),Source'
 
 
 def write_csv(path: pathlib.Path, body: str) -> None:
@@ -73,25 +73,10 @@ def test_github_owner_repo_only_matches_github():
     assert uut.github_owner_repo('https://github.com/canonical') is None
 
 
-def test_validate_rejects_missing_charm_name(tmp_path: pathlib.Path):
-    rows = [
-        {
-            'Team': 'Data',
-            'Charm Name': '',
-            'Repository': 'https://github.com/canonical/foo',
-            'Branch (if not the default)': '',
-            'Source': 'manual',
-        }
-    ]
-    with pytest.raises(ValueError, match='missing Charm Name'):
-        uut.validate(rows)
-
-
 def test_validate_rejects_missing_repository():
     rows = [
         {
             'Team': 'Data',
-            'Charm Name': 'foo',
             'Repository': '',
             'Branch (if not the default)': '',
             'Source': 'manual',
@@ -105,7 +90,6 @@ def test_validate_rejects_unknown_source():
     rows = [
         {
             'Team': 'Data',
-            'Charm Name': 'foo',
             'Repository': 'https://github.com/canonical/foo',
             'Branch (if not the default)': '',
             'Source': 'bogus',
@@ -115,45 +99,23 @@ def test_validate_rejects_unknown_source():
         uut.validate(rows)
 
 
-def test_validate_rejects_duplicate_charm_in_same_repo():
+def test_validate_rejects_duplicate_urls():
     rows = [
         {
             'Team': '',
-            'Charm Name': 'foo',
             'Repository': 'https://github.com/canonical/foo',
             'Branch (if not the default)': '',
             'Source': 'manual',
         },
         {
             'Team': '',
-            'Charm Name': 'foo',
             'Repository': 'https://github.com/canonical/foo.git/',
             'Branch (if not the default)': '',
             'Source': 'manual',
         },
     ]
-    with pytest.raises(ValueError, match='duplicate'):
+    with pytest.raises(ValueError, match='duplicate Repository'):
         uut.validate(rows)
-
-
-def test_validate_allows_monorepo_with_distinct_charm_names():
-    rows = [
-        {
-            'Team': '',
-            'Charm Name': 'scheduler',
-            'Repository': 'https://github.com/canonical/airflow-core-operators',
-            'Branch (if not the default)': '',
-            'Source': 'auto-discover',
-        },
-        {
-            'Team': '',
-            'Charm Name': 'triggerer',
-            'Repository': 'https://github.com/canonical/airflow-core-operators',
-            'Branch (if not the default)': '',
-            'Source': 'auto-discover',
-        },
-    ]
-    uut.validate(rows)
 
 
 def test_run_rejects_invalid_csv(tmp_path: pathlib.Path):
@@ -162,7 +124,7 @@ def test_run_rejects_invalid_csv(tmp_path: pathlib.Path):
         csv_path,
         f"""
         {HEADER}
-        Data,foo,,,manual
+        Data,,,manual
         """,
     )
     with pytest.raises(ValueError, match='missing Repository'):
@@ -175,7 +137,7 @@ def test_check_mode_exit_zero_on_valid_csv(tmp_path: pathlib.Path):
         csv_path,
         f"""
         {HEADER}
-        Data,foo,https://github.com/canonical/foo,,manual
+        Data,https://github.com/canonical/foo,,manual
         """,
     )
     assert uut.main(['--csv', str(csv_path), '--check']) == 0
@@ -189,11 +151,11 @@ def test_check_mode_exit_nonzero_on_invalid_csv(
         csv_path,
         f"""
         {HEADER}
-        Data,,https://github.com/canonical/foo,,manual
+        Data,,,manual
         """,
     )
     assert uut.main(['--csv', str(csv_path), '--check']) == 1
-    assert 'missing Charm Name' in capsys.readouterr().err
+    assert 'missing Repository' in capsys.readouterr().err
 
 
 def test_charmhub_dup_url_not_added(tmp_path: pathlib.Path):
@@ -202,7 +164,7 @@ def test_charmhub_dup_url_not_added(tmp_path: pathlib.Path):
         csv_path,
         f"""
         {HEADER}
-        Data,foo,https://github.com/canonical/foo,,manual
+        Data,https://github.com/canonical/foo,,manual
         """,
     )
     # Charmhub reports the same URL with a trailing slash + .git — must not be added.
@@ -220,7 +182,7 @@ def test_appends_new_charm_with_auto_source(tmp_path: pathlib.Path):
         csv_path,
         f"""
         {HEADER}
-        Data,foo,https://github.com/canonical/foo,,manual
+        Data,https://github.com/canonical/foo,,manual
         """,
     )
     charmhub = FakeCharmhub({
@@ -234,7 +196,7 @@ def test_appends_new_charm_with_auto_source(tmp_path: pathlib.Path):
     changed = uut.run(csv_path, charmhub=charmhub, github=github)
     assert changed is True
     rows = uut.read_csv(csv_path)
-    new = [r for r in rows if r['Charm Name'] == 'bar']
+    new = [r for r in rows if r['Repository'] == 'https://github.com/canonical/bar']
     assert len(new) == 1
     assert new[0]['Source'] == uut.AUTO_SOURCE
     assert new[0]['Team'] == ''
@@ -246,8 +208,8 @@ def test_archived_github_row_is_dropped(tmp_path: pathlib.Path):
         csv_path,
         f"""
         {HEADER}
-        Data,foo,https://github.com/canonical/foo,,manual
-        Data,bar,https://github.com/canonical/bar,,manual
+        Data,https://github.com/canonical/foo,,manual
+        Data,https://github.com/canonical/bar,,manual
         """,
     )
     charmhub = FakeCharmhub({})
@@ -258,7 +220,7 @@ def test_archived_github_row_is_dropped(tmp_path: pathlib.Path):
     changed = uut.run(csv_path, charmhub=charmhub, github=github)
     assert changed is True
     rows = uut.read_csv(csv_path)
-    assert [r['Charm Name'] for r in rows] == ['foo']
+    assert [r['Repository'] for r in rows] == ['https://github.com/canonical/foo']
 
 
 def test_missing_github_row_is_dropped(tmp_path: pathlib.Path):
@@ -267,8 +229,8 @@ def test_missing_github_row_is_dropped(tmp_path: pathlib.Path):
         csv_path,
         f"""
         {HEADER}
-        Data,foo,https://github.com/canonical/foo,,manual
-        Data,gone,https://github.com/canonical/gone,,manual
+        Data,https://github.com/canonical/foo,,manual
+        Data,https://github.com/canonical/gone,,manual
         """,
     )
     charmhub = FakeCharmhub({})
@@ -279,14 +241,14 @@ def test_missing_github_row_is_dropped(tmp_path: pathlib.Path):
     changed = uut.run(csv_path, charmhub=charmhub, github=github)
     assert changed is True
     rows = uut.read_csv(csv_path)
-    assert [r['Charm Name'] for r in rows] == ['foo']
+    assert [r['Repository'] for r in rows] == ['https://github.com/canonical/foo']
 
 
 def test_non_github_rows_are_never_probed(tmp_path: pathlib.Path):
     csv_path = tmp_path / 'charms.csv'
     rows = [
-        ',aodh,https://opendev.org/openstack/charm-aodh,,auto',
-        ',cassandra,https://git.launchpad.net/cassandra-charm,,auto',
+        ',https://opendev.org/openstack/charm-aodh,,auto',
+        ',https://git.launchpad.net/cassandra-charm,,auto',
     ]
     csv_path.write_text('\n'.join([HEADER, *rows, '']), encoding='utf-8')
     charmhub = FakeCharmhub({})
@@ -302,8 +264,8 @@ def test_url_drift_rewrites_auto_added_rows_only(tmp_path: pathlib.Path):
         csv_path,
         f"""
         {HEADER}
-        Data,foo,https://github.com/canonical/foo,,manual
-        ,bar,https://github.com/oldorg/bar,,auto
+        Data,https://github.com/canonical/foo,,manual
+        ,https://github.com/oldorg/bar,,auto
         """,
     )
     # Charmhub now reports both at different orgs. The manual `foo` row must
@@ -318,9 +280,9 @@ def test_url_drift_rewrites_auto_added_rows_only(tmp_path: pathlib.Path):
     })
     changed = uut.run(csv_path, charmhub=charmhub, github=github)
     assert changed is True
-    rows = {r['Charm Name']: r for r in uut.read_csv(csv_path)}
-    assert rows['foo']['Repository'] == 'https://github.com/canonical/foo'
-    assert rows['bar']['Repository'] == 'https://github.com/neworg/bar'
+    rows = [r['Repository'] for r in uut.read_csv(csv_path)]
+    assert 'https://github.com/canonical/foo' in rows
+    assert 'https://github.com/neworg/bar' in rows
 
 
 def test_url_drift_warns_on_manual_rows(tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture):
@@ -329,7 +291,7 @@ def test_url_drift_warns_on_manual_rows(tmp_path: pathlib.Path, caplog: pytest.L
         csv_path,
         f"""
         {HEADER}
-        Data,foo,https://github.com/canonical/foo,,manual
+        Data,https://github.com/canonical/foo,,manual
         """,
     )
     charmhub = FakeCharmhub({'foo': 'https://github.com/neworg/foo'})
@@ -346,7 +308,7 @@ def test_transient_github_failure_keeps_row(tmp_path: pathlib.Path):
         csv_path,
         f"""
         {HEADER}
-        Data,foo,https://github.com/canonical/foo,,manual
+        Data,https://github.com/canonical/foo,,manual
         """,
     )
 
@@ -374,9 +336,9 @@ def test_run_is_idempotent_on_no_op(tmp_path: pathlib.Path):
     """A second run with no new info must produce a byte-identical file."""
     csv_path = tmp_path / 'charms.csv'
     body = [
-        'Data,foo,https://github.com/canonical/foo,,manual',
-        ',aproxy,https://github.com/canonical/aproxy-operator,,manual',
-        ',aodh,https://opendev.org/openstack/charm-aodh,,auto',
+        'Data,https://github.com/canonical/foo,,manual',
+        ',https://github.com/canonical/aproxy-operator,,manual',
+        ',https://opendev.org/openstack/charm-aodh,,auto',
     ]
     csv_path.write_text('\n'.join([HEADER, *body, '']), encoding='utf-8')
     original = csv_path.read_bytes()

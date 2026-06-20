@@ -47,7 +47,7 @@ DEFAULT_TEAMS = (
 
 CHARM_MARKERS = ('charmcraft.yaml', 'metadata.yaml')
 
-CSV_FIELDS = ('Team', 'Charm Name', 'Repository', 'Default Branch', 'Marker')
+CSV_FIELDS = ('Team', 'Repository', 'Default Branch', 'Marker')
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -102,12 +102,11 @@ def discover(client: LaunchpadClient, teams: typing.Iterable[str]) -> list[dict[
                 continue
             rows.append({
                 'Team': team,
-                'Charm Name': raw_path.rsplit('/', 1)[-1],
                 'Repository': git_url,
                 'Default Branch': default_branch,
                 'Marker': marker,
             })
-    rows.sort(key=lambda r: (r['Team'], r['Charm Name']))
+    rows.sort(key=lambda r: (r['Team'], r['Repository']))
     return rows
 
 

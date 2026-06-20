@@ -47,7 +47,6 @@ VALID_SOURCES = frozenset({AUTO_SOURCE, MANUAL_SOURCE, AUTO_DISCOVER_SOURCE})
 
 CSV_FIELDS = (
     'Team',
-    'Charm Name',
     'Repository',
     'Branch (if not the default)',
     'Source',
@@ -117,33 +116,27 @@ def run(csv_path: pathlib.Path, *, charmhub: CharmhubClient, github: GitHubClien
 def validate(rows: list[dict[str, str]]) -> None:
     """Raise ``ValueError`` if ``rows`` violate the file's invariants.
 
-    Checked invariants: every row has a non-empty ``Charm Name`` and
-    ``Repository``, ``Source`` is one of ``VALID_SOURCES``, and no two rows
-    share the same ``(Repository, Charm Name)`` pair after URL normalisation
-    — multi-charm monorepos legitimately produce several rows with the same
-    Repository value, distinguished by Charm Name.
+    Each row is a *repository*, not a charm: the check command recurses to
+    discover every charm inside a repo, so multi-charm monorepos are
+    represented by a single row. Checked invariants: every row has a
+    non-empty ``Repository``, ``Source`` is one of ``VALID_SOURCES``, and
+    no two rows share a ``Repository`` after URL normalisation.
     """
     errors: list[str] = []
-    seen: dict[tuple[str, str], int] = {}
+    seen: dict[str, int] = {}
     for index, row in enumerate(rows, start=2):  # +1 header, +1 1-indexed
-        name = (row.get('Charm Name') or '').strip()
         url = (row.get('Repository') or '').strip()
         source = (row.get('Source') or '').strip()
-        if not name:
-            errors.append(f'row {index}: missing Charm Name')
         if not url:
             errors.append(f'row {index}: missing Repository')
         if source not in VALID_SOURCES:
             valid = ', '.join(repr(s) for s in sorted(VALID_SOURCES))
             errors.append(f'row {index}: Source must be one of {valid}, got {source!r}')
-        if not url or not name:
+        if not url:
             continue
-        key = (normalise_url(url), name)
+        key = normalise_url(url)
         if key in seen:
-            errors.append(
-                f'row {index}: duplicate (Repository, Charm Name) {url!r}/{name!r} '
-                f'(also row {seen[key]})'
-            )
+            errors.append(f'row {index}: duplicate Repository {url!r} (also row {seen[key]})')
         else:
             seen[key] = index
     if errors:
@@ -192,6 +185,11 @@ def merge(
     # URL drift for auto-added rows. Done first so the dedup map stays in sync
     # before we consider archival of the *new* URL. Manual rows are never
     # rewritten, but drift is logged so a human can investigate.
+    # ``covered`` records the Charmhub names already handled here (whether by
+    # rewriting an auto row or by warning about a manual one) so the append
+    # pass below doesn't add a "new" row for a charm we just decided to leave
+    # at its old URL.
+    covered: set[str] = set()
     for row in rows_in_order:
         name_match = charmhub_charm_name(row.get('Repository', ''))
         if not name_match or name_match not in charmhub:
@@ -199,6 +197,7 @@ def merge(
         new_url = charmhub[name_match]
         old_url = row['Repository']
         if normalise_url(new_url) == normalise_url(old_url):
+            covered.add(name_match)
             continue
         if not is_auto_added(row):
             logger.warning(
@@ -207,11 +206,13 @@ def merge(
                 old_url,
                 new_url,
             )
+            covered.add(name_match)
             continue
         logger.info('URL drift for %s: %s -> %s', name_match, old_url, new_url)
         del by_url[normalise_url(old_url)]
         row['Repository'] = new_url
         by_url[normalise_url(new_url)] = row
+        covered.add(name_match)
 
     # Archive / 404 removal for github.com rows.
     survivors: list[dict[str, str]] = []
@@ -230,21 +231,13 @@ def merge(
             by_url.pop(normalise_url(url), None)
     rows_in_order = survivors
 
-    # Names already covered by some existing row, so we don't append a second
-    # row for the same charm when a manual entry uses a different URL than
-    # Charmhub now reports. Matching is case-insensitive against the Charm
-    # Name column — auto-added rows use the charmhub package name verbatim,
-    # and manual rows for charmhub-published charms generally do too (e.g.
-    # the "kafka" row at canonical/kafka-operator).
-    existing_names = {(row.get('Charm Name') or '').strip().lower() for row in rows_in_order}
-
     # Append brand-new Charmhub charms.
     for name, url in sorted(charmhub.items()):
         key = normalise_url(url)
         if key in by_url:
             continue
-        if name.lower() in existing_names:
-            logger.info('Skipping new charm %s: name already present in the CSV', name)
+        if name in covered:
+            logger.info('Skipping new charm %s: already covered by an existing row', name)
             continue
         # If the new charm points at a github repo that is *already* archived
         # or missing, don't add it — we'd just delete it on the next run.
@@ -254,7 +247,6 @@ def merge(
             continue
         new_row = {
             'Team': '',
-            'Charm Name': name,
             'Repository': url,
             'Branch (if not the default)': '',
             'Source': AUTO_SOURCE,
@@ -288,11 +280,11 @@ def normalise_url(url: str) -> str:
 
 
 def charmhub_charm_name(url: str) -> str | None:
-    """Return the charmhub package name from a source URL, or ``None``.
+    """Return the charmhub package name implied by a source URL, or ``None``.
 
-    Used purely to fill the ``Charm Name`` column for new auto-added rows. The
-    URL-to-name mapping is best-effort: for canonical/foo-operator it's "foo",
-    elsewhere we fall back to the trailing path component.
+    Used by the URL-drift detector to look up a row in ``charmhub`` from its
+    Repository URL. Best-effort: the trailing path component, stripped of any
+    ``.git`` suffix.
     """
     parsed = urllib.parse.urlsplit(url)
     parts = [p for p in parsed.path.split('/') if p]
