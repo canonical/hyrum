@@ -4,7 +4,6 @@ import io
 import pathlib
 
 import pytest
-import rich.console
 
 from hyrum import _compare as compare_mod
 from hyrum import _pool as pool
@@ -79,17 +78,16 @@ def test_pass_rate_zero_when_no_runs():
 
 
 def test_render_quiet_when_no_diffs():
-    console = rich.console.Console(file=io.StringIO(), width=80)
+    buf = io.StringIO()
     result = compare_mod.diff([_o('a', 'passed')], [_o('a', 'passed')])
-    compare_mod.render(result, console=console)
-    output = console.file.getvalue()
-    assert 'No changes' in output
+    compare_mod.render(result, file=buf)
+    assert 'No changes' in buf.getvalue()
 
 
 def test_render_shows_new_failures():
-    console = rich.console.Console(file=io.StringIO(), width=80)
+    buf = io.StringIO()
     result = compare_mod.diff([_o('alpha', 'passed')], [_o('alpha', 'failed')])
-    compare_mod.render(result, console=console)
-    output = console.file.getvalue()
+    compare_mod.render(result, file=buf)
+    output = buf.getvalue()
     assert 'New failures' in output
     assert 'alpha' in output
