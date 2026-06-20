@@ -29,6 +29,16 @@ from update_charm_list import (
 logger = logging.getLogger(__name__)
 
 
+# Maps the standard Canonical CLI verbosity vocabulary to Python logging levels.
+VERBOSITY_LEVELS = {
+    'quiet': logging.ERROR,
+    'brief': logging.WARNING,
+    'verbose': logging.INFO,
+    'debug': logging.DEBUG,
+    'trace': logging.DEBUG,
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point. Returns a process exit code."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -49,9 +59,16 @@ def main(argv: list[str] | None = None) -> int:
         action='store_true',
         help='Print the rows that would be added without writing.',
     )
-    parser.add_argument('--log-level', default='INFO')
+    parser.add_argument(
+        '--verbosity',
+        choices=VERBOSITY_LEVELS,
+        default='brief',
+        help='Output verbosity (default: brief).',
+    )
     args = parser.parse_args(argv)
-    logging.basicConfig(level=args.log_level, format='%(levelname)s %(name)s: %(message)s')
+    logging.basicConfig(
+        level=VERBOSITY_LEVELS[args.verbosity], format='%(levelname)s %(name)s: %(message)s'
+    )
 
     rows = read_csv(args.csv)
     validate(rows)
@@ -73,17 +90,17 @@ def main(argv: list[str] | None = None) -> int:
             })
 
     if not added:
-        print('no new rows')
+        print('no new rows', file=sys.stderr)
         return 0
     for row in added:
         print(f'+ {row["Repository"]}')
     if args.dry_run:
-        print(f'{len(added)} new row(s) (dry run; not written)')
+        print(f'{len(added)} new row(s) (dry run; not written)', file=sys.stderr)
         return 0
     merged = rows + added
     validate(merged)
     write_csv(args.csv, merged)
-    print(f'{len(added)} new row(s) appended to {args.csv}')
+    print(f'{len(added)} new row(s) appended to {args.csv}', file=sys.stderr)
     return 0
 
 

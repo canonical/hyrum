@@ -67,6 +67,15 @@ KNOWN_NON_CHARMS: frozenset[tuple[str, str]] = frozenset({
 # Path segments that flag a hit as a test fixture / example rather than a real charm.
 EXCLUDED_PATH_SEGMENTS = frozenset({'tests', 'test', 'examples', 'example'})
 
+# Maps the standard Canonical CLI verbosity vocabulary to Python logging levels.
+VERBOSITY_LEVELS = {
+    'quiet': logging.ERROR,
+    'brief': logging.WARNING,
+    'verbose': logging.INFO,
+    'debug': logging.DEBUG,
+    'trace': logging.DEBUG,
+}
+
 CSV_FIELDS = (
     'Org',
     'Repository',
@@ -83,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         '--csv',
         type=pathlib.Path,
         default=pathlib.Path('charm-list/github-candidates.csv'),
+        help='Output CSV path.',
     )
     parser.add_argument(
         '--org',
@@ -95,9 +105,16 @@ def main(argv: list[str] | None = None) -> int:
         action='store_true',
         help='Keep archived repos in the output (default: drop them).',
     )
-    parser.add_argument('--log-level', default='INFO')
+    parser.add_argument(
+        '--verbosity',
+        choices=VERBOSITY_LEVELS,
+        default='brief',
+        help='Output verbosity (default: brief).',
+    )
     args = parser.parse_args(argv)
-    logging.basicConfig(level=args.log_level, format='%(levelname)s %(name)s: %(message)s')
+    logging.basicConfig(
+        level=VERBOSITY_LEVELS[args.verbosity], format='%(levelname)s %(name)s: %(message)s'
+    )
 
     token = os.environ.get('GITHUB_TOKEN')
     if not token:
@@ -111,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
     orgs = tuple(args.orgs) if args.orgs else DEFAULT_ORGS
     rows = discover(client, orgs, include_archived=args.include_archived)
     write_csv(args.csv, rows)
-    print(f'{len(rows)} candidate(s) -> {args.csv}')
+    print(f'{len(rows)} candidate(s) -> {args.csv}', file=sys.stderr)
     return 0
 
 

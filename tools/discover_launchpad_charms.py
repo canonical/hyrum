@@ -49,6 +49,15 @@ CHARM_MARKERS = ('charmcraft.yaml', 'metadata.yaml')
 
 CSV_FIELDS = ('Team', 'Repository', 'Default Branch', 'Marker')
 
+# Maps the standard Canonical CLI verbosity vocabulary to Python logging levels.
+VERBOSITY_LEVELS = {
+    'quiet': logging.ERROR,
+    'brief': logging.WARNING,
+    'verbose': logging.INFO,
+    'debug': logging.DEBUG,
+    'trace': logging.DEBUG,
+}
+
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point. Returns a process exit code."""
@@ -65,15 +74,22 @@ def main(argv: list[str] | None = None) -> int:
         dest='teams',
         help='Launchpad team to scan (repeatable). Defaults to the built-in seed list.',
     )
-    parser.add_argument('--log-level', default='INFO')
+    parser.add_argument(
+        '--verbosity',
+        choices=VERBOSITY_LEVELS,
+        default='brief',
+        help='Output verbosity (default: brief).',
+    )
     args = parser.parse_args(argv)
-    logging.basicConfig(level=args.log_level, format='%(levelname)s %(name)s: %(message)s')
+    logging.basicConfig(
+        level=VERBOSITY_LEVELS[args.verbosity], format='%(levelname)s %(name)s: %(message)s'
+    )
 
     client = LaunchpadClient()
     teams = tuple(args.teams) if args.teams else DEFAULT_TEAMS
     rows = discover(client, teams)
     write_csv(args.csv, rows)
-    print(f'{len(rows)} candidate(s) -> {args.csv}')
+    print(f'{len(rows)} candidate(s) -> {args.csv}', file=sys.stderr)
     return 0
 
 
