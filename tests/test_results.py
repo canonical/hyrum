@@ -70,3 +70,33 @@ def test_save_includes_schema_version(tmp_path: pathlib.Path):
     raw = json.loads(path.read_text())
     assert raw['version'] == results_mod.SCHEMA_VERSION
     assert raw['outcomes'] == []
+
+
+def test_load_v1_file_leaves_summary_empty(tmp_path: pathlib.Path):
+    path = tmp_path / 'v1.json'
+    path.write_text(
+        '{"version": 1, "outcomes": [{"repo": "/cache/x", "status": "failed", '
+        '"runner": "tox", "target": "unit", "duration_s": 0.1, "returncode": 1, '
+        '"skip_reason": "", "error": ""}]}'
+    )
+    loaded = results_mod.load(path)
+    assert len(loaded) == 1
+    assert loaded[0].summary == ''
+    assert loaded[0].status == 'failed'
+
+
+def test_round_trip_preserves_summary(tmp_path: pathlib.Path):
+    path = tmp_path / 'out.json'
+    original = [
+        pool.Outcome(
+            repo=pathlib.Path('/cache/beta'),
+            status='failed',
+            runner='tox',
+            target='unit',
+            duration_s=2.5,
+            returncode=1,
+            summary='3 failed, 10 passed; ValueError: bad',
+        ),
+    ]
+    results_mod.save(original, path)
+    assert results_mod.load(path) == original
