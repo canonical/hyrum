@@ -8,7 +8,8 @@ import pathlib
 
 from hyrum import _pool as pool
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+_SUPPORTED_VERSIONS = frozenset({1, 2})
 
 
 def save(outcomes: list[pool.Outcome], path: pathlib.Path) -> None:
@@ -22,12 +23,16 @@ def save(outcomes: list[pool.Outcome], path: pathlib.Path) -> None:
 
 
 def load(path: pathlib.Path) -> list[pool.Outcome]:
-    """Load outcomes from *path*; raises ``ValueError`` on schema version mismatch."""
+    """Load outcomes from *path*.
+
+    Older v1 files load fine — the ``summary`` field added in v2 is left empty.
+    """
     raw = json.loads(path.read_text())
     version = raw.get('version')
-    if version != SCHEMA_VERSION:
+    if version not in _SUPPORTED_VERSIONS:
         raise ValueError(
-            f'schema version mismatch: file has {version!r}, expected {SCHEMA_VERSION}'
+            f'schema version mismatch: file has {version!r}, '
+            f'expected one of {sorted(_SUPPORTED_VERSIONS)}'
         )
     return [
         pool.Outcome(
@@ -39,6 +44,7 @@ def load(path: pathlib.Path) -> list[pool.Outcome]:
             returncode=int(record['returncode']) if record.get('returncode') is not None else None,
             skip_reason=str(record.get('skip_reason', '')),
             error=str(record.get('error', '')),
+            summary=str(record.get('summary', '')),
         )
         for record in raw['outcomes']
     ]
