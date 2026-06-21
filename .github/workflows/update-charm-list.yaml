@@ -61,9 +61,16 @@ jobs:
           # Push via x-access-token in the URL. GITHUB_TOKEN is auto-masked
           # in job logs so this stays out of any output. --force-with-lease
           # so we cleanly update an existing PR branch from a previous run
-          # without clobbering anything we did not predict.
+          # without clobbering anything we did not predict. The expected SHA
+          # is resolved from the remote explicitly: checkout only fetched
+          # main, so there is no local remote-tracking ref for $BRANCH and
+          # a bare --force-with-lease would be rejected as "stale info".
+          # An empty expected SHA (branch absent on the remote) means
+          # "branch must not already exist", which is exactly right for the
+          # first run after a merge.
           remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force-with-lease "$remote" "HEAD:${BRANCH}"
+          expected="$(git ls-remote "$remote" "refs/heads/${BRANCH}" | awk '{print $1}')"
+          git push --force-with-lease="${BRANCH}:${expected}" "$remote" "HEAD:${BRANCH}"
 
           if gh pr view "$BRANCH" --json number --jq .number >/dev/null 2>&1; then
             echo "PR for $BRANCH already exists; pushed updates to it."
