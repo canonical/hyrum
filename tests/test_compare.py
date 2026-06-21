@@ -9,8 +9,8 @@ from hyrum import _compare as compare_mod
 from hyrum import _pool as pool
 
 
-def _o(name: str, status: str) -> pool.Outcome:
-    return pool.Outcome(repo=pathlib.Path(f'/cache/{name}'), status=status)
+def _o(name: str, status: str, summary: str = '') -> pool.Outcome:
+    return pool.Outcome(repo=pathlib.Path(f'/cache/{name}'), status=status, summary=summary)
 
 
 def test_diff_new_failure_detected():
@@ -91,3 +91,61 @@ def test_render_shows_new_failures():
     output = buf.getvalue()
     assert 'New failures' in output
     assert 'alpha' in output
+
+
+def test_markdown_render_omits_all_passing_charms():
+    buf = io.StringIO()
+    compare_mod.render_markdown([_o('alpha', 'passed')], [_o('alpha', 'passed')], file=buf)
+    output = buf.getvalue()
+    assert '_No non-passing charms in either run._' in output
+    assert 'alpha' not in output.split('_No')[0].split('Current pass rate')[1]
+
+
+def test_markdown_render_includes_summaries_and_collapses_identical():
+    base = [
+        _o('alpha', 'failed', summary='3 failed; ValueError: bad'),
+        _o('beta', 'passed'),
+        _o('gamma', 'patcher_error', summary='patcher: lock failed'),
+    ]
+    cur = [
+        _o('alpha', 'failed', summary='3 failed; ValueError: bad'),
+        _o('beta', 'failed', summary='1 failed; KeyError: x'),
+        _o('gamma', 'patcher_error', summary='patcher: lock failed'),
+    ]
+    buf = io.StringIO()
+    compare_mod.render_markdown(base, cur, file=buf)
+    output = buf.getvalue()
+    assert '| Charm | Baseline | Current |' in output
+    # alpha: same failure both sides → current cell is "same".
+    alpha_row = next(line for line in output.splitlines() if '| alpha ' in line)
+    assert '| same |' in alpha_row
+    assert '3 failed; ValueError: bad' in alpha_row
+    # beta: a brand-new failure; both sides differ.
+    beta_row = next(line for line in output.splitlines() if '| beta ' in line)
+    assert 'passed' in beta_row
+    assert 'KeyError: x' in beta_row
+    # gamma: persistent patcher_error → "same" too.
+    gamma_row = next(line for line in output.splitlines() if '| gamma ' in line)
+    assert '| same |' in gamma_row
+
+
+def test_markdown_escapes_pipes_in_summary():
+    buf = io.StringIO()
+    compare_mod.render_markdown(
+        [_o('alpha', 'passed')],
+        [_o('alpha', 'failed', summary='a | b')],
+        file=buf,
+    )
+    output = buf.getvalue()
+    assert 'a \\| b' in output
+
+
+def test_markdown_render_handles_charms_missing_from_one_side():
+    buf = io.StringIO()
+    compare_mod.render_markdown(
+        [_o('alpha', 'failed', summary='oops')],
+        [],
+        file=buf,
+    )
+    output = buf.getvalue()
+    assert '| _absent_ |' in output
