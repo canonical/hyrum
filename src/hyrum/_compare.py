@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import pathlib
 import sys
 from typing import TextIO
 
@@ -117,3 +118,86 @@ def render(result: CompareResult, *, file: TextIO | None = None) -> None:
 
     if not result.new_failures and not result.resolved and not result.new_errors:
         print(f'{green}No changes between runs.{reset}', file=out)
+
+
+_NON_PASSING = frozenset({'failed', 'timeout', 'patcher_error'})
+
+
+def _short(repo: str) -> str:
+    """Last path segment, so the table reads `owner__charm` not the full cache path."""
+    return pathlib.PurePosixPath(repo).name or repo
+
+
+def _md_escape(s: str) -> str:
+    return s.replace('|', '\\|').replace('\n', ' ').replace('\r', ' ')
+
+
+def _cell(outcome: pool.Outcome | None) -> str:
+    if outcome is None:
+        return '_absent_'
+    if outcome.status == 'passed':
+        return 'passed'
+    if outcome.status == 'skipped':
+        return f'skipped ({outcome.skip_reason})' if outcome.skip_reason else 'skipped'
+    if outcome.status == 'no_target':
+        return 'no target'
+    detail = outcome.summary or outcome.error or ''
+    return f'{outcome.status}: {detail}' if detail else outcome.status
+
+
+def render_markdown(
+    baseline: list[pool.Outcome],
+    current: list[pool.Outcome],
+    *,
+    file: TextIO | None = None,
+    title: str = 'hyrum run comparison',
+) -> None:
+    """Print a markdown table comparing the two runs, one row per non-passing charm."""
+    out: TextIO = file if file is not None else sys.stdout
+    base_by_key = {str(o.repo): o for o in baseline}
+    cur_by_key = {str(o.repo): o for o in current}
+    keys = sorted(set(base_by_key) | set(cur_by_key))
+
+    def is_interesting(key: str) -> bool:
+        b = base_by_key.get(key)
+        c = cur_by_key.get(key)
+        return (b is not None and b.status in _NON_PASSING) or (
+            c is not None and c.status in _NON_PASSING
+        )
+
+    rows = sorted((k for k in keys if is_interesting(k)), key=_short)
+    result = diff(baseline, current)
+
+    print(f'# {title}', file=out)
+    print(file=out)
+    print(
+        f'Baseline pass rate: **{result.baseline_pass_rate * 100:.0f}%** '
+        f'({result.baseline_passed}/{result.baseline_ran}). '
+        f'Current pass rate: **{result.current_pass_rate * 100:.0f}%** '
+        f'({result.current_passed}/{result.current_ran}). '
+        f'{len(result.new_failures)} new failure(s), '
+        f'{len(result.resolved)} resolved, '
+        f'{len(result.new_errors)} new error(s).',
+        file=out,
+    )
+    print(file=out)
+
+    if not rows:
+        print('_No non-passing charms in either run._', file=out)
+        return
+
+    print('| Charm | Baseline | Current |', file=out)
+    print('| --- | --- | --- |', file=out)
+    for key in rows:
+        b = base_by_key.get(key)
+        c = cur_by_key.get(key)
+        baseline_cell = _cell(b)
+        current_cell = (
+            'same' if b is not None and c is not None and baseline_cell == _cell(c) else _cell(c)
+        )
+        print(
+            f'| {_md_escape(_short(key))} '
+            f'| {_md_escape(baseline_cell)} '
+            f'| {_md_escape(current_cell)} |',
+            file=out,
+        )

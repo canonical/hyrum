@@ -457,6 +457,17 @@ def _add_compare_subparser(
             'the baseline. [default: disabled]'
         ),
     )
+    parser.add_argument(
+        '--format',
+        dest='output_format',
+        choices=['text', 'markdown'],
+        default='text',
+        help=(
+            'text: the colourised status-level summary. markdown: a table with one row '
+            "per non-passing charm and a per-run failure summary (uses the saved Outcome's "
+            'summary field; v1 result files have no summaries). [default: text]'
+        ),
+    )
     parser.set_defaults(func=_run_compare)
     return parser
 
@@ -605,7 +616,10 @@ def _run_compare(args: argparse.Namespace) -> int:
         return 1
 
     result = compare_mod.diff(base, cur)
-    compare_mod.render(result)
+    if args.output_format == 'markdown':
+        compare_mod.render_markdown(base, cur)
+    else:
+        compare_mod.render(result)
 
     if args.fail_on_regression and (result.new_failures or result.new_errors):
         return 1
