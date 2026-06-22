@@ -72,8 +72,11 @@ jobs:
           expected="$(git ls-remote "$remote" "refs/heads/${BRANCH}" | awk '{print $1}')"
           git push --force-with-lease="${BRANCH}:${expected}" "$remote" "HEAD:${BRANCH}"
 
-          if gh pr view "$BRANCH" --json number --jq .number >/dev/null 2>&1; then
-            echo "PR for $BRANCH already exists; pushed updates to it."
+          # `gh pr view` would match a closed/merged PR from a previous run and
+          # cause us to skip opening a new one, so list open PRs explicitly.
+          open_pr="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$open_pr" ]; then
+            echo "PR #$open_pr for $BRANCH already open; pushed updates to it."
             exit 0
           fi
 
