@@ -234,7 +234,11 @@ def test_apply_host_env_defaults_appends_to_existing_tox_override():
     # ';' is tox's documented TOX_OVERRIDE entry separator (tox splits on it);
     # newlines would be folded into the preceding override's value.
     assert env['TOX_OVERRIDE'] == (
-        'testenv.set_env+=FOO=bar;testenv:lint.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY'
+        'testenv.set_env+=FOO=bar'
+        ';testenv:lint.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY'
+        ';testenv:lint.pass_env+=PY_COLORS'
+        ';testenv:lint.pass_env+=NO_COLOR'
+        ';testenv:lint.pass_env+=FORCE_COLOR'
     )
 
 
