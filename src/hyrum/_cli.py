@@ -60,6 +60,12 @@ _HOST_ENV_DEFAULTS: dict[str, str] = {
     # PyO3 < 0.23 (still pinned by pydantic-core in older charms) refuses to
     # build against Python 3.14 unless the stable-ABI escape hatch is set.
     'PYO3_USE_ABI3_FORWARD_COMPATIBILITY': '1',
+    # Strip ANSI from captured stdout/stderr so the log files are plain
+    # text. tox sets PY_COLORS=1 for its subprocesses, so pytest emits
+    # colour even when its own stdout is a pipe.
+    'PY_COLORS': '0',
+    'NO_COLOR': '1',
+    'FORCE_COLOR': '0',
 }
 
 
