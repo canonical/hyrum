@@ -1,4 +1,5 @@
 Charm Name
+aodh
 apache-guacamole
 apache-guacd
 apache2
@@ -6,6 +7,7 @@ argo-server
 aws-iam
 aws-integrator
 azure-integrator
+barbican
 canal
 canonical-kubernetes-canal
 capsule-k8s
@@ -69,6 +71,7 @@ magnum-dashboard
 mailman3-core
 manila-ganesha
 manila-generic
+masakari-monitors
 mattermost-k8s
 microceph
 minio
@@ -99,11 +102,13 @@ osm-ha
 ovn-central
 ovn-chassis
 ovn-dedicated-chassis
+placement
 portainer
 portainer-agent
 pro-airgapped-server
 prometheus-scrape-target-k8s
 rabbitmq-server
+squid-reverseproxy
 sriov-cni
 sriov-network-device-plugin
 tigera-secure-ee
