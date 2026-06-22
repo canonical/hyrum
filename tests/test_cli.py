@@ -400,7 +400,7 @@ def test_apply_host_env_defaults_sets_pyo3_and_tox_override():
     env: dict[str, str] = {}
     cli._apply_host_env_defaults('unit', env)
     assert env['PYO3_USE_ABI3_FORWARD_COMPATIBILITY'] == '1'
-    assert 'testenv:unit.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY' in env['TOX_OVERRIDE']
+    assert 'testenv:unit.set_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1' in env['TOX_OVERRIDE']
 
 
 def test_apply_host_env_defaults_respects_existing_values():
@@ -416,17 +416,17 @@ def test_apply_host_env_defaults_appends_to_existing_tox_override():
     # newlines would be folded into the preceding override's value.
     assert env['TOX_OVERRIDE'] == (
         'testenv.set_env+=FOO=bar'
-        ';testenv:lint.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY'
-        ';testenv:lint.pass_env+=PY_COLORS'
-        ';testenv:lint.pass_env+=NO_COLOR'
-        ';testenv:lint.pass_env+=FORCE_COLOR'
+        ';testenv:lint.set_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1'
+        ';testenv:lint.set_env+=PY_COLORS=0'
+        ';testenv:lint.set_env+=NO_COLOR=1'
+        ';testenv:lint.set_env+=FORCE_COLOR=0'
     )
 
 
 def test_apply_host_env_defaults_uses_target_in_override():
     env: dict[str, str] = {}
     cli._apply_host_env_defaults('static', env)
-    assert 'testenv:static.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY' in env['TOX_OVERRIDE']
+    assert 'testenv:static.set_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1' in env['TOX_OVERRIDE']
 
 
 def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathlib.Path):
