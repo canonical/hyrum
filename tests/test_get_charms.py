@@ -13,11 +13,13 @@ from hyrum import _cli
 from hyrum import _get_charms as get_charms
 
 
-def _run_get_charms(argv: list[str]) -> int:
+def _run_get_charms(argv: list[str]) -> int | str:
     try:
         _cli.main(['get-charms', *argv])
     except SystemExit as exc:
-        return int(exc.code) if exc.code is not None else 0
+        if exc.code is None:
+            return 0
+        return exc.code if isinstance(exc.code, str) else int(exc.code)
     return 0
 
 
@@ -238,14 +240,11 @@ def test_default_source_returns_none_when_none_exist(tmp_path, monkeypatch):
 # ---- get-charms CLI ---------------------------------------------------------
 
 
-def test_get_charms_reports_error_when_csv_missing(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-):
+def test_get_charms_reports_error_when_csv_missing(tmp_path: pathlib.Path):
     missing = tmp_path / 'does-not-exist.csv'
     rc = _run_get_charms(['--source', str(missing), '--dest', str(tmp_path / 'c')])
-    captured = capsys.readouterr()
-    assert rc != 0
-    assert 'not found' in captured.err
+    assert isinstance(rc, str)
+    assert 'not found' in rc
 
 
 def test_get_charms_creates_dest_and_drives_clone(tmp_path: pathlib.Path, spawner):

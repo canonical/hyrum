@@ -45,13 +45,11 @@ def _configure_logging(level: int) -> None:
     root.setLevel(level)
 
 
-def _resolve_log_level(*, quiet: bool, verbose: bool, verbosity: str | None) -> int:
+def _resolve_log_level(*, quiet: bool, verbosity: str | None) -> int:
     if quiet:
         return logging.WARNING
     if verbosity in ('debug', 'trace'):
         return logging.DEBUG
-    # Brief (default) and verbose both run at INFO; --verbose changes the report shape,
-    # not the log level.
     return logging.INFO
 
 
@@ -227,16 +225,22 @@ def _select_repos(
 
 
 def _positive_int(value: str) -> int:
-    number = int(value)
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f'{value!r} is not a positive integer') from None
     if number < 1:
-        raise argparse.ArgumentTypeError(f'{value} is not a positive integer')
+        raise argparse.ArgumentTypeError(f'{value!r} is not a positive integer')
     return number
 
 
 def _non_negative_int(value: str) -> int:
-    number = int(value)
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f'{value!r} is not a non-negative integer') from None
     if number < 0:
-        raise argparse.ArgumentTypeError(f'{value} is not a non-negative integer')
+        raise argparse.ArgumentTypeError(f'{value!r} is not a non-negative integer')
     return number
 
 
@@ -451,27 +455,21 @@ def _add_get_charms_subparser(
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog='hyrum',
-        description=(
-            'Bulk-run a check across many charm repositories with a dependency swapped out.'
-        ),
-    )
+    description = 'Bulk-run a check across many charm repositories with a dependency swapped out.'
+    parser = argparse.ArgumentParser(prog='hyrum', description=description)
     parser.add_argument('--version', action='version', version=f'hyrum {_version.__version__}')
-    subparsers = parser.add_subparsers(dest='command', metavar='COMMAND')
+    subparsers = parser.add_subparsers(dest='command', metavar='COMMAND', required=True)
     _add_check_subparser(subparsers)
     _add_get_charms_subparser(subparsers)
     return parser
 
 
-def _run_check(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def _run_check(args: argparse.Namespace) -> int:
     charms_dir: pathlib.Path = args.charms_dir or _default_charms_dir()
     if not charms_dir.is_dir():
-        parser.error(f'--charms-dir: {charms_dir} is not a directory.')
+        sys.exit(f'hyrum: error: --charms-dir: {charms_dir} is not a directory.')
 
-    _configure_logging(
-        _resolve_log_level(quiet=args.quiet, verbose=args.verbose, verbosity=args.verbosity)
-    )
+    _configure_logging(_resolve_log_level(quiet=args.quiet, verbosity=args.verbosity))
     if args.host_env_defaults:
         _apply_host_env_defaults(args.target)
 
@@ -534,7 +532,7 @@ def _run_check(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int
     return 0
 
 
-def _run_get_charms(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+def _run_get_charms(args: argparse.Namespace) -> int:
     level = logging.ERROR if args.quiet else logging.INFO
     _configure_logging(level)
 
@@ -543,9 +541,9 @@ def _run_get_charms(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         source = get_charms.find_default_source()
         if source is None:
             candidates = ', '.join(str(p) for p in get_charms.DEFAULT_SOURCE_CANDIDATES)
-            parser.error(f'No charm list at default locations: {candidates}')
+            sys.exit(f'hyrum: error: No charm list at default locations: {candidates}')
     if not source.exists():
-        parser.error(f'Charm list not found: {source}')
+        sys.exit(f'hyrum: error: Charm list not found: {source}')
 
     dest = args.dest or _default_charms_dir()
     dest.mkdir(parents=True, exist_ok=True)
@@ -560,8 +558,4 @@ def main(argv: Sequence[str] | None = None) -> None:
     """Bulk-run a check across many charm repositories with a dependency swapped out."""
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
-    if not getattr(args, 'command', None):
-        parser.error('a command is required (check, get-charms)')
-    rc = args.func(args, parser)
-    if rc:
-        sys.exit(rc)
+    sys.exit(args.func(args))
