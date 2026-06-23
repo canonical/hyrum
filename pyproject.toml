@@ -16,10 +16,7 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
 ]
 dependencies = [
-    "click>=8.1.7",
     "packaging>=24.0",
-    "pyyaml>=6.0",
-    "rich>=13.7",
 ]
 
 [project.scripts]
@@ -41,7 +38,7 @@ packages = ["src/hyrum"]
 lint = [
     "ruff>=0.15.16",
     "codespell>=2.2",
-    "zizmor>=1.11",
+    "zizmor>=1.26",
     "pyright>=1.1.410",
 ]
 unit = [

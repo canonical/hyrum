@@ -1,25 +1,33 @@
-"""Rich-formatted summary of a hyrum run."""
+"""Plain-text summary of a hyrum run.
+
+The summary table follows the Canonical CLI standards: two-space column
+delimiters, upper-case headers, no line decorations, and ANSI colour only
+when stdout is a tty (disabled when ``NO_COLOR`` is set or output is
+redirected).
+"""
 
 from __future__ import annotations
 
 import collections
+import os
 import pathlib
+import sys
 from collections.abc import Iterable
-
-import rich.console
-import rich.markup
-import rich.table
+from typing import TextIO
 
 from hyrum import _pool as pool
 
-_STATUS_STYLES = {
-    'passed': 'green',
-    'failed': 'red',
-    'no_target': 'yellow',
-    'timeout': 'magenta',
-    'patcher_error': 'bright_red',
-    'skipped': 'dim',
+# ANSI SGR codes, used only when the stream is a tty and NO_COLOR is unset.
+_RESET = '\033[0m'
+_STATUS_COLOURS: dict[str, str] = {
+    'passed': '\033[32m',  # green
+    'failed': '\033[31m',  # red
+    'no_target': '\033[33m',  # yellow
+    'timeout': '\033[35m',  # magenta
+    'patcher_error': '\033[91m',  # bright red
+    'skipped': '\033[2m',  # dim
 }
+_BOLD = '\033[1m'
 
 
 def _relative(repo: pathlib.Path, base: pathlib.Path) -> str:
@@ -29,6 +37,45 @@ def _relative(repo: pathlib.Path, base: pathlib.Path) -> str:
         return str(repo)
 
 
+def _use_colour(stream: TextIO) -> bool:
+    if os.environ.get('NO_COLOR'):
+        return False
+    return stream.isatty()
+
+
+def _format_table(
+    rows: list[tuple[str, str, str]],
+    *,
+    headers: tuple[str, str, str] | None,
+    colour_for_first: dict[str, str],
+    use_colour: bool,
+) -> str:
+    raw_rows: list[tuple[str, str, str]] = []
+    if headers is not None:
+        raw_rows.append(headers)
+    raw_rows.extend(rows)
+    widths = [max(len(r[i]) for r in raw_rows) for i in range(3)]
+
+    def render(row: tuple[str, str, str], *, header: bool = False) -> str:
+        status_cell = row[0].ljust(widths[0])
+        count_cell = row[1].rjust(widths[1])
+        pct_cell = row[2].rjust(widths[2])
+        if use_colour and header:
+            status_cell = f'{_BOLD}{status_cell}{_RESET}'
+            count_cell = f'{_BOLD}{count_cell}{_RESET}'
+            pct_cell = f'{_BOLD}{pct_cell}{_RESET}'
+        elif use_colour and row[0] in colour_for_first:
+            colour = colour_for_first[row[0]]
+            status_cell = f'{colour}{status_cell}{_RESET}'
+        return f'{status_cell}  {count_cell}  {pct_cell}'
+
+    lines: list[str] = []
+    if headers is not None:
+        lines.append(render(headers, header=True))
+    lines.extend(render(r) for r in rows)
+    return '\n'.join(lines)
+
+
 def render(
     outcomes: Iterable[pool.Outcome],
     *,
@@ -36,56 +83,66 @@ def render(
     target: str,
     verbose: bool = False,
     no_headers: bool = False,
-    console: rich.console.Console | None = None,
+    stream: TextIO | None = None,
 ) -> None:
-    """Print a Rich tally of ``outcomes`` plus an optional verbose offender list."""
+    """Print a plain-text tally of ``outcomes`` plus an optional verbose offender list."""
     outcomes = list(outcomes)
-    console = console or rich.console.Console()
+    if stream is None:
+        stream = sys.stdout
+    assert stream is not None
+    use_colour = _use_colour(stream)
 
     counts = collections.Counter(o.status for o in outcomes)
     total = len(outcomes)
     ran = sum(counts.get(s, 0) for s in ('passed', 'failed', 'timeout'))
 
-    table = rich.table.Table(
-        title=f'hyrum: {target}',
-        show_lines=False,
-        show_header=not no_headers,
-        header_style='bold',
-    )
-    table.add_column('STATUS')
-    table.add_column('COUNT', justify='right')
-    table.add_column('%', justify='right')
+    title = f'hyrum: {target}'
+    print(f'{_BOLD}{title}{_RESET}' if use_colour else title, file=stream)
+
+    rows: list[tuple[str, str, str]] = []
     for status in pool.OUTCOME_STATUSES:
         count = counts.get(status, 0)
         pct = f'{(count / total * 100):.0f}%' if total else '—'
-        style = _STATUS_STYLES.get(status, '')
-        table.add_row(f'[{style}]{status}[/{style}]' if style else status, str(count), pct)
-    console.print(table)
+        rows.append((status, str(count), pct))
+    table = _format_table(
+        rows,
+        headers=None if no_headers else ('STATUS', 'COUNT', '%'),
+        colour_for_first=_STATUS_COLOURS,
+        use_colour=use_colour,
+    )
+    print(table, file=stream)
 
     if ran:
         passed_n = counts.get('passed', 0)
         pct = (passed_n / ran) * 100
-        console.print(
-            f'[bold]{passed_n}[/bold] of [bold]{ran}[/bold] runs passed '
-            f'([bold]{pct:.0f}%[/bold]); {total - ran} skipped or errored.'
+
+        def emph(text: str) -> str:
+            return f'{_BOLD}{text}{_RESET}' if use_colour else text
+
+        print(
+            f'{emph(str(passed_n))} of {emph(str(ran))} runs passed '
+            f'({emph(f"{pct:.0f}%")}); {total - ran} skipped or errored.',
+            file=stream,
         )
     else:
-        console.print('No runs executed.')
+        print('No runs executed.', file=stream)
 
     if verbose:
         for status in ('failed', 'patcher_error', 'timeout'):
             offenders = [o for o in outcomes if o.status == status]
             if not offenders:
                 continue
-            console.print(f'\n[bold]{status}:[/bold]')
+            heading = f'\n{status}:'
+            print(f'{_BOLD}{heading}{_RESET}' if use_colour else heading, file=stream)
             for outcome in sorted(offenders, key=lambda o: str(o.repo)):
                 detail = outcome.error or outcome.skip_reason or ''
-                trailer = f' — {rich.markup.escape(detail)}' if detail else ''
-                console.print(f'  {_relative(outcome.repo, base)}{trailer}')
+                trailer = f' — {detail}' if detail else ''
+                print(f'  {_relative(outcome.repo, base)}{trailer}', file=stream)
 
         skipped = [o for o in outcomes if o.status == 'skipped']
         if skipped:
-            console.print('\n[bold]skipped:[/bold]')
+            heading = '\nskipped:'
+            print(f'{_BOLD}{heading}{_RESET}' if use_colour else heading, file=stream)
             for outcome in sorted(skipped, key=lambda o: str(o.repo)):
-                reason = rich.markup.escape(outcome.skip_reason or '')
-                console.print(f'  {_relative(outcome.repo, base)} — {reason}')
+                reason = outcome.skip_reason or ''
+                print(f'  {_relative(outcome.repo, base)} — {reason}', file=stream)

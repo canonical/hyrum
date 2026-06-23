@@ -7,11 +7,20 @@ import dataclasses
 import logging
 import pathlib
 
-import click
 import pytest
-from click import testing
 
+from hyrum import _cli
 from hyrum import _get_charms as get_charms
+
+
+def _run_get_charms(argv: list[str]) -> int | str:
+    try:
+        _cli.main(['get-charms', *argv])
+    except SystemExit as exc:
+        if exc.code is None:
+            return 0
+        return exc.code if isinstance(exc.code, str) else int(exc.code)
+    return 0
 
 
 @dataclasses.dataclass
@@ -213,20 +222,19 @@ def test_default_source_prefers_cwd_charms_csv(tmp_path, monkeypatch):
     (tmp_path / 'charms.csv').touch()
     (tmp_path / 'charm-list').mkdir()
     (tmp_path / 'charm-list' / 'charms.csv').touch()
-    assert get_charms._default_source() == pathlib.Path('charms.csv')
+    assert get_charms.find_default_source() == pathlib.Path('charms.csv')
 
 
 def test_default_source_falls_back_to_charm_list(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / 'charm-list').mkdir()
     (tmp_path / 'charm-list' / 'charms.csv').touch()
-    assert get_charms._default_source() == pathlib.Path('charm-list/charms.csv')
+    assert get_charms.find_default_source() == pathlib.Path('charm-list/charms.csv')
 
 
-def test_default_source_raises_when_none_exist(tmp_path, monkeypatch):
+def test_default_source_returns_none_when_none_exist(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(click.UsageError, match='No charm list at default locations'):
-        get_charms._default_source()
+    assert get_charms.find_default_source() is None
 
 
 # ---- get-charms CLI ---------------------------------------------------------
@@ -234,12 +242,9 @@ def test_default_source_raises_when_none_exist(tmp_path, monkeypatch):
 
 def test_get_charms_reports_error_when_csv_missing(tmp_path: pathlib.Path):
     missing = tmp_path / 'does-not-exist.csv'
-    result = testing.CliRunner().invoke(
-        get_charms.get_charms,
-        ['--source', str(missing), '--dest', str(tmp_path / 'c')],
-    )
-    assert result.exit_code != 0
-    assert 'not found' in result.output
+    rc = _run_get_charms(['--source', str(missing), '--dest', str(tmp_path / 'c')])
+    assert isinstance(rc, str)
+    assert 'not found' in rc
 
 
 def test_get_charms_creates_dest_and_drives_clone(tmp_path: pathlib.Path, spawner):
@@ -252,12 +257,9 @@ def test_get_charms_creates_dest_and_drives_clone(tmp_path: pathlib.Path, spawne
     dest = tmp_path / 'dest'
     fake = spawner(FakeProc(returncode=0))
 
-    result = testing.CliRunner().invoke(
-        get_charms.get_charms,
-        ['--source', str(csv_path), '--dest', str(dest)],
-    )
+    rc = _run_get_charms(['--source', str(csv_path), '--dest', str(dest)])
 
-    assert result.exit_code == 0, result.output
+    assert rc == 0
     assert dest.is_dir()
     argv, _ = fake.calls[0]
     assert argv[:2] == ('git', 'clone')

@@ -12,13 +12,10 @@ authentication the calling shell has configured.
 from __future__ import annotations
 
 import asyncio
-import csv
 import logging
 import os
 import pathlib
 import typing
-
-import click
 
 logger = logging.getLogger(__name__)
 
@@ -48,50 +45,12 @@ DEFAULT_SOURCE_CANDIDATES = (
 )
 
 
-def _default_source() -> pathlib.Path:
-    """Return the first existing default candidate, or raise if none exist."""
+def find_default_source() -> pathlib.Path | None:
+    """Return the first existing default candidate, or ``None`` if none exist."""
     for candidate in DEFAULT_SOURCE_CANDIDATES:
         if candidate.exists():
             return candidate
-    candidates = ', '.join(str(p) for p in DEFAULT_SOURCE_CANDIDATES)
-    raise click.UsageError(f'No charm list at default locations: {candidates}')
-
-
-@click.command('get-charms')
-@click.option(
-    '--source',
-    'source',
-    type=click.Path(dir_okay=False, path_type=pathlib.Path),
-    default=_default_source,
-    show_default=' or '.join(str(p) for p in DEFAULT_SOURCE_CANDIDATES),
-    help='Path to the charm list.',
-)
-@click.option(
-    '--dest',
-    'dest',
-    envvar='HYRUM_CHARMS',
-    default=lambda: pathlib.Path('~/.cache/hyrum/charms').expanduser(),
-    show_default='~/.cache/hyrum/charms',
-    type=click.Path(file_okay=False, path_type=pathlib.Path),
-    help='Charms directory to download into. [env: HYRUM_CHARMS]',
-)
-@click.option(
-    '--quiet',
-    is_flag=True,
-    help='Suppress non-error output.',
-)
-def get_charms(source: pathlib.Path, dest: pathlib.Path, quiet: bool) -> None:
-    """Populate the charms directory by cloning or pulling every charm listed in the CSV."""
-    level = logging.ERROR if quiet else logging.INFO
-    logging.basicConfig(level=level, format='%(levelname)s %(name)s: %(message)s')
-
-    if not source.exists():
-        raise click.UsageError(f'Charm list not found: {source}')
-    dest.mkdir(parents=True, exist_ok=True)
-
-    with source.open(newline='', encoding='utf-8') as f:
-        rows: list[CharmRow] = list(csv.DictReader(f))  # type: ignore[arg-type]
-    asyncio.run(process_rows(rows, dest))
+    return None
 
 
 async def process_rows(

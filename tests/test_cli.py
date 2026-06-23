@@ -4,13 +4,20 @@ import os
 import pathlib
 
 import pytest
-from click import testing
 
 from hyrum import _cli as cli
 from hyrum import _runners as runners
 from hyrum._runners import tox
 
 from .conftest import make_charm
+
+
+def _run(argv: list[str]) -> int:
+    try:
+        cli.main(argv)
+    except SystemExit as exc:
+        return int(exc.code) if exc.code is not None else 0
+    return 0
 
 
 @pytest.mark.parametrize(
@@ -78,14 +85,16 @@ def test_parse_ops_source_rejects_garbage():
         cli._parse_ops_source('definitely not a version or url')
 
 
-def test_cli_end_to_end_with_stubbed_runner(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_end_to_end_with_stubbed_runner(
+    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
     """Drives the full CLI: enumerate -> patch -> stub runner -> render."""
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
     make_charm(cache / 'beta', requirements=True)
 
-    async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
+    async def fake_run(self, repo, target):  # noqa: RUF029
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -97,23 +106,21 @@ def test_cli_end_to_end_with_stubbed_runner(monkeypatch, tmp_path: pathlib.Path)
 
     monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
-        [
-            'check',
-            'unit',
-            '--charms-dir',
-            str(cache),
-            '--no-patch',  # skip the real patcher to keep this unit-test pure
-            '--workers',
-            '2',
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert 'passed' in result.output
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',  # skip the real patcher to keep this unit-test pure
+        '--workers',
+        '2',
+    ])
+    captured = capsys.readouterr()
+    assert rc == 0, captured.out + captured.err
+    assert 'passed' in captured.out
 
 
-async def _fail_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
+async def _fail_run(self, repo, target):  # noqa: RUF029
     return runners.RunResult(
         repo=repo,
         runner=self.name,
@@ -131,17 +138,8 @@ def test_cli_exits_nonzero_by_default_on_failure(monkeypatch, tmp_path: pathlib.
 
     monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
-        [
-            'check',
-            'unit',
-            '--charms-dir',
-            str(cache),
-            '--no-patch',
-        ],
-    )
-    assert result.exit_code == 1, result.output
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch'])
+    assert rc == 1
 
 
 def test_cli_no_fail_forces_exit_zero(monkeypatch, tmp_path: pathlib.Path):
@@ -151,21 +149,13 @@ def test_cli_no_fail_forces_exit_zero(monkeypatch, tmp_path: pathlib.Path):
 
     monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
-        [
-            'check',
-            'unit',
-            '--charms-dir',
-            str(cache),
-            '--no-patch',
-            '--no-fail',
-        ],
-    )
-    assert result.exit_code == 0, result.output
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--no-fail'])
+    assert rc == 0
 
 
-def test_cli_quiet_suppresses_report(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_quiet_suppresses_report(
+    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
@@ -182,41 +172,47 @@ def test_cli_quiet_suppresses_report(monkeypatch, tmp_path: pathlib.Path):
 
     monkeypatch.setattr(tox.ToxRunner, 'run', pass_run)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
-        ['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--quiet'],
-    )
-    assert result.exit_code == 0, result.output
-    assert 'passed' not in result.output
-    assert 'hyrum:' not in result.output
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--quiet'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'passed' not in captured.out
+    assert 'hyrum:' not in captured.out
 
 
-def test_cli_quiet_reports_failure_to_stderr(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_quiet_reports_failure_to_stderr(
+    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
 
     monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
-        ['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--quiet'],
-    )
-    assert result.exit_code == 1
-    assert 'did not pass' in result.stderr
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--quiet'])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert 'did not pass' in captured.err
 
 
-def test_cli_verbosity_flags_are_mutually_exclusive(tmp_path: pathlib.Path):
+def test_cli_verbosity_flags_are_mutually_exclusive(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
-        ['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--quiet', '--verbose'],
-    )
-    assert result.exit_code != 0
-    assert 'mutually exclusive' in result.output
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--quiet',
+        '--verbose',
+    ])
+    captured = capsys.readouterr()
+    assert rc != 0
+    assert 'not allowed with argument' in captured.err
 
 
 def test_apply_host_env_defaults_sets_pyo3_and_tox_override():
@@ -256,7 +252,7 @@ def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathli
     monkeypatch.delenv('PYO3_USE_ABI3_FORWARD_COMPATIBILITY', raising=False)
     monkeypatch.delenv('TOX_OVERRIDE', raising=False)
 
-    async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
+    async def fake_run(self, repo, target):  # noqa: RUF029
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -268,17 +264,14 @@ def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathli
 
     monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
 
-    result = testing.CliRunner().invoke(
-        cli.main,
-        [
-            'check',
-            'unit',
-            '--charms-dir',
-            str(cache),
-            '--no-patch',
-            '--no-host-env-defaults',
-        ],
-    )
-    assert result.exit_code == 0, result.output
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--no-host-env-defaults',
+    ])
+    assert rc == 0
     assert 'PYO3_USE_ABI3_FORWARD_COMPATIBILITY' not in os.environ
     assert 'TOX_OVERRIDE' not in os.environ
