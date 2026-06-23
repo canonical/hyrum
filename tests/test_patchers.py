@@ -411,7 +411,7 @@ def test_pyproject_poetry_injects_git_under_dependencies(
     tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
 ):
     # Skip the poetry lock subprocess for unit tests.
-    monkeypatch.setattr('hyrum._patchers.ops_source._run_lock', lambda *a, **kw: None)
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         textwrap.dedent("""\
@@ -436,7 +436,7 @@ def test_pyproject_poetry_injects_git_under_dependencies(
 def test_pyproject_poetry_with_testing_extra(
     tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch
 ):
-    monkeypatch.setattr('hyrum._patchers.ops_source._run_lock', lambda *a, **kw: None)
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         textwrap.dedent("""\
@@ -543,7 +543,7 @@ def test_pyproject_uv_pypi_rewrites_dependency(
 def test_pyproject_poetry_pypi_uses_version_string(
     tmp_path: pathlib.Path, ops_pypi: patchers.OpsSource, monkeypatch
 ):
-    monkeypatch.setattr('hyrum._patchers.ops_source._run_lock', lambda *a, **kw: None)
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         textwrap.dedent("""\
@@ -610,7 +610,7 @@ def test_unrecognised_pyproject_raises(tmp_path: pathlib.Path, ops_main: patcher
 def test_lockfile_snapshots_restored(
     tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
 ):
-    monkeypatch.setattr('hyrum._patchers.ops_source._run_lock', lambda *a, **kw: None)
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         textwrap.dedent("""\
@@ -726,7 +726,7 @@ def test_poetry_lock_wrapped_with_uv_run_when_requires_python_present(
     def fake_lock(repo, cmd, timeout, **kw):
         captured['cmd'] = tuple(cmd)
 
-    monkeypatch.setattr('hyrum._patchers.ops_source._run_lock', fake_lock)
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         textwrap.dedent("""\
@@ -762,7 +762,7 @@ def test_poetry_lock_not_wrapped_when_auto_python_disabled(tmp_path: pathlib.Pat
     def fake_lock(repo, cmd, timeout, **kw):
         captured['cmd'] = tuple(cmd)
 
-    monkeypatch.setattr('hyrum._patchers.ops_source._run_lock', fake_lock)
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         textwrap.dedent("""\
@@ -789,7 +789,7 @@ def test_poetry_lock_not_wrapped_when_no_python_constraint(tmp_path: pathlib.Pat
     def fake_lock(repo, cmd, timeout, **kw):
         captured['cmd'] = tuple(cmd)
 
-    monkeypatch.setattr('hyrum._patchers.ops_source._run_lock', fake_lock)
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         textwrap.dedent("""\
@@ -815,7 +815,7 @@ def test_uv_lock_passes_python_when_requires_python_present(tmp_path: pathlib.Pa
     def fake_lock(repo, cmd, timeout, **kw):
         captured['cmd'] = tuple(cmd)
 
-    monkeypatch.setattr('hyrum._patchers.ops_source._run_lock', fake_lock)
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         textwrap.dedent("""\
@@ -847,7 +847,7 @@ def test_uv_lock_python_reflects_patched_requires_python(tmp_path: pathlib.Path,
     def fake_lock(repo, cmd, timeout, **kw):
         captured['cmd'] = tuple(cmd)
 
-    monkeypatch.setattr('hyrum._patchers.ops_source._run_lock', fake_lock)
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         textwrap.dedent("""\
@@ -875,7 +875,7 @@ def test_uv_lock_unpinned_when_auto_python_disabled(tmp_path: pathlib.Path, monk
     def fake_lock(repo, cmd, timeout, **kw):
         captured['cmd'] = tuple(cmd)
 
-    monkeypatch.setattr('hyrum._patchers.ops_source._run_lock', fake_lock)
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         textwrap.dedent("""\
@@ -903,7 +903,7 @@ def test_uv_lock_unpinned_when_no_python_constraint(tmp_path: pathlib.Path, monk
     def fake_lock(repo, cmd, timeout, **kw):
         captured['cmd'] = tuple(cmd)
 
-    monkeypatch.setattr('hyrum._patchers.ops_source._run_lock', fake_lock)
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         textwrap.dedent("""\
@@ -941,8 +941,10 @@ def test_run_lock_strips_virtual_env(tmp_path: pathlib.Path, monkeypatch):
         return _Result()
 
     monkeypatch.setenv('VIRTUAL_ENV', '/some/venv')
-    monkeypatch.setattr('hyrum._patchers.ops_source.subprocess.run', fake_run)
-    ops_source._run_lock(tmp_path, ('uv', 'lock'), 60)
+    monkeypatch.setattr('hyrum._patchers._common.subprocess.run', fake_run)
+    from hyrum._patchers import _common
+
+    _common.run_lock(tmp_path, ('uv', 'lock'), 60)
     env = captured['env']
     assert isinstance(env, dict)
     assert 'VIRTUAL_ENV' not in env
@@ -955,7 +957,7 @@ def test_lockfile_created_during_patch_is_removed_on_exit(
     def fake_lock(repo, cmd, timeout, **kw):
         (repo / 'uv.lock').write_text('# generated mid-patch\n')
 
-    monkeypatch.setattr('hyrum._patchers.ops_source._run_lock', fake_lock)
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
         textwrap.dedent("""\
