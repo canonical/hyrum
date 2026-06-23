@@ -19,9 +19,12 @@ from hyrum._patchers.base import (
     PatcherError,
     PatcherStack,
 )
+from hyrum._patchers.generic import DepSource, GenericDepPatcher
 from hyrum._patchers.ops_source import OpsSource, OpsSourcePatcher
 
 __all__ = [
+    'DepSource',
+    'GenericDepPatcher',
     'NullPatcher',
     'OpsSource',
     'OpsSourcePatcher',

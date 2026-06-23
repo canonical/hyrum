@@ -85,6 +85,68 @@ def test_parse_ops_source_rejects_garbage():
         cli._parse_ops_source('definitely not a version or url')
 
 
+@pytest.mark.parametrize(
+    ('arg', 'expected'),
+    [
+        (
+            'requests==2.31.0',
+            {'pkg_name': 'requests', 'version': '==2.31.0'},
+        ),
+        (
+            'requests>=1.2,<2',
+            {'pkg_name': 'requests', 'version': '<2,>=1.2'},
+        ),
+        (
+            'requests @ git+https://github.com/psf/requests@main',
+            {
+                'pkg_name': 'requests',
+                'url': 'https://github.com/psf/requests',
+                'branch': 'main',
+            },
+        ),
+        (
+            'requests @ git+https://github.com/psf/requests',
+            {
+                'pkg_name': 'requests',
+                'url': 'https://github.com/psf/requests',
+                'branch': None,
+            },
+        ),
+        (
+            'mylib @ git+https://example.com/repo@dev#subdirectory=pkg',
+            {
+                'pkg_name': 'mylib',
+                'url': 'https://example.com/repo',
+                'branch': 'dev',
+                'subdir': 'pkg',
+            },
+        ),
+    ],
+)
+def test_parse_dep_source(arg: str, expected: dict[str, str | None]):
+    assert cli._parse_dep_source(arg) == expected
+
+
+def test_parse_dep_source_file_url(tmp_path: pathlib.Path):
+    parsed = cli._parse_dep_source(f'mylib @ file://{tmp_path}')
+    assert parsed == {'pkg_name': 'mylib', 'path': str(tmp_path)}
+
+
+def test_parse_dep_source_rejects_bare_name():
+    with pytest.raises(Exception, match='must include a version specifier'):
+        cli._parse_dep_source('requests')
+
+
+def test_parse_dep_source_rejects_unknown_url_scheme():
+    with pytest.raises(Exception, match='unsupported URL scheme'):
+        cli._parse_dep_source('requests @ https://example.com/repo')
+
+
+def test_parse_dep_source_rejects_garbage():
+    with pytest.raises(Exception, match='cannot parse'):
+        cli._parse_dep_source('!!! not a requirement')
+
+
 def test_cli_end_to_end_with_stubbed_runner(
     monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):

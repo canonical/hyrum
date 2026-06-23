@@ -14,6 +14,7 @@ import sys
 import time
 from collections.abc import Sequence
 
+import packaging.requirements
 import packaging.version
 
 from hyrum import _config as config_loader
@@ -141,10 +142,90 @@ def _resolve_path(raw: str) -> str:
     return str(pathlib.Path(raw).expanduser().resolve())
 
 
+_DEP_SUBDIR_RE = re.compile(r'#subdirectory=([^\s#]+)$')
+
+
+def _parse_dep_source(arg: str) -> dict[str, str | None]:
+    """Parse a ``--dep-source`` value into kwargs for :class:`patchers.DepSource`.
+
+    The value is a PEP 508 requirement string. Three forms are recognised:
+
+    - ``<name><specifier>`` — PyPI version pin, e.g. ``requests==2.31.0``,
+      ``requests>=1.2,<2``.
+    - ``<name> @ git+<url>[@<branch>][#subdirectory=<sub>]`` — git source.
+    - ``<name> @ file://<path>`` — local path.
+
+    Extras on the input (``requests[security]==2.31.0``) are not honoured;
+    the patcher preserves whatever extras the charm itself declares.
+    """
+    text = arg.strip()
+    if not text:
+        raise argparse.ArgumentTypeError('--dep-source: empty value')
+
+    try:
+        req = packaging.requirements.Requirement(text)
+    except packaging.requirements.InvalidRequirement as exc:
+        raise argparse.ArgumentTypeError(f'--dep-source: cannot parse {arg!r}: {exc}') from exc
+
+    out: dict[str, str | None] = {'pkg_name': req.name}
+
+    if req.url:
+        url = req.url
+        if url.startswith('file://'):
+            out['path'] = _resolve_path(url.removeprefix('file://'))
+        elif url.startswith('git+'):
+            bare = url.removeprefix('git+')
+            m = _DEP_SUBDIR_RE.search(bare)
+            if m:
+                out['subdir'] = m.group(1)
+                bare = bare[: m.start()]
+            git_url, branch = _split_url_branch(bare)
+            out['url'] = git_url
+            out['branch'] = branch
+        else:
+            raise argparse.ArgumentTypeError(
+                f'--dep-source: unsupported URL scheme in {arg!r} (expected git+... or file://)'
+            )
+        return out
+
+    if str(req.specifier):
+        out['version'] = str(req.specifier)
+        return out
+
+    raise argparse.ArgumentTypeError(
+        f'--dep-source: {arg!r} must include a version specifier (==X.Y.Z), '
+        f'a git+URL, or a file:// path'
+    )
+
+
+def _build_dep_patcher(
+    parsed: dict[str, str | None],
+    *,
+    poetry_executable: str,
+    uv_executable: str,
+    lock_timeout: int,
+) -> patchers.GenericDepPatcher:
+    name = parsed['pkg_name']
+    assert name is not None
+    source = patchers.DepSource(
+        pkg_name=name,
+        version=parsed.get('version'),
+        url=parsed.get('url'),
+        branch=parsed.get('branch'),
+        subdir=parsed.get('subdir'),
+        path=parsed.get('path'),
+        poetry_executable=tuple(poetry_executable.split()),
+        uv_executable=tuple(uv_executable.split()),
+        lock_timeout=lock_timeout,
+    )
+    return patchers.GenericDepPatcher(source)
+
+
 def _build_patcher(
     *,
     no_patch: bool,
     ops_source: dict[str, str | None],
+    dep_sources: Sequence[dict[str, str | None]],
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
@@ -162,7 +243,17 @@ def _build_patcher(
         lock_timeout=lock_timeout,
         auto_python=auto_python,
     )
-    return patchers.PatcherStack([patchers.OpsSourcePatcher(ops)])
+    stack: list[patchers.Patcher] = [patchers.OpsSourcePatcher(ops)]
+    stack.extend(
+        _build_dep_patcher(
+            spec,
+            poetry_executable=poetry_executable,
+            uv_executable=uv_executable,
+            lock_timeout=lock_timeout,
+        )
+        for spec in dep_sources
+    )
+    return patchers.PatcherStack(stack)
 
 
 def _build_runner(
@@ -341,6 +432,19 @@ def _add_check_subparser(
         ),
     )
     parser.add_argument(
+        '--dep-source',
+        dest='dep_sources',
+        action='append',
+        type=_parse_dep_source,
+        default=[],
+        help=(
+            'Swap an arbitrary dependency. PEP 508 form, e.g. '
+            '``requests==2.31.0``, ``requests>=1.2,<2``, '
+            '``requests @ git+https://github.com/psf/requests@main``, or '
+            '``mylib @ file:///abs/path``. May be given multiple times.'
+        ),
+    )
+    parser.add_argument(
         '--poetry-executable',
         default='poetry',
         help='Poetry command, used to regenerate the lockfile after patching. [default: poetry]',
@@ -486,6 +590,7 @@ def _run_check(args: argparse.Namespace) -> int:
     patcher = _build_patcher(
         no_patch=args.no_patch,
         ops_source=args.ops_source,
+        dep_sources=args.dep_sources,
         poetry_executable=args.poetry_executable,
         uv_executable=args.uv_executable,
         lock_timeout=args.lock_timeout,

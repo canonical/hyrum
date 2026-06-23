@@ -137,6 +137,176 @@ def detect_pyproject_flavour(parsed: dict[str, Any], uv_lock_present: bool) -> s
     return 'unknown'
 
 
+def _extras_str(extras: Sequence[str]) -> str:
+    return f'[{",".join(sorted(extras))}]' if extras else ''
+
+
+def _pep508_for_git(url: str, branch: str | None, subdir: str | None) -> str:
+    out = f'git+{url}@{branch}' if branch else f'git+{url}'
+    if subdir:
+        out += f'#subdirectory={subdir}'
+    return out
+
+
+def patch_git_dep(
+    original: str,
+    pkg_name: str,
+    url: str,
+    branch: str | None,
+    subdir: str | None,
+    extras: set[str],
+    flavour: str,
+) -> str:
+    """Inject a single git-source dep for ``pkg_name`` into a pyproject.toml string.
+
+    Strips any existing declaration of the package and rewrites for
+    ``flavour`` (``"pep621"``, ``"uv"``, or ``"poetry"``).
+    """
+    extras_str = _extras_str(sorted(extras))
+    pep508_url = _pep508_for_git(url, branch, subdir)
+
+    if flavour == 'pep621':
+        stripped = strip_dep_declaration(original, pkg_name)
+        pkg_pep508 = f'{pkg_name}{extras_str} @ {pep508_url}'
+        return _inject_pep621(stripped, pkg_pep508)
+
+    if flavour == 'uv':
+        subdir_part = f', subdirectory = "{subdir}"' if subdir else ''
+        branch_part = f', branch = "{branch}"' if branch else ''
+        source_line = f'{pkg_name} = {{ git = "{url}"{branch_part}{subdir_part} }}'
+        return _inject_uv_source(original, source_line)
+
+    if flavour == 'poetry':
+        extras_list = (
+            f', extras = [{", ".join(repr(e) for e in sorted(extras))}]' if extras else ''
+        )
+        subdir_part = f', subdirectory = "{subdir}"' if subdir else ''
+        branch_part = f', branch = "{branch}"' if branch else ''
+        pkg_toml = f'\n{pkg_name} = {{git = "{url}"{branch_part}{subdir_part}{extras_list}}}\n'
+        content = strip_dep_declaration(original, pkg_name)
+        return _inject_poetry(content, pkg_toml)
+
+    raise ValueError(f'unknown flavour: {flavour}')
+
+
+def patch_version_dep(
+    original: str,
+    pkg_name: str,
+    specifier: str,
+    extras: set[str],
+    flavour: str,
+) -> str:
+    """Inject a single PyPI version specifier for ``pkg_name``.
+
+    ``specifier`` is a PEP 440 specifier without the package name —
+    ``"==1.2.3"``, ``">=1.2,<2"``, or ``"~=1.2.3"``. Any pre-existing
+    declaration of ``pkg_name`` (including a ``[tool.uv.sources]`` entry)
+    is removed so the version specifier actually wins.
+    """
+    extras_str = _extras_str(sorted(extras))
+
+    if flavour == 'pep621':
+        stripped = strip_dep_declaration(original, pkg_name)
+        pkg_pep508 = f'{pkg_name}{extras_str}{specifier}'
+        return _inject_pep621(stripped, pkg_pep508)
+
+    if flavour == 'uv':
+        # Drop any [tool.uv.sources] override so the PyPI version wins.
+        stripped = _drop_uv_source(strip_dep_declaration(original, pkg_name), pkg_name)
+        pkg_pep508 = f'{pkg_name}{extras_str}{specifier}'
+        return _inject_pep621(stripped, pkg_pep508)
+
+    if flavour == 'poetry':
+        if extras:
+            extras_repr = ', '.join(repr(e) for e in sorted(extras))
+            rhs = f'{{ version = "{specifier}", extras = [{extras_repr}] }}'
+        else:
+            rhs = f'"{specifier}"'
+        content = strip_dep_declaration(original, pkg_name)
+        return _inject_poetry(content, f'\n{pkg_name} = {rhs}\n')
+
+    raise ValueError(f'unknown flavour: {flavour}')
+
+
+def patch_path_dep(
+    original: str,
+    pkg_name: str,
+    path: str,
+    extras: set[str],
+    flavour: str,
+) -> str:
+    """Inject a single local-path dep for ``pkg_name``.
+
+    ``path`` is an absolute filesystem path. For pep621 it is expressed
+    as a ``file://`` PEP 508 URL; for uv/poetry the native ``path = ...``
+    table form is used.
+    """
+    extras_str = _extras_str(sorted(extras))
+
+    if flavour == 'pep621':
+        stripped = strip_dep_declaration(original, pkg_name)
+        pkg_pep508 = f'{pkg_name}{extras_str} @ file://{path}'
+        return _inject_pep621(stripped, pkg_pep508)
+
+    if flavour == 'uv':
+        source_line = f'{pkg_name} = {{ path = "{path}" }}'
+        return _inject_uv_source(original, source_line)
+
+    if flavour == 'poetry':
+        extras_list = (
+            f', extras = [{", ".join(repr(e) for e in sorted(extras))}]' if extras else ''
+        )
+        pkg_toml = f'\n{pkg_name} = {{path = "{path}"{extras_list}}}\n'
+        content = strip_dep_declaration(original, pkg_name)
+        return _inject_poetry(content, pkg_toml)
+
+    raise ValueError(f'unknown flavour: {flavour}')
+
+
+def _inject_pep621(content: str, pkg_pep508: str) -> str:
+    return content.replace(
+        'dependencies = [',
+        f'dependencies = [\n  "{pkg_pep508}",',
+        1,
+    )
+
+
+def _inject_uv_source(content: str, source_line: str) -> str:
+    if '[tool.uv.sources]' in content:
+        return content.replace('[tool.uv.sources]', f'[tool.uv.sources]\n{source_line}', 1)
+    return content.rstrip('\n') + f'\n\n[tool.uv.sources]\n{source_line}\n'
+
+
+def _inject_poetry(content: str, pkg_toml: str) -> str:
+    return content.replace(
+        '[tool.poetry.dependencies]',
+        f'[tool.poetry.dependencies]{pkg_toml}',
+        1,
+    )
+
+
+def _drop_uv_source(content: str, pkg_name: str) -> str:
+    """Remove a ``pkg = { ... }`` entry from ``[tool.uv.sources]``.
+
+    Conservative: only touches the line immediately matching
+    ``pkg_name = ...`` while we're inside the ``[tool.uv.sources]`` table.
+    """
+    out: list[str] = []
+    in_sources = False
+    section_re = re.compile(r'^\s*\[([^\]]+)\]\s*$')
+    pkg_re = re.compile(rf'^\s*{re.escape(pkg_name)}\s*=')
+    for raw in content.splitlines(keepends=True):
+        header = section_re.match(raw)
+        if header:
+            in_sources = header.group(1).strip() == 'tool.uv.sources'
+            out.append(raw)
+            continue
+        if in_sources and pkg_re.match(raw):
+            continue
+        out.append(raw)
+    return ''.join(out)
+
+
 def run_lock(
     repo: pathlib.Path,
     cmd: Sequence[str],
