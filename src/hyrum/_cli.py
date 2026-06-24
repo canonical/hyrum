@@ -31,14 +31,23 @@ from hyrum._runners import make_runner, tox
 logger = logging.getLogger('hyrum')
 
 
-class _UTCFormatter(logging.Formatter):
+_HOME_PREFIX = os.path.expanduser('~').rstrip('/') + '/'
+
+
+class _HyrumFormatter(logging.Formatter):
     converter = time.gmtime
+
+    def format(self, record: logging.LogRecord) -> str:
+        msg = super().format(record)
+        if _HOME_PREFIX in msg:
+            msg = msg.replace(_HOME_PREFIX, '~/')
+        return msg
 
 
 def _configure_logging(level: int) -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(
-        _UTCFormatter(fmt='%(asctime)s %(levelname)s %(message)s', datefmt='%Y-%m-%dT%H:%M:%SZ')
+        _HyrumFormatter(fmt='%(asctime)s %(levelname)s %(message)s', datefmt='%Y-%m-%dT%H:%M:%SZ')
     )
     root = logging.getLogger()
     root.handlers[:] = [handler]
