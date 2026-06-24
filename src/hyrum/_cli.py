@@ -438,7 +438,7 @@ def _add_check_subparser(
         type=_parse_dep_source,
         default=[],
         help=(
-            'Swap an arbitrary dependency. PEP 508 form, e.g. '
+            'Swap an arbitrary dependency. PEP 508 form, such as '
             '``requests==2.31.0``, ``requests>=1.2,<2``, '
             '``requests @ git+https://github.com/psf/requests@main``, or '
             '``mylib @ file:///abs/path``. May be given multiple times.'
