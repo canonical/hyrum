@@ -60,12 +60,6 @@ _HOST_ENV_DEFAULTS: dict[str, str] = {
     # PyO3 < 0.23 (still pinned by pydantic-core in older charms) refuses to
     # build against Python 3.14 unless the stable-ABI escape hatch is set.
     'PYO3_USE_ABI3_FORWARD_COMPATIBILITY': '1',
-    # Strip ANSI from captured stdout/stderr so the log files are plain
-    # text. tox sets PY_COLORS=1 for its subprocesses, so pytest emits
-    # colour even when its own stdout is a pipe.
-    'PY_COLORS': '0',
-    'NO_COLOR': '1',
-    'FORCE_COLOR': '0',
 }
 
 
@@ -74,18 +68,17 @@ def _apply_host_env_defaults(target: str, env: dict[str, str] | None = None) -> 
 
     Returns ``env`` for testability. Existing values are not overwritten —
     a user who has explicitly set ``PYO3_USE_ABI3_FORWARD_COMPATIBILITY=0``
-    keeps their value. For tox runs we also append ``set_env+=`` entries to
-    ``TOX_OVERRIDE`` so the testenv sees the resolved value; ``pass_env``
-    alone isn't enough for ``PY_COLORS`` because tox itself sets it on the
-    testenv when its own stdout looks colourable. Entries are joined with
-    ``;`` per tox's documented ``TOX_OVERRIDE`` grammar — newlines are not
-    an entry separator and would be folded into the preceding value.
+    keeps their value. For tox runs we also append ``pass_env+=`` entries to
+    ``TOX_OVERRIDE`` so the testenv's install step actually sees the vars;
+    without that, tox's process-isolation strips them. Entries are joined
+    with ``;`` per tox's documented ``TOX_OVERRIDE`` grammar — newlines are
+    not an entry separator and would be folded into the preceding value.
     """
     env = env if env is not None else os.environ  # type: ignore[assignment]
     assert env is not None
     for key, value in _HOST_ENV_DEFAULTS.items():
         env.setdefault(key, value)
-    overrides = [f'testenv:{target}.set_env+={key}={env[key]}' for key in _HOST_ENV_DEFAULTS]
+    overrides = [f'testenv:{target}.pass_env+={key}' for key in _HOST_ENV_DEFAULTS]
     existing = env.get('TOX_OVERRIDE', '').strip().rstrip(';')
     if existing:
         env['TOX_OVERRIDE'] = existing + ';' + ';'.join(overrides)
