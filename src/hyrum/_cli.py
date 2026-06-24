@@ -150,7 +150,7 @@ def _parse_dep_source(arg: str) -> dict[str, str | None]:
 
     The value is a PEP 508 requirement string. Three forms are recognised:
 
-    - ``<name><specifier>`` — PyPI version pin, e.g. ``requests==2.31.0``,
+    - ``<name><specifier>`` — PyPI version pin, such as ``requests==2.31.0``,
       ``requests>=1.2,<2``.
     - ``<name> @ git+<url>[@<branch>][#subdirectory=<sub>]`` — git source.
     - ``<name> @ file://<path>`` — local path.
