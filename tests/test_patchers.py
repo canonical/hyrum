@@ -6,7 +6,7 @@ import textwrap
 import pytest
 
 from hyrum import _patchers as patchers
-from hyrum._patchers import ops_source
+from hyrum._patchers import _common, ops_source
 
 
 @pytest.fixture
@@ -942,8 +942,6 @@ def test_run_lock_strips_virtual_env(tmp_path: pathlib.Path, monkeypatch):
 
     monkeypatch.setenv('VIRTUAL_ENV', '/some/venv')
     monkeypatch.setattr('hyrum._patchers._common.subprocess.run', fake_run)
-    from hyrum._patchers import _common
-
     _common.run_lock(tmp_path, ('uv', 'lock'), 60)
     env = captured['env']
     assert isinstance(env, dict)
