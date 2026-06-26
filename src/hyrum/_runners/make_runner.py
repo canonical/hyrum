@@ -85,6 +85,8 @@ class MakeRunner:
             )
 
         duration = time.monotonic() - started
+        stdout = base.strip_ansi(stdout)
+        stderr = base.strip_ansi(stderr)
         rc = proc.returncode
         if rc == 0:
             status = base.RunStatus.PASSED

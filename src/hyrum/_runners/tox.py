@@ -75,8 +75,8 @@ class ToxRunner:
             status=status,
             returncode=rc,
             duration_s=duration,
-            stdout=stdout,
-            stderr=stderr,
+            stdout=base.strip_ansi(stdout),
+            stderr=base.strip_ansi(stderr),
         )
 
 

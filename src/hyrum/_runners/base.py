@@ -12,9 +12,21 @@ from __future__ import annotations
 import dataclasses
 import enum
 import pathlib
+import re
 import shlex
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
+
+# Matches ANSI CSI escape sequences (the `ESC[…<final>` family pytest and
+# friends emit for colour). tox sets PY_COLORS=1 for its subprocesses and
+# charms hard-code the same in their tox.ini, so we can't reliably disable
+# colour at the source — strip it from the captured bytes instead.
+_ANSI_CSI_RE = re.compile(rb'\x1b\[[0-?]*[ -/]*[@-~]')
+
+
+def strip_ansi(data: bytes) -> bytes:
+    """Remove ANSI CSI escape sequences from captured runner output."""
+    return _ANSI_CSI_RE.sub(b'', data)
 
 
 class RunStatus(enum.StrEnum):
