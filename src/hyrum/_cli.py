@@ -15,7 +15,6 @@ import time
 from collections.abc import Sequence
 
 import packaging.requirements
-import packaging.version
 
 from hyrum import _config as config_loader
 from hyrum import _enumerate as enum_mod
@@ -90,44 +89,10 @@ def _apply_host_env_defaults(target: str, env: dict[str, str] | None = None) -> 
 
 _GITHUB_SHORTHAND_RE = re.compile(r'^([A-Za-z0-9][A-Za-z0-9._-]*):([^\s]+)$')
 _URL_WITH_BRANCH_RE = re.compile(r'^(https?://[^@\s]+)@([^@\s]+)$')
+_PEP503_NAME_RE = re.compile(r'^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$')
 
 
-def _parse_ops_source(arg: str) -> dict[str, str | None]:
-    """Parse ``--ops-source`` into kwargs for :class:`patchers.OpsSource`.
-
-    Accepted forms:
-
-    - ``2.17.0`` — PyPI version (any PEP 440 version specifier).
-    - ``git+<url>[@branch]`` — explicit git URL (the form ``pip`` and ``uv`` print).
-    - ``<url>[@branch]`` — bare ``https://…`` git URL with optional branch.
-    - ``owner:branch`` — GitHub shorthand, expands to
-      ``https://github.com/<owner>/operator`` at the given branch.
-    - ``file://<path>`` or a bare path (``/abs``, ``./rel``, ``~/x``) — local operator checkout.
-    """
-    arg = arg.strip()
-    if not arg:
-        raise argparse.ArgumentTypeError('empty value')
-
-    if arg.startswith('git+'):
-        url, branch = _split_url_branch(arg.removeprefix('git+'))
-        return {'url': url, 'branch': branch}
-    if arg.startswith('file://'):
-        return {'path': _resolve_path(arg.removeprefix('file://'))}
-    if '://' in arg:
-        url, branch = _split_url_branch(arg)
-        return {'url': url, 'branch': branch}
-    if arg.startswith(('/', './', '../', '~')):
-        return {'path': _resolve_path(arg)}
-    m = _GITHUB_SHORTHAND_RE.match(arg)
-    if m and '/' not in m.group(1):
-        return {'url': f'https://github.com/{m.group(1)}/operator', 'branch': m.group(2)}
-    try:
-        packaging.version.Version(arg)
-    except packaging.version.InvalidVersion as exc:
-        raise argparse.ArgumentTypeError(
-            f'cannot parse {arg!r} as a version, URL, owner:branch shorthand, or path'
-        ) from exc
-    return {'version': arg}
+_DEP_SUBDIR_RE = re.compile(r'#subdirectory=([^\s#]+)$')
 
 
 def _split_url_branch(arg: str) -> tuple[str, str | None]:
@@ -142,60 +107,111 @@ def _resolve_path(raw: str) -> str:
     return str(pathlib.Path(raw).expanduser().resolve())
 
 
-_DEP_SUBDIR_RE = re.compile(r'#subdirectory=([^\s#]+)$')
+def _parse_patch_source(rhs: str, *, pkg_name: str) -> dict[str, str | None]:
+    """Parse the source half of ``name @ <source>``.
+
+    Returns a dict containing some of ``url``, ``branch``, ``subdir``, ``path``.
+    """
+    if not rhs:
+        raise argparse.ArgumentTypeError(f'--patch: empty source for {pkg_name!r}')
+    if rhs.startswith('git+'):
+        bare = rhs.removeprefix('git+')
+        subdir: str | None = None
+        m = _DEP_SUBDIR_RE.search(bare)
+        if m:
+            subdir = m.group(1)
+            bare = bare[: m.start()]
+        url, branch = _split_url_branch(bare)
+        out: dict[str, str | None] = {'url': url, 'branch': branch}
+        if subdir is not None:
+            out['subdir'] = subdir
+        return out
+    if rhs.startswith('file://'):
+        return {'path': _resolve_path(rhs.removeprefix('file://'))}
+    if '://' in rhs:
+        url, branch = _split_url_branch(rhs)
+        return {'url': url, 'branch': branch}
+    if rhs.startswith(('/', './', '../', '~')):
+        return {'path': _resolve_path(rhs)}
+    m = _GITHUB_SHORTHAND_RE.match(rhs)
+    if m and '/' not in m.group(1):
+        if pkg_name != 'ops':
+            raise argparse.ArgumentTypeError(
+                f"--patch: owner:branch shorthand is only supported for 'ops' "
+                f'(got package {pkg_name!r}); pass an explicit git+URL'
+            )
+        return {'url': f'https://github.com/{m.group(1)}/operator', 'branch': m.group(2)}
+    raise argparse.ArgumentTypeError(f'--patch: cannot parse source {rhs!r} for {pkg_name!r}')
 
 
-def _parse_dep_source(arg: str) -> dict[str, str | None]:
-    """Parse a ``--dep-source`` value into kwargs for :class:`patchers.DepSource`.
+def _parse_patch(arg: str) -> dict[str, str | None]:
+    """Parse a ``--patch`` value.
 
-    The value is a PEP 508 requirement string. Three forms are recognised:
+    Forms:
 
-    - ``<name><specifier>`` — PyPI version pin, such as ``requests==2.31.0``,
-      ``requests>=1.2,<2``.
+    - ``<name><specifier>`` — PyPI version pin (e.g. ``ops==2.17.0``,
+      ``requests>=1.2,<2``).
     - ``<name> @ git+<url>[@<branch>][#subdirectory=<sub>]`` — git source.
-    - ``<name> @ file://<path>`` — local path.
+    - ``<name> @ <url>[@<branch>]`` — bare git URL.
+    - ``<name> @ file://<path>`` or a bare path (``/abs``, ``~/x``, ``./rel``).
+    - ``ops @ <owner>:<branch>`` — GitHub shorthand; ops-only, expands to
+      ``https://github.com/<owner>/operator``.
 
-    Extras on the input (``requests[security]==2.31.0``) are not honoured;
-    the patcher preserves whatever extras the charm itself declares.
+    Extras on the input are not honoured; the patcher preserves whatever
+    extras the charm itself declares.
     """
     text = arg.strip()
     if not text:
-        raise argparse.ArgumentTypeError('--dep-source: empty value')
+        raise argparse.ArgumentTypeError('--patch: empty value')
+
+    name, sep, rhs = text.partition(' @ ')
+    if sep:
+        pkg_name = name.strip()
+        if not pkg_name:
+            raise argparse.ArgumentTypeError(f'--patch: empty package name in {arg!r}')
+        if not _PEP503_NAME_RE.match(pkg_name):
+            raise argparse.ArgumentTypeError(f'--patch: invalid package name {pkg_name!r}')
+        return {'pkg_name': pkg_name, **_parse_patch_source(rhs.strip(), pkg_name=pkg_name)}
 
     try:
         req = packaging.requirements.Requirement(text)
     except packaging.requirements.InvalidRequirement as exc:
-        raise argparse.ArgumentTypeError(f'--dep-source: cannot parse {arg!r}: {exc}') from exc
+        raise argparse.ArgumentTypeError(f'--patch: cannot parse {arg!r}: {exc}') from exc
+    if not str(req.specifier):
+        raise argparse.ArgumentTypeError(
+            f'--patch: {arg!r} must include a version specifier (==X.Y.Z), '
+            f'a ``@`` source (git+URL, file:// path, owner:branch shorthand), '
+            f'or a bare path'
+        )
+    return {'pkg_name': req.name, 'version': str(req.specifier)}
 
-    out: dict[str, str | None] = {'pkg_name': req.name}
 
-    if req.url:
-        url = req.url
-        if url.startswith('file://'):
-            out['path'] = _resolve_path(url.removeprefix('file://'))
-        elif url.startswith('git+'):
-            bare = url.removeprefix('git+')
-            m = _DEP_SUBDIR_RE.search(bare)
-            if m:
-                out['subdir'] = m.group(1)
-                bare = bare[: m.start()]
-            git_url, branch = _split_url_branch(bare)
-            out['url'] = git_url
-            out['branch'] = branch
-        else:
-            raise argparse.ArgumentTypeError(
-                f'--dep-source: unsupported URL scheme in {arg!r} (expected git+... or file://)'
-            )
-        return out
+_DEFAULT_OPS_PATCH: dict[str, str | None] = {
+    'pkg_name': 'ops',
+    'url': 'https://github.com/canonical/operator',
+    'branch': 'main',
+}
 
-    if str(req.specifier):
-        out['version'] = str(req.specifier)
-        return out
 
-    raise argparse.ArgumentTypeError(
-        f'--dep-source: {arg!r} must include a version specifier (==X.Y.Z), '
-        f'a git+URL, or a file:// path'
+def _build_ops_patcher(
+    parsed: dict[str, str | None],
+    *,
+    poetry_executable: str,
+    uv_executable: str,
+    lock_timeout: int,
+    auto_python: bool,
+) -> patchers.OpsSourcePatcher:
+    ops = patchers.OpsSource(
+        url=parsed.get('url') or 'https://github.com/canonical/operator',
+        branch=parsed.get('branch'),
+        version=parsed.get('version'),
+        path=parsed.get('path'),
+        poetry_executable=tuple(poetry_executable.split()),
+        uv_executable=tuple(uv_executable.split()),
+        lock_timeout=lock_timeout,
+        auto_python=auto_python,
     )
+    return patchers.OpsSourcePatcher(ops)
 
 
 def _build_dep_patcher(
@@ -224,35 +240,38 @@ def _build_dep_patcher(
 def _build_patcher(
     *,
     no_patch: bool,
-    ops_source: dict[str, str | None],
-    dep_sources: Sequence[dict[str, str | None]],
+    patches: Sequence[dict[str, str | None]],
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
     auto_python: bool,
-):
+) -> patchers.Patcher:
     if no_patch:
         return patchers.NullPatcher()
-    ops = patchers.OpsSource(
-        url=ops_source.get('url') or 'https://github.com/canonical/operator',
-        branch=ops_source.get('branch'),
-        version=ops_source.get('version'),
-        path=ops_source.get('path'),
-        poetry_executable=tuple(poetry_executable.split()),
-        uv_executable=tuple(uv_executable.split()),
-        lock_timeout=lock_timeout,
-        auto_python=auto_python,
-    )
-    stack: list[patchers.Patcher] = [patchers.OpsSourcePatcher(ops)]
-    stack.extend(
-        _build_dep_patcher(
-            spec,
-            poetry_executable=poetry_executable,
-            uv_executable=uv_executable,
-            lock_timeout=lock_timeout,
-        )
-        for spec in dep_sources
-    )
+    specs = list(patches) if patches else [_DEFAULT_OPS_PATCH]
+    stack: list[patchers.Patcher] = []
+    for spec in specs:
+        if spec['pkg_name'] == 'ops':
+            stack.append(
+                _build_ops_patcher(
+                    spec,
+                    poetry_executable=poetry_executable,
+                    uv_executable=uv_executable,
+                    lock_timeout=lock_timeout,
+                    auto_python=auto_python,
+                )
+            )
+        else:
+            stack.append(
+                _build_dep_patcher(
+                    spec,
+                    poetry_executable=poetry_executable,
+                    uv_executable=uv_executable,
+                    lock_timeout=lock_timeout,
+                )
+            )
+    if len(stack) == 1:
+        return stack[0]
     return patchers.PatcherStack(stack)
 
 
@@ -418,30 +437,19 @@ def _add_check_subparser(
         help='Skip the dependency-swap; run against whatever the charm already pins.',
     )
     parser.add_argument(
-        '--ops-source',
-        type=_parse_ops_source,
-        default='https://github.com/canonical/operator',
-        help=(
-            'Where to pull ops from. Accepts: a PyPI version (``2.17.0``); a '
-            'git URL with optional ``@branch`` (``https://…/operator@fix/X`` or '
-            '``git+https://…/operator@fix/X``); the GitHub shorthand '
-            '``owner:branch`` (expands to ``https://github.com/<owner>/operator`` '
-            'at that branch); or a local path (``/abs/operator``, ``~/operator``, '
-            '``file:///abs/operator``). '
-            '[default: https://github.com/canonical/operator]'
-        ),
-    )
-    parser.add_argument(
-        '--dep-source',
-        dest='dep_sources',
+        '--patch',
+        dest='patches',
         action='append',
-        type=_parse_dep_source,
+        type=_parse_patch,
         default=[],
         help=(
-            'Swap an arbitrary dependency. PEP 508 form, such as '
+            'Swap a dependency. PEP 508 form, such as ``ops==2.17.0``, '
+            '``ops @ canonical:fix/X`` (ops-only ``owner:branch`` shorthand), '
             '``requests==2.31.0``, ``requests>=1.2,<2``, '
             '``requests @ git+https://github.com/psf/requests@main``, or '
-            '``mylib @ file:///abs/path``. May be given multiple times.'
+            '``mylib @ file:///abs/path``. May be given multiple times. '
+            'If not given (and ``--no-patch`` is not set), defaults to '
+            '``ops @ canonical:main``. Mutually exclusive with ``--no-patch``.'
         ),
     )
     parser.add_argument(
@@ -587,10 +595,17 @@ def _run_check(args: argparse.Namespace) -> int:
     )
     logger.info('Selected %d charm(s); skipping %d up-front.', len(repos), len(skipped))
 
+    if args.no_patch and args.patches:
+        raise SystemExit('--no-patch is mutually exclusive with --patch')
+    seen_pkgs: set[str] = set()
+    for spec in args.patches:
+        name = spec['pkg_name']
+        if name in seen_pkgs:
+            raise SystemExit(f'--patch specified more than once for {name!r}')
+        seen_pkgs.add(name)
     patcher = _build_patcher(
         no_patch=args.no_patch,
-        ops_source=args.ops_source,
-        dep_sources=args.dep_sources,
+        patches=args.patches,
         poetry_executable=args.poetry_executable,
         uv_executable=args.uv_executable,
         lock_timeout=args.lock_timeout,

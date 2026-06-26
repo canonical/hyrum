@@ -94,19 +94,10 @@ def strip_dep_declaration(content: str, pkg_name: str) -> str:
     the name in unrelated ways — table headers, etc. — are left alone).
     """
     out_lines: list[str] = []
-    pep_re = re.compile(rf'^{re.escape(pkg_name)}\s*=')
+    dep_re = re.compile(rf'^{re.escape(pkg_name)}(\s*[=><~\[]|\s|$)')
     for raw in content.splitlines(keepends=True):
         stripped = raw.split('#', 1)[0].strip().strip('"').strip("'")
-        if (
-            stripped == pkg_name
-            or stripped.startswith(f'{pkg_name} ')
-            or stripped.startswith(f'{pkg_name}=')
-            or stripped.startswith(f'{pkg_name}>')
-            or stripped.startswith(f'{pkg_name}<')
-            or stripped.startswith(f'{pkg_name}~')
-            or stripped.startswith(f'{pkg_name}[')
-            or pep_re.match(stripped)
-        ):
+        if dep_re.match(stripped):
             continue
         out_lines.append(raw)
     return ''.join(out_lines)
