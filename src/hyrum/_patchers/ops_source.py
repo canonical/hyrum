@@ -404,6 +404,38 @@ def _strip_ops_declarations(original: str) -> str:
     return ''.join(out_lines)
 
 
+_UV_SOURCES_OPS_LINE_RE = re.compile(r'^(ops|ops-scenario|ops-tracing)\s*=')
+
+
+def _strip_uv_sources_ops_entries(text: str) -> str:
+    """Remove ``ops``/``ops-scenario``/``ops-tracing`` entries from ``[tool.uv.sources]``.
+
+    Makes :func:`_patch_pyproject_uv` idempotent: a previous run (or a sibling
+    process sharing the charm cache) may have left ``ops = { git = … }`` lines
+    behind under ``[tool.uv.sources]``; without this scrub, re-patching produces
+    duplicate TOML keys and ``uv`` fails before any test runs.
+
+    The scrub is scoped to the ``[tool.uv.sources]`` table only — we mustn't
+    touch ``"ops…"`` PEP 508 strings inside ``dependencies = […]`` arrays
+    (which :func:`_rewrite_pep508_ops_strings` has already converted to git
+    URLs).
+    """
+    out_lines: list[str] = []
+    section = ''
+    for raw in text.splitlines(keepends=True):
+        header = _SECTION_HEADER_RE.match(raw)
+        if header:
+            section = header.group(1).strip()
+            out_lines.append(raw)
+            continue
+        if section == 'tool.uv.sources':
+            stripped = raw.split('#', 1)[0].strip()
+            if _UV_SOURCES_OPS_LINE_RE.match(stripped):
+                continue
+        out_lines.append(raw)
+    return ''.join(out_lines)
+
+
 def _strip_companion_declarations(content: str, pkg_name: str) -> str:
     out_lines: list[str] = []
     pep_re = re.compile(rf'^{re.escape(pkg_name)}\s*=')
@@ -630,6 +662,7 @@ def _patch_pyproject_uv(
         companion_direct.append(pkg)
 
     out = _rewrite_pep508_ops_strings(original, ops)
+    out = _strip_uv_sources_ops_entries(out)
 
     block = '\n'.join(source_lines)
     if '[tool.uv.sources]' in out:
