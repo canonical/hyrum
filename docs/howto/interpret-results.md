@@ -11,21 +11,18 @@ After a run, hyrum prints a summary table and an optional verbose offender list.
 ## The summary table
 
 ```text
-                    hyrum: unit
- ┌───────────────┬───────┬──────┐
- │ STATUS        │ COUNT │    % │
- ├───────────────┼───────┼──────┤
- │ passed        │    42 │  70% │
- │ failed        │     5 │   8% │
- │ no_target     │     3 │   5% │
- │ timeout       │     1 │   2% │
- │ patcher_error │     2 │   3% │
- │ skipped       │     7 │  12% │
- └───────────────┴───────┴──────┘
- 42 of 48 runs passed (88%); 12 skipped or errored.
+hyrum: unit
+STATUS         COUNT     %
+passed            42   70%
+failed             5    8%
+no_target          3    5%
+timeout            1    2%
+patcher_error      2    3%
+skipped            7   12%
+42 of 48 runs passed (88%); 12 skipped or errored.
 ```
 
-The percentage column uses the total number of charms (including skipped) as the denominator.
+The percentage column uses the total number of charms (including skipped) as the denominator. The summary line below the table reports the pass rate over charms that were actually run (excluding `skipped` and `no_target`).
 
 ## Status meanings
 
@@ -48,8 +45,9 @@ The percentage column uses the total number of charms (including skipped) as the
 : The charm was excluded before the run began. Common skip reasons:
 : - Matched the `[ignore]` table in `hyrum.toml`.
 : - Did not match the `--repo` regex.
+: - Has no Python source (no `src/` or `lib/` Python).
+: - Is a reactive or classic hooks-based charm (has `src/reactive/` with `src/layer.yaml`, or a `hooks/` directory).
 : - Has neither `tox.ini` nor `Makefile`.
-: - Is a reactive or classic hooks-based charm (has a `reactive/` or `hooks/` directory).
 : - Did not match the `--framework` filter.
 
 ## Get more detail
@@ -57,13 +55,13 @@ The percentage column uses the total number of charms (including skipped) as the
 Use `--verbose` to include the offender list (failed, timed-out, and errored charms) in the printed report:
 
 ```text
-hyrum unit --no-patch --verbose
+hyrum check unit --no-patch --verbose
 ```
 
 Use `--log-dir` to save each charm's full runner output:
 
 ```text
-hyrum unit --no-patch --log-dir ./logs
+hyrum check unit --no-patch --log-dir ./logs
 ```
 
 Then inspect individual log files:
@@ -80,13 +78,13 @@ Not every `failed` result is caused by the change you are testing. Common source
 
 - Flaky tests that fail intermittently.
 - Charms with known pre-existing failures.
-- Charms whose dependencies conflict with the Python version on your machine.
+- Charms whose dependencies conflict with the Python version on your machine. See [Host prerequisites](install) for the build-tool packages that eliminate most of this.
 
 Compare a patched run against a `--no-patch` baseline to distinguish failures introduced by your change from pre-existing failures:
 
 ```text
-hyrum unit --no-patch --log-dir ./baseline
-hyrum unit --ops-source canonical:fix/my-change --log-dir ./patched
+hyrum check unit --no-patch --log-dir ./baseline
+hyrum check unit --patch 'ops @ canonical:fix/my-change' --log-dir ./patched
 ```
 
 Any charm that appears in the `failed` column for the patched run but not the baseline is a genuine regression introduced by your change.

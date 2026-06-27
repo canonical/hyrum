@@ -27,7 +27,7 @@ Each key is a free-form string that names the reason for the exclusion. This str
 
 Each value is a list of charm paths, where each path is one of:
 
-- The path of the charm's directory relative to the cache folder (for example, `kfp-operators/charms/kfp-ui`).
+- The path of the charm's directory relative to the charms directory (for example, `kfp-operators/charms/kfp-ui`).
 - The bare directory name of the charm (the last path component, for example, `kfp-ui`). Hyrum matches by both the full relative path and the bare name.
 
 ### Example

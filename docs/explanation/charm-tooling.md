@@ -12,7 +12,9 @@ This page describes how hyrum relates to the other tools you'll meet around it.
 
 [`ops`](https://github.com/canonical/operator) is the Python framework for writing Juju charms. It provides the charm lifecycle, event dispatch, storage, relations, and the testing harness. Hyrum's primary purpose is to test proposed changes to `ops` against a fleet of charms before the changes are released.
 
-The ops-source patcher (the component that rewrites each charm's dependency declarations) handles the three packaging formats in common use among charms: pip `requirements.txt`, Poetry (`pyproject.toml` with `[tool.poetry]`), and uv (`pyproject.toml` with `[tool.uv]`). It also handles the `ops[testing]` and `ops[tracing]` extras, which pull companion packages from subdirectories of the operator monorepo.
+The ops-source patcher (the component that rewrites each charm's dependency declarations) handles the three packaging formats in common use among charms: pip `requirements.txt`, Poetry (`pyproject.toml` with `[tool.poetry]`), and uv (`pyproject.toml` with `[tool.uv]`), including PEP 621 `[project.optional-dependencies]` and PEP 735 `[dependency-groups]`. It also handles the `ops[testing]` and `ops[tracing]` extras, which pull companion packages from subdirectories of the operator monorepo.
+
+A generic dependency patcher applies the same rewriting logic to any other package via `--patch`, so the same flow can swap a transitive library to a candidate release or a fork without rewriting the runner.
 
 ## Testing frameworks
 

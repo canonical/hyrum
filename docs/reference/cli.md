@@ -1,7 +1,7 @@
 ---
 myst:
   html_meta:
-    description: Complete reference for the hyrum command-line interface, including every option, argument, and exit code.
+    description: Complete reference for the hyrum command-line interface, including every subcommand, option, argument, and exit code.
 ---
 
 # CLI reference
@@ -9,17 +9,26 @@ myst:
 ## Synopsis
 
 ```text
-hyrum [OPTIONS] TARGET
+hyrum [--version] COMMAND ...
+```
+
+Hyrum exposes two subcommands:
+
+- `hyrum check TARGET [OPTIONS]` — run `TARGET` (a tox environment name or make target, for example `unit`, `lint`) across many charm repos.
+- `hyrum get-charms [OPTIONS]` — clone or update every charm listed in a CSV into the charms directory.
+
+## `hyrum check`
+
+```text
+hyrum check [OPTIONS] TARGET
 ```
 
 `TARGET` is the tox environment name or make target to run in each charm (for example, `unit`, `lint`, `fmt`).
 
-## Options
-
 ### Charm selection
 
-`--cache-folder PATH`
-: Folder containing pre-cloned charm repositories.
+`--charms-dir PATH`
+: Directory containing pre-cloned charm repositories.
 : Default: `~/.cache/hyrum/charms`
 : Environment variable: `HYRUM_CHARMS`
 
@@ -66,18 +75,19 @@ hyrum [OPTIONS] TARGET
 
 ### Dependency patching
 
-`--no-patch / --patch`
-: Skip the dependency-swap step entirely. Run charms against whatever dependencies they already pin.
-: Default: `--patch` (when patching, charms are run against the default branch of `--ops-source` unless another ref is supplied)
+`--no-patch`
+: Skip the dependency-swap step entirely. Run charms against whatever dependencies they already pin. Mutually exclusive with `--patch`.
+: Default: off (the default `--patch` of `ops @ canonical:main` applies)
 
-`--ops-source SPEC`
-: Where to pull `ops` from. Accepts several forms:
-: - PyPI version (`2.17.0`, or any PEP 440 version). Companion packages (`ops-scenario`, `ops-tracing`) resolve from PyPI normally.
-: - `git+<url>[@ref]` — explicit git URL (the form `pip` and `uv` print). `ref` is any git ref: branch, tag, or commit SHA.
-: - `<url>[@ref]` — bare `https://…` git URL with optional `@ref`.
-: - `owner:branch` — GitHub shorthand, expands to `https://github.com/<owner>/operator` at that branch.
-: - `file://<path>` or a bare path (`/abs/operator`, `./operator`, `~/operator`) — a local operator checkout.
-: Default: `https://github.com/canonical/operator` (the default branch)
+`--patch SPEC`
+: Swap a dependency. `SPEC` is a PEP 508 requirement. May be given multiple times (once per package). If `--patch` is not given (and `--no-patch` is not set), hyrum applies the default `ops @ canonical:main`. Accepted forms:
+: - `<name>==<version>` (or any PEP 440 specifier) — pin to a PyPI version, for example `ops==2.17.0`, `requests>=1.2,<2`.
+: - `<name> @ git+<url>[@<ref>][#subdirectory=<sub>]` — explicit PEP 508 git source. `<ref>` is any git ref (branch, tag, commit SHA).
+: - `<name> @ <url>[@<ref>]` — bare `https://…` URL with optional `@ref`.
+: - `<name> @ file://<path>`, or a bare path (`/abs`, `./rel`, `~/checkout`) — a local checkout.
+: - `ops @ <owner>:<branch>` — GitHub shorthand for `ops` only; expands to `https://github.com/<owner>/operator` at that branch.
+: When the patched package is `ops`, hyrum also rewrites the `ops[testing]` and `ops[tracing]` companion packages from matching subdirectories of the operator monorepo.
+: Default: `ops @ canonical:main`
 
 `--poetry-executable CMD`
 : Poetry command used to regenerate `poetry.lock` after patching.
@@ -96,10 +106,16 @@ hyrum [OPTIONS] TARGET
 : When enabled, hyrum wraps `poetry lock` with `uv run --python X.Y` so that the lock command runs under an interpreter that satisfies the charm's declared `requires-python`. Requires `uv` on PATH.
 : Default: `--auto-python`
 
+### Host environment
+
+`--host-env-defaults / --no-host-env-defaults`
+: Inject sensible default environment variables (currently `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1`) plus matching `TOX_OVERRIDE` `pass_env+=` entries, so common host build issues are not mis-attributed to the charm. Existing values are preserved. See [Host prerequisites](../howto/install) for the rationale.
+: Default: `--host-env-defaults`
+
 ### Logging and output
 
 `--log-dir PATH`
-: Directory to write per-charm log files. Each file contains the runner's stdout, stderr, and run metadata. File names use the charm's path relative to the cache folder with `/` replaced by `__`.
+: Directory to write per-charm log files. Each file contains the runner's stdout, stderr, and run metadata. File names use the charm's path relative to the charms directory with `/` replaced by `__`.
 : Default: (not set; logs are not written)
 
 `--quiet`
@@ -125,47 +141,89 @@ hyrum [OPTIONS] TARGET
 : Always exit with code 0, even if some charms failed. The summary is still printed.
 : Default: off (exit non-zero on any failure)
 
-### Meta
+## `hyrum get-charms`
+
+```text
+hyrum get-charms [OPTIONS]
+```
+
+Clone every repository listed in a CSV file into the charms directory, or `git pull` it if the directory already exists. Each row in the CSV is one repository; repositories that host multiple charms in subdirectories are cloned once.
+
+### Options
+
+`--source PATH`
+: Path to the charm-list CSV. The expected columns are `Team,Charm Name,Repository,Branch,Source` (additional columns are ignored).
+: Default: `charms.csv` or `charm-list/charms.csv` in the current directory.
+
+`--dest PATH`
+: Directory to clone into.
+: Default: `~/.cache/hyrum/charms`
+: Environment variable: `HYRUM_CHARMS`
+
+`--quiet`
+: Suppress non-error output.
+
+## Top-level options
 
 `--version`
 : Print the installed hyrum version and exit.
 
 `--help`
-: Print the help text and exit.
+: Print the help text and exit. Available on each subcommand as well.
 
 ## Exit codes
 
 | Code | Meaning |
 |------|---------|
-| `0`  | All non-skipped charms passed (or `--no-fail` was set) |
+| `0`  | All non-skipped charms passed (or `--no-fail` was set, or `hyrum get-charms` succeeded) |
 | `1`  | At least one charm resulted in `failed`, `timeout`, or `patcher_error` |
 
 ## Environment variables
 
 `HYRUM_CHARMS`
-: Default value for `--cache-folder`. Overridden by the `--cache-folder` flag.
+: Default charms directory used by both `hyrum check --charms-dir` and `hyrum get-charms --dest`. Overridden by the explicit flag.
+
+`NO_COLOR`
+: When set (to any value), suppresses ANSI colour in the summary table even on a tty.
+
+`TOX_OVERRIDE`
+: Read and appended to by `--host-env-defaults` so that tox `pass_env` entries propagate into the testenv. See [Host prerequisites](../howto/install).
 
 ## Examples
 
 ```text
+# Populate the default charms directory from the bundled CSV:
+hyrum get-charms
+
 # Run tox -e unit with ops swapped to a dev branch, 8 workers:
-hyrum unit --ops-source canonical:fix/my-change --workers 8
+hyrum check unit --patch 'ops @ canonical:fix/my-change' --workers 8
+
+# Pin ops to a specific PyPI release across the fleet:
+hyrum check unit --patch 'ops==2.17.0'
+
+# Swap a non-ops dependency from a git fork:
+hyrum check unit --patch 'requests @ git+https://github.com/psf/requests@main'
+
+# Patch ops *and* another dependency in the same run:
+hyrum check unit \
+    --patch 'ops @ canonical:fix/my-change' \
+    --patch 'requests==2.31.0'
 
 # Run without patching:
-hyrum unit --no-patch
+hyrum check unit --no-patch
 
 # Run only charms that use the Scenario framework:
-hyrum unit --no-patch --framework scenario
+hyrum check unit --no-patch --framework scenario
 
 # Run only charms matching a name pattern:
-hyrum unit --no-patch --repo '^mysql'
+hyrum check unit --no-patch --repo '^mysql'
 
 # Save logs for offline triage:
-hyrum unit --no-patch --log-dir ~/hyrum-logs
+hyrum check unit --no-patch --log-dir ~/hyrum-logs
 
 # Always exit 0 (useful in scripts):
-hyrum unit --no-patch --no-fail
+hyrum check unit --no-patch --no-fail
 
 # Show failed charms inline:
-hyrum unit --no-patch --verbose
+hyrum check unit --no-patch --verbose
 ```

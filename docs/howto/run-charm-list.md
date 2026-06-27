@@ -1,39 +1,38 @@
 ---
 myst:
   html_meta:
-    description: Build a charm cache from the charm-list CSV files and run hyrum across the whole fleet.
+    description: Use hyrum get-charms to populate the charms directory from the bundled CSV, then run hyrum across the whole fleet.
 ---
 
 # How to run against the charm list
 
-The `charm-list/` directory in the hyrum repository contains CSV files listing known charm repositories. Use these to build and maintain a large cache, then run hyrum across the whole fleet.
+The `charm-list/` directory in the hyrum repository contains CSV files listing known charm repositories. Use `hyrum get-charms` to clone or refresh them, then run `hyrum check` across the whole fleet.
 
-## Build the cache
+## Populate the charms directory
 
-Hyrum does not clone charms for you. Clone each charm in the list into your cache folder. Given the CSV format (`Team,Charm Name,Repository,...`), a simple shell loop works:
+Run `hyrum get-charms` from a checkout of the hyrum repository (so it can find `charm-list/charms.csv`), or pass the CSV explicitly:
 
-```bash
-CACHE=~/.cache/hyrum/charms
-mkdir -p "$CACHE"
+```text
+# From a hyrum checkout: picks up charm-list/charms.csv automatically.
+hyrum get-charms
 
-tail -n +2 charm-list/charms.csv | while IFS=, read -r team name repo branch source; do
-    dest="$CACHE/$(basename "$repo")"
-    if [ -d "$dest" ]; then
-        git -C "$dest" pull --ff-only
-    else
-        git clone "$repo" "$dest"
-    fi
-done
+# From anywhere: point at the CSV explicitly.
+hyrum get-charms --source /path/to/charms.csv
+
+# Clone into a non-default directory:
+hyrum get-charms --dest /srv/hyrum-charms
 ```
 
-Adjust the loop to handle the optional `Branch` column if you need non-default branches.
+For each row in the CSV, hyrum clones the repository (shallow) into `<dest>/<repo-name>`, or runs `git pull --ff-only` if the directory is already present. Repositories that host multiple charms in subdirectories are cloned once.
+
+The default destination is `~/.cache/hyrum/charms`, overridable by `HYRUM_CHARMS` or `--dest`. The same default and override apply to `hyrum check --charms-dir`.
 
 ## Run across the full fleet
 
-With the cache populated, run hyrum without any filters:
+With the charms directory populated, run hyrum without any filters:
 
 ```text
-hyrum unit --no-patch --workers 8
+hyrum check unit --no-patch --workers 8
 ```
 
 Increase `--workers` to match your machine's CPU count for faster runs. The default is `1`.
@@ -44,7 +43,7 @@ If you only care about charms that use a particular testing framework, use `--fr
 
 ```text
 # Only charms that use the Scenario testing framework:
-hyrum unit --no-patch --workers 8 --framework scenario
+hyrum check unit --no-patch --workers 8 --framework scenario
 ```
 
 Supported values for `--framework`: `scenario`, `jubilant`.
@@ -55,7 +54,7 @@ Use `--repo` to limit the run to a subset of charms by name:
 
 ```text
 # Only charms whose directory names begin with "mysql":
-hyrum unit --no-patch --workers 4 --repo '^mysql'
+hyrum check unit --no-patch --workers 4 --repo '^mysql'
 ```
 
 ## Save logs for triage
@@ -63,17 +62,17 @@ hyrum unit --no-patch --workers 4 --repo '^mysql'
 Pass `--log-dir` to write per-charm output files:
 
 ```text
-hyrum unit --no-patch --workers 8 --log-dir ~/hyrum-logs/$(date +%Y%m%d)
+hyrum check unit --no-patch --workers 8 --log-dir ~/hyrum-logs/$(date +%Y%m%d)
 ```
 
-Each file is named using the charm's path relative to the cache folder, with `/` replaced by `__`. For example, a monorepo charm at `kfp-operators/charms/kfp-ui` produces `kfp-operators__charms__kfp-ui.log`.
+Each file is named using the charm's path relative to the charms directory, with `/` replaced by `__`. For example, a monorepo charm at `kfp-operators/charms/kfp-ui` produces `kfp-operators__charms__kfp-ui.log`.
 
 ## Keep the exit code clean
 
 By default hyrum exits non-zero if any charm fails. In scripted contexts where you want to collect all output regardless:
 
 ```text
-hyrum unit --no-patch --no-fail
+hyrum check unit --no-patch --no-fail
 echo "Exit code: $?"
 ```
 

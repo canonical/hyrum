@@ -8,25 +8,29 @@ myst:
 
 The ops-source patcher rewrites each charm's dependency declarations so that `ops` is pulled from a git source instead of PyPI. This lets you run the charm fleet against a pre-release `ops` to find breakages before shipping.
 
+For swapping any *other* dependency, see [How to swap a non-ops dependency](swap-other-dependency).
+
 ## Basic usage
 
 Point hyrum at a branch of the `canonical/operator` repository using the `owner:branch` shorthand:
 
 ```text
-hyrum unit --ops-source canonical:fix/my-change --workers 8
+hyrum check unit --patch 'ops @ canonical:fix/my-change' --workers 8
 ```
 
-`--ops-source` accepts several forms:
+`--patch` is a PEP 508 requirement. For `ops`, the accepted forms are:
 
-- `canonical:fix/my-change` — `owner:branch` shorthand, expands to `https://github.com/canonical/operator` at that branch.
-- `https://github.com/canonical/operator@fix/my-change` — bare git URL with optional `@branch` (or tag, commit SHA).
-- `git+https://github.com/canonical/operator@fix/my-change` — explicit PEP 508 form (the one `pip` and `uv` print).
-- `2.17.0` — a PyPI version; companion packages still resolve from PyPI.
-- `~/operator`, `/abs/operator`, or `file:///abs/operator` — a local operator checkout.
+- `ops @ canonical:fix/my-change` — `owner:branch` shorthand (ops-only); expands to `https://github.com/canonical/operator` at that branch.
+- `ops @ https://github.com/canonical/operator@fix/my-change` — bare git URL with optional `@ref` (branch, tag, or commit SHA).
+- `ops @ git+https://github.com/canonical/operator@fix/my-change` — explicit PEP 508 form (the one `pip` and `uv` print).
+- `ops==2.17.0` (or any PEP 440 specifier) — a PyPI version; companion packages still resolve from PyPI.
+- `ops @ ~/operator`, `ops @ /abs/operator`, or `ops @ file:///abs/operator` — a local operator checkout.
+
+If `--patch` is omitted (and `--no-patch` is not set), hyrum defaults to `ops @ canonical:main`. Pass `--patch` to override or `--no-patch` to disable patching entirely.
 
 Hyrum will:
 
-1. Rewrite each charm's `requirements.txt` or `pyproject.toml` to use `ops` from the git source.
+1. Rewrite each charm's `requirements.txt` or `pyproject.toml` so `ops` is pulled from the patched source.
 2. Regenerate the lockfile (`poetry.lock` or `uv.lock`) if one is checked in.
 3. Run the target (`tox -e unit` or `make unit`).
 4. Restore every touched file to its original state when finished.
@@ -36,7 +40,7 @@ Hyrum will:
 To use a branch on a fork rather than the upstream repository:
 
 ```text
-hyrum unit --ops-source your-fork:my-experimental-branch
+hyrum check unit --patch 'ops @ your-fork:my-experimental-branch'
 ```
 
 ## Companion packages
@@ -59,7 +63,7 @@ If regeneration fails (for example, because the charm has an unresolvable depend
 Lockfile regeneration can take a few minutes for large charms. The default timeout is 600 seconds per charm. Adjust it if needed:
 
 ```text
-hyrum unit --ops-source canonical:fix/my-change --lock-timeout 300
+hyrum check unit --patch 'ops @ canonical:fix/my-change' --lock-timeout 300
 ```
 
 ### Use a custom poetry or uv executable
@@ -67,7 +71,7 @@ hyrum unit --ops-source canonical:fix/my-change --lock-timeout 300
 If `poetry` or `uv` is not on your PATH, or if you need a specific version:
 
 ```text
-hyrum unit --ops-source canonical:fix/my-change \
+hyrum check unit --patch 'ops @ canonical:fix/my-change' \
     --poetry-executable "uvx poetry" \
     --uv-executable "uvx uv"
 ```
@@ -79,7 +83,7 @@ Some charms declare a `requires-python` that is higher than the Python you are r
 Disable this behaviour if it causes problems:
 
 ```text
-hyrum unit --ops-source canonical:fix/my-change --no-auto-python
+hyrum check unit --patch 'ops @ canonical:fix/my-change' --no-auto-python
 ```
 
 ## Run without patching
@@ -87,7 +91,7 @@ hyrum unit --ops-source canonical:fix/my-change --no-auto-python
 Run a baseline first, to see which charms pass before the patch is applied:
 
 ```text
-hyrum unit --no-patch --workers 8
+hyrum check unit --no-patch --workers 8
 ```
 
 This skips the dependency rewrite entirely and runs against whatever each charm already pins.
