@@ -135,12 +135,15 @@ def _parse_patch_source(rhs: str, *, pkg_name: str) -> dict[str, str | None]:
         return {'path': _resolve_path(rhs)}
     m = _GITHUB_SHORTHAND_RE.match(rhs)
     if m and '/' not in m.group(1):
-        if pkg_name != 'ops':
-            raise argparse.ArgumentTypeError(
-                f"--patch: owner:branch shorthand is only supported for 'ops' "
-                f'(got package {pkg_name!r}); pass an explicit git+URL'
-            )
-        return {'url': f'https://github.com/{m.group(1)}/operator', 'branch': m.group(2)}
+        owner, branch = m.group(1), m.group(2)
+        if pkg_name == 'ops':
+            return {'url': f'https://github.com/{owner}/operator', 'branch': branch}
+        if pkg_name.startswith('charmlibs-'):
+            return {'url': f'https://github.com/{owner}/charmlibs', 'branch': branch}
+        raise argparse.ArgumentTypeError(
+            f"--patch: owner:branch shorthand is only supported for 'ops' and "
+            f'charmlibs-* (got package {pkg_name!r}); pass an explicit git+URL'
+        )
     raise argparse.ArgumentTypeError(f'--patch: cannot parse source {rhs!r} for {pkg_name!r}')
 
 
@@ -154,8 +157,11 @@ def _parse_patch(arg: str) -> dict[str, str | None]:
     - ``<name> @ git+<url>[@<branch>][#subdirectory=<sub>]`` — git source.
     - ``<name> @ <url>[@<branch>]`` — bare git URL.
     - ``<name> @ file://<path>`` or a bare path (``/abs``, ``~/x``, ``./rel``).
-    - ``ops @ <owner>:<branch>`` — GitHub shorthand; ops-only, expands to
+    - ``ops @ <owner>:<branch>`` — GitHub shorthand for ops, expands to
       ``https://github.com/<owner>/operator``.
+    - ``charmlibs-<name> @ <owner>:<branch>`` — GitHub shorthand for a
+      charmlib, expands to ``https://github.com/<owner>/charmlibs``. The
+      subdirectory is derived from the package name.
 
     Extras on the input are not honoured; the patcher preserves whatever
     extras the charm itself declares.
@@ -237,60 +243,40 @@ def _build_dep_patcher(
     return patchers.GenericDepPatcher(source)
 
 
-def _parse_charmlib_source(
-    spec: str,
+def _build_charmlib_patcher(
+    parsed: dict[str, str | None],
     *,
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
-) -> patchers.CharmlibSource:
-    """Parse a ``--charmlib-source`` value into a :class:`CharmlibSource`.
-
-    Three forms::
-
-        <name>@<branch>               canonical/charmlibs, given branch
-        <name>=<owner>:<branch>       fork https://github.com/<owner>/charmlibs
-        <name>=<url>@<branch>         explicit URL
-    """
-    if '=' in spec:
-        name_part, source_part = spec.split('=', 1)
-        if source_part.startswith('http://') or source_part.startswith('https://'):
-            url, _, branch = source_part.rpartition('@')
-            if not url:
-                raise argparse.ArgumentTypeError(
-                    f'--charmlib-source: explicit-URL form requires @<branch>: {spec!r}'
-                )
-        else:
-            owner, _, branch = source_part.partition(':')
-            if not branch:
-                raise argparse.ArgumentTypeError(
-                    f'--charmlib-source: owner form requires <owner>:<branch>: {spec!r}'
-                )
-            url = f'https://github.com/{owner}/charmlibs'
-    elif '@' in spec:
-        name_part, _, branch = spec.partition('@')
-        url = 'https://github.com/canonical/charmlibs'
-    else:
+) -> patchers.CharmlibPatcher:
+    name = parsed['pkg_name']
+    assert name is not None
+    if parsed.get('path') is not None:
         raise argparse.ArgumentTypeError(
-            f'--charmlib-source: expected <name>@<branch>, <name>=<owner>:<branch>, or '
-            f'<name>=<url>@<branch>; got {spec!r}'
+            f'--patch: charmlibs deps must be patched from a git source, '
+            f'not a local path: {name!r}'
         )
-
-    return patchers.CharmlibSource(
-        pkg_name=name_part,
-        url=url,
-        branch=branch,
+    if parsed.get('version') is not None:
+        raise argparse.ArgumentTypeError(
+            f'--patch: charmlibs deps must be patched from a git source, '
+            f'not a version pin: {name!r}'
+        )
+    source = patchers.CharmlibSource(
+        pkg_name=name,
+        url=parsed.get('url') or 'https://github.com/canonical/charmlibs',
+        branch=parsed.get('branch'),
         poetry_executable=tuple(poetry_executable.split()),
         uv_executable=tuple(uv_executable.split()),
         lock_timeout=lock_timeout,
     )
+    return patchers.CharmlibPatcher(source)
 
 
 def _build_patcher(
     *,
     no_patch: bool,
     patches: Sequence[dict[str, str | None]],
-    charmlib_sources: Sequence[str] = (),
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
@@ -301,7 +287,9 @@ def _build_patcher(
     specs = list(patches) if patches else [_DEFAULT_OPS_PATCH]
     stack: list[patchers.Patcher] = []
     for spec in specs:
-        if spec['pkg_name'] == 'ops':
+        pkg_name = spec['pkg_name']
+        assert pkg_name is not None
+        if pkg_name == 'ops':
             stack.append(
                 _build_ops_patcher(
                     spec,
@@ -309,6 +297,15 @@ def _build_patcher(
                     uv_executable=uv_executable,
                     lock_timeout=lock_timeout,
                     auto_python=auto_python,
+                )
+            )
+        elif pkg_name.startswith('charmlibs-'):
+            stack.append(
+                _build_charmlib_patcher(
+                    spec,
+                    poetry_executable=poetry_executable,
+                    uv_executable=uv_executable,
+                    lock_timeout=lock_timeout,
                 )
             )
         else:
@@ -320,14 +317,6 @@ def _build_patcher(
                     lock_timeout=lock_timeout,
                 )
             )
-    for raw in charmlib_sources:
-        src = _parse_charmlib_source(
-            raw,
-            poetry_executable=poetry_executable,
-            uv_executable=uv_executable,
-            lock_timeout=lock_timeout,
-        )
-        stack.append(patchers.CharmlibPatcher(src))
     if len(stack) == 1:
         return stack[0]
     return patchers.PatcherStack(stack)
@@ -502,25 +491,14 @@ def _add_check_subparser(
         default=[],
         help=(
             'Swap a dependency. PEP 508 form, such as ``ops==2.17.0``, '
-            '``ops @ canonical:fix/X`` (ops-only ``owner:branch`` shorthand), '
-            '``requests==2.31.0``, ``requests>=1.2,<2``, '
-            '``requests @ git+https://github.com/psf/requests@main``, or '
-            '``mylib @ file:///abs/path``. May be given multiple times. '
+            '``ops @ canonical:fix/X`` (``owner:branch`` shorthand for ops or '
+            'charmlibs-*), ``requests==2.31.0``, ``requests>=1.2,<2``, '
+            '``requests @ git+https://github.com/psf/requests@main``, '
+            '``mylib @ file:///abs/path``, or '
+            '``charmlibs-nginx-k8s @ canonical:main`` to point a charmlib at '
+            'a branch of canonical/charmlibs. May be given multiple times. '
             'If not given (and ``--no-patch`` is not set), defaults to '
             '``ops @ canonical:main``. Mutually exclusive with ``--no-patch``.'
-        ),
-    )
-    parser.add_argument(
-        '--charmlib-source',
-        dest='charmlib_sources',
-        action='append',
-        default=[],
-        metavar='SPEC',
-        help=(
-            'Swap a charmlib dep for a git source. SPEC forms: '
-            '<name>@<branch>, <name>=<owner>:<branch>, <name>=<url>@<branch>. '
-            'Repeatable. <name> is the short (nginx-k8s) or full PyPI name '
-            '(charmlibs-nginx-k8s).'
         ),
     )
     parser.add_argument(
@@ -677,7 +655,6 @@ def _run_check(args: argparse.Namespace) -> int:
     patcher = _build_patcher(
         no_patch=args.no_patch,
         patches=args.patches,
-        charmlib_sources=tuple(args.charmlib_sources),
         poetry_executable=args.poetry_executable,
         uv_executable=args.uv_executable,
         lock_timeout=args.lock_timeout,
