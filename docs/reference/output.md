@@ -1,7 +1,7 @@
 ---
 myst:
   html_meta:
-    description: Reference for hyrum's outcome statuses, summary table, verbose offender list, and exit codes.
+    description: Reference for hyrum's outcome statuses, summary table, verbose offender list, log files, and exit codes.
 ---
 
 # Output reference
@@ -17,25 +17,22 @@ Each charm produces exactly one outcome. The possible statuses are:
 | `no_target`     | The requested tox environment or make target does not exist in this charm. Not counted as a failure. |
 | `timeout`       | The runner was killed after `--timeout` seconds. |
 | `patcher_error` | The dependency swap could not be applied. This is distinct from a runner failure: it points to an infrastructure problem, not a charm test failure. |
-| `skipped`       | Excluded before the run began (by `--repo`, `--framework`, `[ignore]` in `hyrum.toml`, or because the charm has neither `tox.ini` nor `Makefile`). |
+| `skipped`       | Excluded before the run began (by `--repo`, `--framework`, `[ignore]` in `hyrum.toml`, no Python source, a legacy reactive/hooks layout, or no `tox.ini`/`Makefile`). |
 
 ## Summary table
 
-After all charms have been processed, hyrum prints a Rich-formatted table:
+After all charms have been processed, hyrum prints a plain-text tally. Columns are separated by two spaces; ANSI colour is applied to status names when stdout is a tty and `NO_COLOR` is unset.
 
 ```text
-                  hyrum: unit
- ┌───────────────┬───────┬──────┐
- │ STATUS        │ COUNT │    % │
- ├───────────────┼───────┼──────┤
- │ passed        │    42 │  70% │
- │ failed        │     5 │   8% │
- │ no_target     │     3 │   5% │
- │ timeout       │     1 │   2% │
- │ patcher_error │     2 │   3% │
- │ skipped       │     7 │  12% │
- └───────────────┴───────┴──────┘
- 42 of 48 runs passed (88%); 12 skipped or errored.
+hyrum: unit
+STATUS         COUNT     %
+passed            42   70%
+failed             5    8%
+no_target          3    5%
+timeout            1    2%
+patcher_error      2    3%
+skipped            7   12%
+42 of 48 runs passed (88%); 12 skipped or errored.
 ```
 
 The `%` column uses the total number of charms (including skipped) as the denominator. The summary line below the table reports the pass rate over charms that were actually run (excluding `skipped` and `no_target`).
@@ -61,12 +58,12 @@ skipped:
 
 ## Log files
 
-When `--log-dir PATH` is set, hyrum writes one log file per charm. Each file name is constructed from the charm's path relative to the cache folder, with `/` replaced by `__`:
+When `--log-dir PATH` is set, hyrum writes one log file per charm. Each file name is constructed from the charm's path relative to the charms directory, with `/` replaced by `__`:
 
-| Charm path (relative to cache) | Log file name |
-|-------------------------------|---------------|
-| `charm-apt-mirror`            | `charm-apt-mirror.log` |
-| `kfp-operators/charms/kfp-ui` | `kfp-operators__charms__kfp-ui.log` |
+| Charm path (relative to charms directory) | Log file name |
+|-------------------------------------------|---------------|
+| `charm-apt-mirror`                        | `charm-apt-mirror.log` |
+| `kfp-operators/charms/kfp-ui`             | `kfp-operators__charms__kfp-ui.log` |
 
 ### Successful run log format
 

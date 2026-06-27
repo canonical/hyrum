@@ -19,7 +19,7 @@ pre-existing  = ["opensearch-operator"]
 manual        = ["my-internal-charm"]
 ```
 
-Each key under `[ignore]` is a free-form category name. The values are lists of charm paths, relative to the cache folder. The category name appears in the run output as the skip reason, so choose names that explain *why* the charm is excluded.
+Each key under `[ignore]` is a free-form category name. The values are lists of charm paths, relative to the charms directory. The category name appears in the run output as the skip reason, so choose names that explain *why* the charm is excluded.
 
 ## Category naming conventions
 
@@ -35,7 +35,7 @@ Good category names make the output self-documenting:
 Use `--config` to use a config file with a non-default path or name:
 
 ```text
-hyrum unit --no-patch --config ~/configs/hyrum-baseline.toml
+hyrum check unit --no-patch --config ~/configs/hyrum-baseline.toml
 ```
 
 ## Verify which charms are being skipped
@@ -43,14 +43,14 @@ hyrum unit --no-patch --config ~/configs/hyrum-baseline.toml
 Run with `--verbose` to see the full list of skipped charms and their reasons:
 
 ```text
-hyrum unit --no-patch --verbose
+hyrum check unit --no-patch --verbose
 ```
 
 Skipped charms appear at the bottom of the verbose output with the category name from your `hyrum.toml` as the reason, for example: `charm-apt-mirror — ignored (expensive)`.
 
 ## Paths in monorepos
 
-For charms that live inside a monorepo (for example, `kfp-operators/charms/kfp-ui`), use the path relative to the cache folder:
+For charms that live inside a monorepo (for example, `kfp-operators/charms/kfp-ui`), use the path relative to the charms directory:
 
 ```toml
 [ignore]

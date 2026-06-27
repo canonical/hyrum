@@ -10,14 +10,14 @@ To check one specific charm, for a quick sanity-check or to debug a failure, use
 
 ## Filter by name
 
-`--repo` accepts a case-insensitive regular expression matched against the directory name of each charm in the cache:
+`--repo` accepts a case-insensitive regular expression matched against the directory name of each charm in the charms directory:
 
 ```text
 # Match any charm whose directory name contains "apt":
-hyrum unit --no-patch --repo apt
+hyrum check unit --no-patch --repo apt
 
 # Match a charm with an exact name:
-hyrum unit --no-patch --repo '^charm-apt-mirror$'
+hyrum check unit --no-patch --repo '^charm-apt-mirror$'
 ```
 
 ## Limit by count
@@ -26,7 +26,7 @@ hyrum unit --no-patch --repo '^charm-apt-mirror$'
 
 ```text
 # Process only the first charm found:
-hyrum unit --no-patch --limit 1
+hyrum check unit --no-patch --limit 1
 ```
 
 ## Combine filters
@@ -34,22 +34,22 @@ hyrum unit --no-patch --limit 1
 You can combine `--repo` and `--limit`:
 
 ```text
-hyrum unit --no-patch --repo apt --limit 1
+hyrum check unit --no-patch --repo apt --limit 1
 ```
 
-## Specify a different cache folder
+## Use a different charms directory
 
-If the charm you want is not in the default cache (`~/.cache/hyrum/charms`), point hyrum at the directory containing it:
+If the charm you want is not in the default charms directory (`~/.cache/hyrum/charms`), point hyrum at the directory containing it:
 
 ```text
-hyrum unit --no-patch --cache-folder /path/to/my/charms --repo my-charm
+hyrum check unit --no-patch --charms-dir /path/to/my/charms --repo my-charm
 ```
 
 Or set the `HYRUM_CHARMS` environment variable instead of passing the flag every time:
 
 ```text
 export HYRUM_CHARMS=/path/to/my/charms
-hyrum unit --no-patch --repo my-charm
+hyrum check unit --no-patch --repo my-charm
 ```
 
 ## Keep the output for inspection
@@ -57,7 +57,7 @@ hyrum unit --no-patch --repo my-charm
 Add `--log-dir` to save the runner's stdout and stderr to a file:
 
 ```text
-hyrum unit --no-patch --repo my-charm --log-dir ./logs
+hyrum check unit --no-patch --repo my-charm --log-dir ./logs
 ```
 
 The log file `logs/my-charm.log` will contain the full output for offline inspection.

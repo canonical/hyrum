@@ -22,8 +22,8 @@ The `ops` library (from `canonical/operator`) is the foundation for all Juju cha
 
 Hyrum automates the process of finding breakages before shipping a change. Given:
 
-1. A directory of pre-cloned charm repositories.
-2. A proposed change to `ops` (expressed as a git branch).
+1. A directory of pre-cloned charm repositories (populate it manually or with `hyrum get-charms`).
+2. A proposed change to `ops` (expressed as a git branch, tag, commit, PyPI version, or local checkout).
 
 It rewrites each charm's dependency declarations to point `ops` at the proposed branch, regenerates lockfiles, runs a check (typically `tox -e unit`) across every charm concurrently, and reports which charms passed and which failed.
 
@@ -32,7 +32,7 @@ The result is a compatibility matrix: *this proposed change breaks N charms, her
 ## What hyrum does not do
 
 - It does not decide what to *do* about failures. That is a human judgment call.
-- It does not clone charms; the cache folder is pre-populated externally.
+- It does not curate the charm collection. `hyrum get-charms` will populate the charms directory from a CSV, but deciding *which* charms appear in that CSV is a separate concern.
 - It does not run integration tests, only lint and unit tests, which run without a live Juju model.
 - It does not guarantee that passing tests mean the charm works correctly under the new `ops`. Tests only cover what they cover.
 
@@ -42,10 +42,10 @@ Because some charms have pre-existing test failures unrelated to any change, a b
 
 ```text
 # Baseline: how many charms fail on their own pinned deps:
-hyrum unit --no-patch --log-dir baseline/
+hyrum check unit --no-patch --log-dir baseline/
 
 # Patched: how many fail with the proposed change:
-hyrum unit --ops-source canonical:fix/my-change --log-dir patched/
+hyrum check unit --patch 'ops @ canonical:fix/my-change' --log-dir patched/
 ```
 
 Charms that appear as `failed` in the patched run but not in the baseline are the set of regressions introduced by the change.

@@ -23,12 +23,14 @@ uv tool install hyrum
 ## Quick start
 
 ```text
-# Run tox -e unit across every charm in ~/.cache/hyrum/charms,
-# with ops swapped to a development branch:
-hyrum unit --ops-source canonical:fix/my-change --workers 8
+# Populate ~/.cache/hyrum/charms from the bundled charm list:
+hyrum get-charms
+
+# Run tox -e unit across every charm, with ops swapped to a development branch:
+hyrum check unit --patch 'ops @ canonical:fix/my-change' --workers 8
 
 # Run without any dependency swap (test charms as they are pinned):
-hyrum unit --no-patch
+hyrum check unit --no-patch
 ```
 
 ## In this documentation
@@ -36,7 +38,7 @@ hyrum unit --no-patch
 ::::{grid} 1 1 2 2
 
 :::{grid-item-card} [Tutorial](tutorial/index)
-A hands-on walkthrough: set up a cache folder, run hyrum, and read the report.
+A hands-on walkthrough: populate a charms directory, run hyrum, and read the report.
 :::
 
 :::{grid-item-card} [How-to guides](howto/index)
