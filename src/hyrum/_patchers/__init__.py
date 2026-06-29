@@ -22,11 +22,14 @@ from hyrum._patchers.base import (
     PatcherError,
     PatcherStack,
 )
+from hyrum._patchers.charmlib_source import CharmlibPatcher, CharmlibSource
 from hyrum._patchers.generic import DepSource, GenericDepPatcher
 from hyrum._patchers.ops_source import OpsSource, OpsSourcePatcher
 from hyrum._patchers.vendored_lib import VendoredLibPatcher, VendoredLibSwap
 
 __all__ = [
+    'CharmlibPatcher',
+    'CharmlibSource',
     'DepSource',
     'GenericDepPatcher',
     'NullPatcher',
