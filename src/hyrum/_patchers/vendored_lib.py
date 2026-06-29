@@ -99,7 +99,7 @@ class VendoredLibPatcher:
         """Apply the swap to ``repo``; restore every touched file on exit."""
         vendored = repo / self.swap.vendored_relpath
         if not vendored.exists():
-            raise base.PatcherError(f'{repo}: vendored library {vendored} not found')
+            raise base.PatcherSkip(f'{repo}: vendored library {vendored} not found')
 
         sources = _collect_python_sources(repo)
         py_snapshots: dict[pathlib.Path, str] = {p: p.read_text() for p in sources}
@@ -123,7 +123,7 @@ class VendoredLibPatcher:
                 if stripped != charmcraft_snapshot:
                     charmcraft.write_text(stripped)
 
-            with GenericDepPatcher(self.swap.source).apply(repo):
+            with GenericDepPatcher(self.swap.source, skip_if_absent=False).apply(repo):
                 yield
         finally:
             for path, original in py_snapshots.items():

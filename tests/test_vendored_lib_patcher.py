@@ -204,10 +204,10 @@ def test_new_module_override(tmp_path: pathlib.Path):
 # ---- errors ------------------------------------------------------------------
 
 
-def test_missing_vendored_file_raises(tmp_path: pathlib.Path):
+def test_missing_vendored_file_skips(tmp_path: pathlib.Path):
     (tmp_path / 'pyproject.toml').write_text(_PYPROJECT)
     with (
-        pytest.raises(patchers.PatcherError, match='vendored library'),
+        pytest.raises(patchers.PatcherSkip, match='vendored library'),
         patchers.VendoredLibPatcher(_swap()).apply(tmp_path),
     ):
         pass

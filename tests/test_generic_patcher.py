@@ -198,10 +198,22 @@ def test_extras_preserved_on_version_swap(tmp_path: pathlib.Path):
 # ---- errors ------------------------------------------------------------------
 
 
-def test_missing_pyproject_raises(tmp_path: pathlib.Path):
+def test_missing_pyproject_skips(tmp_path: pathlib.Path):
     source = patchers.DepSource(pkg_name='requests', version='==1')
     with (
-        pytest.raises(patchers.PatcherError, match=r'no pyproject\.toml'),
+        pytest.raises(patchers.PatcherSkip, match=r'not a dependency'),
+        patchers.GenericDepPatcher(source).apply(tmp_path),
+    ):
+        pass
+
+
+def test_dep_not_declared_skips(tmp_path: pathlib.Path):
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname = "x"\nversion = "0"\ndependencies = ["click"]\n'
+    )
+    source = patchers.DepSource(pkg_name='requests', version='==1')
+    with (
+        pytest.raises(patchers.PatcherSkip, match=r'not a declared dependency'),
         patchers.GenericDepPatcher(source).apply(tmp_path),
     ):
         pass

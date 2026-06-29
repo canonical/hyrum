@@ -29,6 +29,7 @@ from hyrum._patchers._common import (
     patch_git_dep,
     patch_path_dep,
     patch_version_dep,
+    pkg_is_declared,
     restore,
     run_lock,
     snapshot,
@@ -77,16 +78,28 @@ class DepSource:
 
 
 class GenericDepPatcher:
-    """Point a charm at a chosen source for a single dependency."""
+    """Point a charm at a chosen source for a single dependency.
 
-    def __init__(self, source: DepSource):
+    By default, raises :class:`base.PatcherSkip` when the charm doesn't
+    declare the dependency — the swap is a no-op. Set
+    ``skip_if_absent=False`` to inject the dependency instead (used by
+    :class:`VendoredLibPatcher`, which is replacing a vendored library
+    with a fresh PyPI dep that the charm didn't previously have).
+    """
+
+    def __init__(self, source: DepSource, *, skip_if_absent: bool = True):
         self.source = source
+        self.skip_if_absent = skip_if_absent
 
     @contextlib.contextmanager
     def apply(self, repo: pathlib.Path) -> Generator[None, None, None]:
         """Patch ``repo``'s declaration of ``self.source.pkg_name``; restore on exit."""
         pyproject = repo / 'pyproject.toml'
         if not pyproject.exists():
+            if self.skip_if_absent:
+                raise base.PatcherSkip(
+                    f'{repo}: no pyproject.toml — {self.source.pkg_name} is not a dependency'
+                )
             raise base.PatcherError(f'{repo} has no pyproject.toml')
 
         yield from self._apply_pyproject(repo, pyproject)
@@ -106,6 +119,9 @@ class GenericDepPatcher:
             parsed = tomllib.loads(snapshots[pyproject] or '')
         except tomllib.TOMLDecodeError as exc:
             raise base.PatcherError(f'could not parse {pyproject}: {exc}') from exc
+
+        if self.skip_if_absent and not pkg_is_declared(parsed, self.source.pkg_name):
+            raise base.PatcherSkip(f'{repo}: {self.source.pkg_name} is not a declared dependency')
 
         try:
             extras = collect_pyproject_pkg_extras(parsed, self.source.pkg_name)

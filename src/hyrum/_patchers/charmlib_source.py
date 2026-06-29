@@ -39,6 +39,7 @@ from hyrum._patchers._common import (
     collect_pyproject_pkg_extras,
     detect_pyproject_flavour,
     patch_git_dep,
+    pkg_is_declared,
     restore,
     run_lock,
     snapshot,
@@ -120,7 +121,9 @@ class CharmlibPatcher:
 
         pyproject = repo / 'pyproject.toml'
         if not pyproject.exists():
-            raise base.PatcherError(f'{repo} has no pyproject.toml')
+            raise base.PatcherSkip(
+                f'{repo}: no pyproject.toml — {self.source.pypi_name} is not a dependency'
+            )
 
         yield from self._apply_pyproject(repo, pyproject)
 
@@ -154,6 +157,9 @@ class CharmlibPatcher:
             parsed = tomllib.loads(snapshots[pyproject] or '')
         except tomllib.TOMLDecodeError as exc:
             raise base.PatcherError(f'could not parse {pyproject}: {exc}') from exc
+
+        if not pkg_is_declared(parsed, self.source.pypi_name):
+            raise base.PatcherSkip(f'{repo}: {self.source.pypi_name} is not a declared dependency')
 
         try:
             extras = collect_pyproject_pkg_extras(parsed, self.source.pypi_name)
