@@ -23,66 +23,192 @@ def _run(argv: list[str]) -> int:
 @pytest.mark.parametrize(
     ('arg', 'expected'),
     [
-        # GitHub owner:branch shorthand.
+        # Ops-only owner:branch shorthand.
         (
-            'tonyandrewmeyer:docs-debug-k8s',
+            'ops @ tonyandrewmeyer:docs-debug-k8s',
             {
+                'pkg_name': 'ops',
                 'url': 'https://github.com/tonyandrewmeyer/operator',
                 'branch': 'docs-debug-k8s',
             },
         ),
         (
-            'owner:feature/my-branch',
-            {'url': 'https://github.com/owner/operator', 'branch': 'feature/my-branch'},
+            'ops @ owner:feature/my-branch',
+            {
+                'pkg_name': 'ops',
+                'url': 'https://github.com/owner/operator',
+                'branch': 'feature/my-branch',
+            },
         ),
         # Bare URL.
         (
-            'https://github.com/canonical/operator',
-            {'url': 'https://github.com/canonical/operator', 'branch': None},
+            'ops @ https://github.com/canonical/operator',
+            {
+                'pkg_name': 'ops',
+                'url': 'https://github.com/canonical/operator',
+                'branch': None,
+            },
         ),
         # URL with explicit branch.
         (
-            'https://github.com/canonical/operator@main',
-            {'url': 'https://github.com/canonical/operator', 'branch': 'main'},
+            'ops @ https://github.com/canonical/operator@main',
+            {
+                'pkg_name': 'ops',
+                'url': 'https://github.com/canonical/operator',
+                'branch': 'main',
+            },
         ),
-        # `git+` prefix is accepted and stripped (so users can paste the
-        # form pip / uv prints verbatim).
+        # `git+` prefix (the form pip / uv prints verbatim).
         (
-            'git+https://github.com/canonical/operator@fix/X',
-            {'url': 'https://github.com/canonical/operator', 'branch': 'fix/X'},
+            'ops @ git+https://github.com/canonical/operator@fix/X',
+            {
+                'pkg_name': 'ops',
+                'url': 'https://github.com/canonical/operator',
+                'branch': 'fix/X',
+            },
         ),
         (
-            'git+https://github.com/canonical/operator',
-            {'url': 'https://github.com/canonical/operator', 'branch': None},
+            'ops @ git+https://github.com/canonical/operator',
+            {
+                'pkg_name': 'ops',
+                'url': 'https://github.com/canonical/operator',
+                'branch': None,
+            },
         ),
         # PyPI version specifiers.
-        ('2.17.0', {'version': '2.17.0'}),
-        ('2.17', {'version': '2.17'}),
+        ('ops==2.17.0', {'pkg_name': 'ops', 'version': '==2.17.0'}),
+        (
+            'requests>=1.2,<2',
+            {'pkg_name': 'requests', 'version': '<2,>=1.2'},
+        ),
+        # Non-ops git source.
+        (
+            'requests @ git+https://github.com/psf/requests@main',
+            {
+                'pkg_name': 'requests',
+                'url': 'https://github.com/psf/requests',
+                'branch': 'main',
+            },
+        ),
+        # Subdirectory.
+        (
+            'mylib @ git+https://example.com/repo@dev#subdirectory=pkg',
+            {
+                'pkg_name': 'mylib',
+                'url': 'https://example.com/repo',
+                'branch': 'dev',
+                'subdir': 'pkg',
+            },
+        ),
+        # Non-ops bare URL with branch.
+        (
+            'requests @ https://example.com/repo@dev',
+            {
+                'pkg_name': 'requests',
+                'url': 'https://example.com/repo',
+                'branch': 'dev',
+            },
+        ),
     ],
 )
-def test_parse_ops_source(arg: str, expected: dict[str, str | None]):
-    assert cli._parse_ops_source(arg) == expected
+def test_parse_patch(arg: str, expected: dict[str, str | None]):
+    assert cli._parse_patch(arg) == expected
 
 
-def test_parse_ops_source_file_url(tmp_path: pathlib.Path):
-    parsed = cli._parse_ops_source(f'file://{tmp_path}')
-    assert parsed == {'path': str(tmp_path)}
+def test_parse_patch_file_url(tmp_path: pathlib.Path):
+    parsed = cli._parse_patch(f'mylib @ file://{tmp_path}')
+    assert parsed == {'pkg_name': 'mylib', 'path': str(tmp_path)}
 
 
-def test_parse_ops_source_bare_path(tmp_path: pathlib.Path):
-    parsed = cli._parse_ops_source(str(tmp_path))
-    assert parsed == {'path': str(tmp_path)}
+def test_parse_patch_bare_path(tmp_path: pathlib.Path):
+    parsed = cli._parse_patch(f'ops @ {tmp_path}')
+    assert parsed == {'pkg_name': 'ops', 'path': str(tmp_path)}
 
 
-def test_parse_ops_source_home_path(monkeypatch, tmp_path: pathlib.Path):
+def test_parse_patch_home_path(monkeypatch, tmp_path: pathlib.Path):
     monkeypatch.setenv('HOME', str(tmp_path))
-    parsed = cli._parse_ops_source('~/operator')
-    assert parsed == {'path': str(tmp_path / 'operator')}
+    parsed = cli._parse_patch('ops @ ~/operator')
+    assert parsed == {'pkg_name': 'ops', 'path': str(tmp_path / 'operator')}
 
 
-def test_parse_ops_source_rejects_garbage():
+def test_parse_patch_rejects_bare_name():
+    with pytest.raises(Exception, match='must include a version specifier'):
+        cli._parse_patch('requests')
+
+
+def test_parse_patch_rejects_shorthand_for_non_ops():
+    with pytest.raises(Exception, match='only supported for'):
+        cli._parse_patch('requests @ psf:main')
+
+
+def test_parse_patch_rejects_garbage():
     with pytest.raises(Exception, match='cannot parse'):
-        cli._parse_ops_source('definitely not a version or url')
+        cli._parse_patch('!!! not a requirement')
+
+
+def test_build_patcher_default_patches_ops():
+    """No --patch and no --no-patch → patches ops from canonical:main."""
+    from hyrum import _patchers as patchers
+
+    patcher = cli._build_patcher(
+        no_patch=False,
+        patches=[],
+        poetry_executable='poetry',
+        uv_executable='uv',
+        lock_timeout=60,
+        auto_python=True,
+    )
+    assert isinstance(patcher, patchers.OpsSourcePatcher)
+    assert patcher.ops.url == 'https://github.com/canonical/operator'
+    assert patcher.ops.branch == 'main'
+
+
+def test_build_patcher_no_patch_skips_ops():
+    """--no-patch returns NullPatcher even though ops is normally the default."""
+    from hyrum import _patchers as patchers
+
+    patcher = cli._build_patcher(
+        no_patch=True,
+        patches=[],
+        poetry_executable='poetry',
+        uv_executable='uv',
+        lock_timeout=60,
+        auto_python=True,
+    )
+    assert isinstance(patcher, patchers.NullPatcher)
+
+
+def test_build_patcher_explicit_patch_does_not_also_patch_ops():
+    """--patch for a non-ops package should not implicitly add an ops patcher."""
+    from hyrum import _patchers as patchers
+
+    patcher = cli._build_patcher(
+        no_patch=False,
+        patches=[{'pkg_name': 'requests', 'version': '==2.31.0'}],
+        poetry_executable='poetry',
+        uv_executable='uv',
+        lock_timeout=60,
+        auto_python=True,
+    )
+    assert isinstance(patcher, patchers.GenericDepPatcher)
+    assert patcher.source.pkg_name == 'requests'
+
+
+def test_build_patcher_ops_plus_other_stacks():
+    from hyrum import _patchers as patchers
+
+    patcher = cli._build_patcher(
+        no_patch=False,
+        patches=[
+            {'pkg_name': 'ops', 'url': 'https://github.com/canonical/operator', 'branch': 'x'},
+            {'pkg_name': 'requests', 'version': '==2.31.0'},
+        ],
+        poetry_executable='poetry',
+        uv_executable='uv',
+        lock_timeout=60,
+        auto_python=True,
+    )
+    assert isinstance(patcher, patchers.PatcherStack)
 
 
 def test_cli_end_to_end_with_stubbed_runner(
