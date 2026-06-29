@@ -95,6 +95,9 @@ _PEP503_NAME_RE = re.compile(r'^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$')
 _DEP_SUBDIR_RE = re.compile(r'#subdirectory=([^\s#]+)$')
 
 
+_VENDORED_LHS_RE = re.compile(r'^charms\.([A-Za-z0-9_]+)\.v(\d+)\.([A-Za-z0-9_]+)$')
+
+
 def _split_url_branch(arg: str) -> tuple[str, str | None]:
     m = _URL_WITH_BRANCH_RE.match(arg)
     if m:
@@ -164,6 +167,12 @@ def _parse_patch(arg: str) -> dict[str, str | None]:
       subdirectory is taken from the package name verbatim, so type the
       separators (``-`` vs ``_``) the way the directory exists on disk
       (e.g. ``charmlibs-nginx_k8s``, ``charmlibs-interfaces-k8s-service``).
+    - ``charms.<author>.v<n>.<lib> -> <spec>`` — vendored-library swap.
+      The LHS is the dotted import path of the vendored library
+      (the directory ``lib/charms/<author>/v<n>/<lib>.py``). The RHS is
+      any of the forms above for the replacement PyPI package, e.g.
+      ``charms.operator_libs_linux.v0.apt -> charmlibs-apt==1.0.0`` or
+      ``charms.operator_libs_linux.v0.apt -> charmlibs-apt @ git+https://github.com/canonical/charmlibs@main#subdirectory=apt``.
 
     Extras on the input are not honoured; the patcher preserves whatever
     extras the charm itself declares.
@@ -171,6 +180,32 @@ def _parse_patch(arg: str) -> dict[str, str | None]:
     text = arg.strip()
     if not text:
         raise argparse.ArgumentTypeError('--patch: empty value')
+
+    lhs, sep, rhs = text.partition(' -> ')
+    if sep:
+        lhs = lhs.strip()
+        m = _VENDORED_LHS_RE.match(lhs)
+        if not m:
+            raise argparse.ArgumentTypeError(
+                f'--patch: left of "->" must be a vendored dotted form '
+                f'``charms.<author>.v<n>.<lib>``, got {lhs!r}'
+            )
+        rhs_spec = rhs.strip()
+        if not rhs_spec:
+            raise argparse.ArgumentTypeError(
+                f'--patch: empty replacement spec after "->" in {arg!r}'
+            )
+        new_spec = _parse_patch(rhs_spec)
+        new_pkg = new_spec['pkg_name']
+        assert new_pkg is not None
+        return {
+            **new_spec,
+            'pkg_name': lhs,
+            'vendored_author': m.group(1),
+            'vendored_version': m.group(2),
+            'vendored_lib': m.group(3),
+            'vendored_pkg': new_pkg,
+        }
 
     name, sep, rhs = text.partition(' @ ')
     if sep:
@@ -275,6 +310,41 @@ def _build_charmlib_patcher(
     return patchers.CharmlibPatcher(source)
 
 
+def _build_vendored_patcher(
+    parsed: dict[str, str | None],
+    *,
+    poetry_executable: str,
+    uv_executable: str,
+    lock_timeout: int,
+) -> patchers.VendoredLibPatcher:
+    new_pkg = parsed['vendored_pkg']
+    author = parsed['vendored_author']
+    version = parsed['vendored_version']
+    lib_name = parsed['vendored_lib']
+    assert new_pkg is not None
+    assert author is not None
+    assert version is not None
+    assert lib_name is not None
+    source = patchers.DepSource(
+        pkg_name=new_pkg,
+        version=parsed.get('version'),
+        url=parsed.get('url'),
+        branch=parsed.get('branch'),
+        subdir=parsed.get('subdir'),
+        path=parsed.get('path'),
+        poetry_executable=tuple(poetry_executable.split()),
+        uv_executable=tuple(uv_executable.split()),
+        lock_timeout=lock_timeout,
+    )
+    swap = patchers.VendoredLibSwap(
+        author=author,
+        version=int(version),
+        lib_name=lib_name,
+        source=source,
+    )
+    return patchers.VendoredLibPatcher(swap)
+
+
 def _build_patcher(
     *,
     no_patch: bool,
@@ -291,7 +361,16 @@ def _build_patcher(
     for spec in specs:
         pkg_name = spec['pkg_name']
         assert pkg_name is not None
-        if pkg_name == 'ops':
+        if spec.get('vendored_author') is not None:
+            stack.append(
+                _build_vendored_patcher(
+                    spec,
+                    poetry_executable=poetry_executable,
+                    uv_executable=uv_executable,
+                    lock_timeout=lock_timeout,
+                )
+            )
+        elif pkg_name == 'ops':
             stack.append(
                 _build_ops_patcher(
                     spec,
@@ -499,7 +578,11 @@ def _add_check_subparser(
             '``mylib @ file:///abs/path``, or '
             '``charmlibs-nginx_k8s @ canonical:main`` to point a charmlib at '
             'a branch of canonical/charmlibs (type the package name with the '
-            'same separators as the on-disk directory). May be given multiple times. '
+            'same separators as the on-disk directory), or '
+            '``charms.<author>.v<n>.<lib> -> <spec>`` to swap a vendored '
+            'lib/charms/<author>/v<n>/<lib>.py file for a PyPI package '
+            "(``<spec>`` accepts the same forms as above; for canonical's "
+            'monorepo include ``#subdirectory=<lib>``). May be given multiple times. '
             'If not given (and ``--no-patch`` is not set), defaults to '
             '``ops @ canonical:main``. Mutually exclusive with ``--no-patch``.'
         ),
