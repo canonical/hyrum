@@ -184,20 +184,18 @@ def discover(
         info = repo_info[owner, name]
         if info is None:
             continue
+        # Don't log owner/name for drop decisions: a private/internal repo
+        # the token can see would otherwise leak its name to anyone watching
+        # the script run (CI logs, terminal scrollback, redirected output).
         if info.get('archived') and not include_archived:
-            logger.info('Dropping archived %s/%s', owner, name)
+            logger.info('Dropping an archived repo')
             continue
         # Code-search runs under the caller's token, so private/internal repos
         # the token can see show up alongside public ones. Drop anything not
         # visible to an anonymous clone — listing internal repo names in a
         # public CSV would leak them.
         if info.get('visibility') != 'public':
-            logger.info(
-                'Dropping non-public %s/%s (visibility=%s)',
-                owner,
-                name,
-                info.get('visibility') or 'unknown',
-            )
+            logger.info('Dropping a non-public repo')
             continue
         # GitHub-flagged template repos exist to be forked, not run; they
         # ship with placeholder code that does not lint cleanly.

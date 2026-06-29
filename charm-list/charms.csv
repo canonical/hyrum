@@ -231,7 +231,6 @@ Telco,https://github.com/canonical/vault-k8s-operator,,manual
 ,https://code.launchpad.net/~ubuntu-repository-cache-charmers/ubuntu-repository-cache/layer-ubuntu-repository-cache,,auto
 ,https://github.com/battlemidget/juju-charm-znc,,auto
 ,https://bugs.launchpad.net/anbox-cloud,,auto
-,https://github.com/canonical/argo-operators/argo-controller,,auto
 ,https://github.com/juju-solutions/bundle-kubeflow/issues,,auto
 ,https://bugs.launchpad.net/livepatch-onprem,,auto
 ,https://bugs.launchpad.net/openstack-bundles/+filebug,,auto

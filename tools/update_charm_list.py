@@ -228,6 +228,12 @@ def merge(
 
     # Append brand-new Charmhub charms.
     for name, url in sorted(charmhub.items()):
+        # Charmhub publishers can point the source URL at a subdirectory of a
+        # repo (e.g. .../argo-operators/argo-controller). Collapse to the repo
+        # root so multiple charms sharing a monorepo dedup onto one row.
+        owner_repo = github_owner_repo(url)
+        if owner_repo:
+            url = f'https://github.com/{owner_repo[0]}/{owner_repo[1]}'
         key = normalise_url(url)
         if key in by_url:
             continue
@@ -236,7 +242,6 @@ def merge(
             continue
         # If the new charm points at a github repo that is *already* archived
         # or missing, don't add it — we'd just delete it on the next run.
-        owner_repo = github_owner_repo(url)
         if owner_repo and github.status(*owner_repo) != 'ok':
             logger.info('Skipping new charm %s: %s is already archived/missing', name, url)
             continue
