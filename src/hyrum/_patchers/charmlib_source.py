@@ -15,7 +15,7 @@ The canonical/charmlibs monorepo layout has two namespaces:
 The subdirectory is taken from the ``--patch`` package name verbatim
 (separators preserved), so the user picks the on-disk form: for example,
 ``charmlibs-nginx_k8s``, ``charmlibs-interfaces-tls_certificates``, or
-``charmlibs-interfaces-k8s-service``.  The PyPI name used to match the
+``charmlibs-interfaces-k8s-service``. The PyPI name used to match the
 charm's dependency is independently canonicalised to hyphens, so the
 match still works regardless of which separators the user typed.
 
