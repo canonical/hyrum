@@ -122,7 +122,7 @@ class CharmlibPatcher:
         pyproject = repo / 'pyproject.toml'
         if not pyproject.exists():
             raise base.PatcherSkip(
-                f'{repo}: no pyproject.toml — {self.source.pypi_name} is not a dependency'
+                f'no pyproject.toml — {self.source.pypi_name} is not a dependency'
             )
 
         yield from self._apply_pyproject(repo, pyproject)
@@ -159,7 +159,7 @@ class CharmlibPatcher:
             raise base.PatcherError(f'could not parse {pyproject}: {exc}') from exc
 
         if not pkg_is_declared(parsed, self.source.pypi_name):
-            raise base.PatcherSkip(f'{repo}: {self.source.pypi_name} is not a declared dependency')
+            raise base.PatcherSkip(f'{self.source.pypi_name} is not a declared dependency')
 
         try:
             extras = collect_pyproject_pkg_extras(parsed, self.source.pypi_name)

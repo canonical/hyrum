@@ -98,7 +98,7 @@ class GenericDepPatcher:
         if not pyproject.exists():
             if self.skip_if_absent:
                 raise base.PatcherSkip(
-                    f'{repo}: no pyproject.toml — {self.source.pkg_name} is not a dependency'
+                    f'no pyproject.toml — {self.source.pkg_name} is not a dependency'
                 )
             raise base.PatcherError(f'{repo} has no pyproject.toml')
 
@@ -121,7 +121,7 @@ class GenericDepPatcher:
             raise base.PatcherError(f'could not parse {pyproject}: {exc}') from exc
 
         if self.skip_if_absent and not pkg_is_declared(parsed, self.source.pkg_name):
-            raise base.PatcherSkip(f'{repo}: {self.source.pkg_name} is not a declared dependency')
+            raise base.PatcherSkip(f'{self.source.pkg_name} is not a declared dependency')
 
         try:
             extras = collect_pyproject_pkg_extras(parsed, self.source.pkg_name)

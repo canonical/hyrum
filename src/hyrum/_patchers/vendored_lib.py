@@ -99,7 +99,7 @@ class VendoredLibPatcher:
         """Apply the swap to ``repo``; restore every touched file on exit."""
         vendored = repo / self.swap.vendored_relpath
         if not vendored.exists():
-            raise base.PatcherSkip(f'{repo}: vendored library {vendored} not found')
+            raise base.PatcherSkip(f'vendored library {self.swap.vendored_relpath} not found')
 
         sources = _collect_python_sources(repo)
         py_snapshots: dict[pathlib.Path, str] = {p: p.read_text() for p in sources}
