@@ -11,6 +11,7 @@ barbican
 canal
 canonical-kubernetes-canal
 capsule-k8s
+ceilometer-agent
 ceph-dashboard
 ceph-fs
 ceph-iscsi
@@ -86,6 +87,7 @@ neutron-api
 neutron-api-plugin-ovn
 neutron-openvswitch
 nfs-ganesha
+nova-cell-controller
 nova-cloud-controller
 nova-compute
 nova-compute-nvidia-vgpu
