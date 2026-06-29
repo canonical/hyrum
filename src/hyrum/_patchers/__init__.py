@@ -8,6 +8,8 @@ The base protocol allows different patching strategies to coexist:
   * ``GenericDepPatcher`` does the same for an arbitrary single
     dependency, picking one of three source kinds (PyPI version, git
     URL, local path).
+  * ``CharmlibPatcher`` repoints a ``charmlibs-*`` dependency at a
+    branch of the ``canonical/charmlibs`` monorepo instead of PyPI.
   * ``VendoredLibPatcher`` deletes a vendored ``lib/charms/<author>/v<n>/<lib>.py``
     file, adds the equivalent PyPI distribution as a dependency, and
     rewrites the charm's imports to the new dotted path.
