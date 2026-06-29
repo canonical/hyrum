@@ -117,12 +117,21 @@ hyrum get-charms
 # (~/.cache/hyrum/charms), with ops swapped to the `fix/X` branch of
 # canonical/operator. Override the charms directory with --charms-dir or
 # the HYRUM_CHARMS environment variable.
-hyrum check unit --workers 8 --ops-source fix/X
+hyrum check unit --workers 8 --patch 'ops @ canonical:fix/X'
 
-# --ops-source also accepts: a PyPI version (`2.17.0`), a `git+<url>[@branch]`
-# reference, a plain `https://…/operator[@branch]` URL, the `owner:branch`
-# GitHub shorthand, or a local checkout (`/path/to/operator`,
-# `~/operator`, `file:///path/to/operator`).
+# --patch takes a PEP 508 requirement; may be given multiple times.
+# Other accepted forms for ops: a PyPI version (`ops==2.17.0`), a
+# `git+<url>[@branch]` reference (`ops @ git+https://…/operator@fix/X`), a
+# plain `https://…/operator[@branch]` URL, or a local checkout
+# (`ops @ /path/to/operator`, `ops @ ~/operator`,
+# `ops @ file:///path/to/operator`). The `owner:branch` shorthand is
+# ops-only.
+#
+# Swap any other dependency the same way, e.g.:
+#   hyrum check unit --patch 'requests==2.31.0'
+#   hyrum check unit --patch 'requests @ git+https://github.com/psf/requests@main'
+# Patching ops is the default if no --patch is given; pass an explicit
+# --patch for another package (without ops) to leave ops alone.
 
 # Force the make runner (default is auto-detect: tox.ini -> tox,
 # Makefile -> make, fall back to the other if the target is missing):

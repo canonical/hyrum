@@ -24,11 +24,9 @@ import contextlib
 import dataclasses
 import itertools
 import logging
-import os
 import pathlib
 import re
 import shlex
-import subprocess  # noqa: S404 — subprocess is core to running poetry/uv lock
 import tomllib
 from collections.abc import Generator, Sequence
 from typing import Any
@@ -36,6 +34,12 @@ from typing import Any
 import packaging.requirements
 
 from hyrum._patchers import base
+from hyrum._patchers._common import (
+    detect_pyproject_flavour,
+    restore,
+    run_lock,
+    snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +202,7 @@ class OpsSourcePatcher:
             yield
         finally:
             for path, original in snapshots.items():
-                _restore(path, original)
+                restore(path, original)
 
     def _apply_pyproject(
         self, repo: pathlib.Path, pyproject: pathlib.Path
@@ -207,8 +211,8 @@ class OpsSourcePatcher:
         uv_lock = repo / 'uv.lock'
         snapshots: dict[pathlib.Path, str | None] = {
             pyproject: pyproject.read_text(),
-            poetry_lock: _snapshot(poetry_lock),
-            uv_lock: _snapshot(uv_lock),
+            poetry_lock: snapshot(poetry_lock),
+            uv_lock: snapshot(uv_lock),
         }
 
         try:
@@ -218,7 +222,7 @@ class OpsSourcePatcher:
 
         try:
             ops_extras = _collect_pyproject_ops_extras(parsed)
-            flavour = _detect_pyproject_flavour(parsed, uv_lock.exists())
+            flavour = detect_pyproject_flavour(parsed, uv_lock.exists())
             original_text = snapshots[pyproject] or ''
 
             if flavour == 'uv':
@@ -247,7 +251,7 @@ class OpsSourcePatcher:
 
             if flavour == 'poetry':
                 base_cmd = (*shlex.split(' '.join(self.ops.poetry_executable)), 'lock')
-                _run_lock(
+                run_lock(
                     repo,
                     _wrap_with_uv_python(base_cmd, py_version, self.ops.uv_executable),
                     self.ops.lock_timeout,
@@ -259,7 +263,7 @@ class OpsSourcePatcher:
                 uv_cmd: tuple[str, ...] = (*self.ops.uv_executable, 'lock')
                 if py_version is not None:
                     uv_cmd = (*uv_cmd, '--python', f'{py_version[0]}.{py_version[1]}')
-                _run_lock(
+                run_lock(
                     repo,
                     uv_cmd,
                     self.ops.lock_timeout,
@@ -268,22 +272,7 @@ class OpsSourcePatcher:
             yield
         finally:
             for path, original in snapshots.items():
-                _restore(path, original)
-
-
-def _snapshot(path: pathlib.Path) -> str | None:
-    """Read a file's content, or return ``None`` if it does not exist."""
-    if not path.exists():
-        return None
-    return path.read_text()
-
-
-def _restore(path: pathlib.Path, original: str | None) -> None:
-    if original is None:
-        if path.exists():
-            path.unlink()
-    else:
-        path.write_text(original)
+                restore(path, original)
 
 
 def _ops_extras_from_pep508_line(line: str) -> set[str]:
@@ -744,31 +733,6 @@ def _patch_pyproject_poetry(original: str, ops: OpsSource, ops_extras: set[str])
     )
 
 
-def _detect_pyproject_flavour(parsed: dict[str, Any], uv_lock_present: bool) -> str:
-    """Return ``"uv"`` / ``"poetry"`` / ``"pep621"`` / ``"unknown"``.
-
-    A pyproject is treated as ``uv`` if it carries the uv signal (a
-    ``[tool.uv]`` table or a ``uv.lock``) alongside deps declared in any
-    of the standard PEP 621 / PEP 735 locations:
-    ``[project.dependencies]``, ``[project.optional-dependencies]``, or
-    ``[dependency-groups]``.
-    """
-    project = parsed.get('project', {})
-    has_project_table = isinstance(project, dict) and bool(project)
-    has_pep621_deps = (
-        'dependencies' in project
-        or 'optional-dependencies' in project
-        or 'dependency-groups' in parsed
-    )
-    if has_pep621_deps and (uv_lock_present or 'uv' in parsed.get('tool', {})):
-        return 'uv'
-    if 'poetry' in parsed.get('tool', {}):
-        return 'poetry'
-    if has_pep621_deps or has_project_table:
-        return 'pep621'
-    return 'unknown'
-
-
 _PYTHON_BOUND_RE = re.compile(r'(>=|>|==|~=|~|\^)\s*(\d+)\.(\d+)')
 
 
@@ -836,49 +800,3 @@ def _wrap_with_uv_python(
         '--',
         *cmd,
     )
-
-
-def _run_lock(
-    repo: pathlib.Path,
-    cmd: Sequence[str],
-    timeout: int,
-    *,
-    on_failure_remove: pathlib.Path | None = None,
-) -> None:
-    """Best-effort regenerate a lockfile. Logs (never raises) on failure.
-
-    Some charms have unresolvable dev dependencies under the patched
-    ``ops`` source; in that case we just delete the lockfile so the
-    runner can install without it.
-    """
-    # Strip ``VIRTUAL_ENV`` so the charm's lock isn't pinned to hyrum's own
-    # venv. Poetry in particular reads ``VIRTUAL_ENV`` to decide the project's
-    # "current Python" and rejects ``poetry lock`` if it disagrees with the
-    # project's requires-python — even when we wrap with ``uv run --python``.
-    env = {k: v for k, v in os.environ.items() if k != 'VIRTUAL_ENV'}
-    try:
-        result = subprocess.run(  # noqa: S603 — cmd built from project config
-            list(cmd),
-            cwd=repo,
-            check=False,
-            capture_output=True,
-            timeout=timeout,
-            env=env,
-        )
-    except FileNotFoundError:
-        logger.warning('%s not found, skipping lock for %s', cmd[0], repo)
-        return
-    except subprocess.TimeoutExpired:
-        logger.warning('%s lock timed out after %ds for %s', cmd[0], timeout, repo)
-        if on_failure_remove and on_failure_remove.exists():
-            on_failure_remove.unlink()
-        return
-    if result.returncode != 0:
-        logger.warning(
-            '%s lock failed for %s: %s',
-            cmd[0],
-            repo,
-            result.stderr.decode(errors='replace').strip(),
-        )
-        if on_failure_remove and on_failure_remove.exists():
-            on_failure_remove.unlink()
