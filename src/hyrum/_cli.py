@@ -161,7 +161,9 @@ def _parse_patch(arg: str) -> dict[str, str | None]:
       ``https://github.com/<owner>/operator``.
     - ``charmlibs-<name> @ <owner>:<branch>`` — GitHub shorthand for a
       charmlib, expands to ``https://github.com/<owner>/charmlibs``. The
-      subdirectory is derived from the package name.
+      subdirectory is taken from the package name verbatim, so type the
+      separators (``-`` vs ``_``) the way the directory exists on disk
+      (e.g. ``charmlibs-nginx_k8s``, ``charmlibs-interfaces-k8s-service``).
 
     Extras on the input are not honoured; the patcher preserves whatever
     extras the charm itself declares.
@@ -495,8 +497,9 @@ def _add_check_subparser(
             'charmlibs-*), ``requests==2.31.0``, ``requests>=1.2,<2``, '
             '``requests @ git+https://github.com/psf/requests@main``, '
             '``mylib @ file:///abs/path``, or '
-            '``charmlibs-nginx-k8s @ canonical:main`` to point a charmlib at '
-            'a branch of canonical/charmlibs. May be given multiple times. '
+            '``charmlibs-nginx_k8s @ canonical:main`` to point a charmlib at '
+            'a branch of canonical/charmlibs (type the package name with the '
+            'same separators as the on-disk directory). May be given multiple times. '
             'If not given (and ``--no-patch`` is not set), defaults to '
             '``ops @ canonical:main``. Mutually exclusive with ``--no-patch``.'
         ),

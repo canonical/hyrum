@@ -981,14 +981,14 @@ def test_lockfile_created_during_patch_is_removed_on_exit(
 # ---- CharmlibSource: name parsing / subdir derivation ------------------------
 
 
-def test_lib_names_general_short():
-    pypi, subdir = _lib_names('nginx-k8s')
+def test_lib_names_general_underscored():
+    pypi, subdir = _lib_names('nginx_k8s')
     assert pypi == 'charmlibs-nginx-k8s'
     assert subdir == 'nginx_k8s'
 
 
-def test_lib_names_general_full_pypi():
-    pypi, subdir = _lib_names('charmlibs-nginx-k8s')
+def test_lib_names_general_full_pkg_underscored():
+    pypi, subdir = _lib_names('charmlibs-nginx_k8s')
     assert pypi == 'charmlibs-nginx-k8s'
     assert subdir == 'nginx_k8s'
 
@@ -999,22 +999,36 @@ def test_lib_names_general_single_word():
     assert subdir == 'apt'
 
 
-def test_lib_names_interface_short():
-    pypi, subdir = _lib_names('interfaces-tls-certificates')
+def test_lib_names_interface_underscored():
+    pypi, subdir = _lib_names('interfaces-tls_certificates')
     assert pypi == 'charmlibs-interfaces-tls-certificates'
-    assert subdir == 'interfaces/tls-certificates'
+    assert subdir == 'interfaces/tls_certificates'
 
 
-def test_lib_names_interface_full_pypi():
-    pypi, subdir = _lib_names('charmlibs-interfaces-tls-certificates')
+def test_lib_names_interface_full_pkg_underscored():
+    pypi, subdir = _lib_names('charmlibs-interfaces-tls_certificates')
     assert pypi == 'charmlibs-interfaces-tls-certificates'
-    assert subdir == 'interfaces/tls-certificates'
+    assert subdir == 'interfaces/tls_certificates'
 
 
-def test_lib_names_interface_multi_segment():
-    pypi, subdir = _lib_names('interfaces-istio-ingress-route')
-    assert pypi == 'charmlibs-interfaces-istio-ingress-route'
-    assert subdir == 'interfaces/istio-ingress-route'
+def test_lib_names_interface_hyphenated():
+    # Hyphenated interface dirs (e.g. k8s-service, vault-kv) are reachable
+    # by typing hyphens — the input is preserved verbatim in the subdir.
+    pypi, subdir = _lib_names('charmlibs-interfaces-k8s-service')
+    assert pypi == 'charmlibs-interfaces-k8s-service'
+    assert subdir == 'interfaces/k8s-service'
+
+
+def test_lib_names_pypi_name_is_canonical_regardless_of_separators():
+    # PyPI names are case-insensitive and separator-equivalent (PEP 503).
+    # The match against the charm's pyproject must work no matter what
+    # separators the user typed.
+    for spelling in (
+        'charmlibs.interfaces.tls_certificates',
+        'CHARMLIBS_interfaces-tls.certificates',
+    ):
+        pypi, _ = _lib_names(spelling)
+        assert pypi == 'charmlibs-interfaces-tls-certificates'
 
 
 # ---- CharmlibPatcher: PatcherError on schema-only interface lib --------------
@@ -1083,7 +1097,7 @@ def test_charmlib_patcher_pep621_extras_reapplied(tmp_path: pathlib.Path):
         '[project]\nname = "c"\nversion = "0"\n'
         'dependencies = [\n  "charmlibs-nginx-k8s[extra1]>=1.0",\n]\n'
     )
-    src = patchers.CharmlibSource(pkg_name='nginx-k8s', branch='mybranch')
+    src = patchers.CharmlibSource(pkg_name='nginx_k8s', branch='mybranch')
     with patchers.CharmlibPatcher(src).apply(charm_dir):
         patched = (charm_dir / 'pyproject.toml').read_text()
         url_prefix = 'git+https://github.com/canonical/charmlibs@mybranch'
@@ -1100,7 +1114,7 @@ def test_charmlib_patcher_uv_extras_reapplied(tmp_path: pathlib.Path, monkeypatc
         'dependencies = [\n  "charmlibs-nginx-k8s[extra1]>=1.0",\n]\n'
         '[tool.uv]\ndev-dependencies = []\n'
     )
-    src = patchers.CharmlibSource(pkg_name='nginx-k8s', branch='mybranch')
+    src = patchers.CharmlibSource(pkg_name='nginx_k8s', branch='mybranch')
     with patchers.CharmlibPatcher(src).apply(charm_dir):
         patched = (charm_dir / 'pyproject.toml').read_text()
         assert '[tool.uv.sources]' in patched
