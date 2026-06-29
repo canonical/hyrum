@@ -87,6 +87,58 @@ def collect_pyproject_pkg_extras(data: dict[str, Any], pkg_name: str) -> set[str
     return extras
 
 
+def pkg_is_declared(data: dict[str, Any], pkg_name: str) -> bool:
+    """Return whether ``pkg_name`` is declared as a dep anywhere in ``data``.
+
+    Mirrors the locations scanned by :func:`collect_pyproject_pkg_extras`:
+    Poetry's ``dependencies`` / ``dev-dependencies`` / ``group.*.dependencies``,
+    PEP 621 ``[project]`` dependencies and optional-dependencies, and
+    PEP 735 ``[dependency-groups]``. Names are matched after PEP 503
+    canonicalisation so ``Foo_Bar`` matches ``foo-bar``.
+    """
+    target = _norm(pkg_name)
+
+    def _matches_pep508(line: str) -> bool:
+        try:
+            req = packaging.requirements.Requirement(line)
+        except packaging.requirements.InvalidRequirement:
+            return False
+        return _norm(req.name) == target
+
+    poetry: dict[str, Any] = data.get('tool', {}).get('poetry', {})
+    for section in ('dependencies', 'dev-dependencies'):
+        deps: Any = poetry.get(section, {})
+        if isinstance(deps, dict):
+            for name in deps:
+                if _norm(str(name)) == target:
+                    return True
+    for group in poetry.get('group', {}).values():
+        group_deps: Any = group.get('dependencies', {})
+        if isinstance(group_deps, dict):
+            for name in group_deps:
+                if _norm(str(name)) == target:
+                    return True
+
+    project: dict[str, Any] = data.get('project', {})
+    for dep_str in project.get('dependencies', []):
+        if _matches_pep508(str(dep_str)):
+            return True
+    for opts in project.get('optional-dependencies', {}).values():
+        for dep_str in opts:
+            if _matches_pep508(str(dep_str)):
+                return True
+
+    dep_groups: Any = data.get('dependency-groups', {})
+    if isinstance(dep_groups, dict):
+        for group_value in dep_groups.values():
+            if isinstance(group_value, list):
+                for dep_str in group_value:
+                    if _matches_pep508(str(dep_str)):
+                        return True
+
+    return False
+
+
 def strip_dep_declaration(content: str, pkg_name: str) -> str:
     """Remove all declarations of ``pkg_name`` from pyproject.toml text.
 

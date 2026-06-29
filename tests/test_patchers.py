@@ -1180,12 +1180,26 @@ def test_charmlib_patcher_fork_url(tmp_path: pathlib.Path):
         assert 'git+https://github.com/myfork/charmlibs@dev' in patched
 
 
-def test_charmlib_patcher_no_pyproject_raises(tmp_path: pathlib.Path):
+def test_charmlib_patcher_no_pyproject_skips(tmp_path: pathlib.Path):
     charm_dir = tmp_path / 'charm'
     charm_dir.mkdir()
     src = patchers.CharmlibSource(pkg_name='apt', branch='main')
     with (
-        pytest.raises(patchers.PatcherError),
+        pytest.raises(patchers.PatcherSkip),
+        patchers.CharmlibPatcher(src).apply(charm_dir),
+    ):
+        pass
+
+
+def test_charmlib_patcher_dep_not_declared_skips(tmp_path: pathlib.Path):
+    charm_dir = tmp_path / 'charm'
+    charm_dir.mkdir()
+    (charm_dir / 'pyproject.toml').write_text(
+        '[project]\nname = "c"\nversion = "0"\ndependencies = ["click"]\n'
+    )
+    src = patchers.CharmlibSource(pkg_name='apt', branch='main')
+    with (
+        pytest.raises(patchers.PatcherSkip, match=r'not a declared dependency'),
         patchers.CharmlibPatcher(src).apply(charm_dir),
     ):
         pass

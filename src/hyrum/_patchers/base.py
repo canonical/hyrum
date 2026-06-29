@@ -16,6 +16,16 @@ class PatcherError(RuntimeError):
     """
 
 
+class PatcherSkip(Exception):  # noqa: N818 — not an error; signals a no-op skip
+    """Raised when a patcher has nothing to do for this repo.
+
+    Distinct from :class:`PatcherError`: this is not a failure, it just
+    means the charm doesn't use the thing being swapped (for example, doesn't
+    vendor the targeted library), so the run is skipped rather than
+    reported as a patcher_error.
+    """
+
+
 @runtime_checkable
 class Patcher(Protocol):
     """A reversible mutation of one charm repo's source tree."""

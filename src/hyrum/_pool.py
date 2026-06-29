@@ -163,6 +163,9 @@ async def run_one(
     try:
         cm = patcher.apply(repo)
         await asyncio.to_thread(cm.__enter__)
+    except patchers.PatcherSkip as exc:
+        logger.info('skipping %s: %s', repo, exc)
+        return Outcome.skipped(repo, str(exc))
     except patchers.PatcherError as exc:
         logger.warning('patcher error in %s: %s', repo, exc)
         if log_dir is not None:
