@@ -20,7 +20,7 @@ class PatcherSkip(Exception):  # noqa: N818 — not an error; signals a no-op sk
     """Raised when a patcher has nothing to do for this repo.
 
     Distinct from :class:`PatcherError`: this is not a failure, it just
-    means the charm doesn't use the thing being swapped (e.g. doesn't
+    means the charm doesn't use the thing being swapped (for example, doesn't
     vendor the targeted library), so the run is skipped rather than
     reported as a patcher_error.
     """
