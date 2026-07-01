@@ -34,7 +34,7 @@ jobs:
       # and CycloneDX SBOM (what's inside). attest-build-provenance
       # doesn't accept sbom-path, so the SBOM predicate needs its own call.
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@v4.1.0
         with:
           subject-path: 'dist/*'
       - name: Attest SBOM
