@@ -44,7 +44,7 @@ lint = [
 unit = [
     "pytest>=8",
     "pytest-asyncio>=1.4.0",
-    "coverage>=7.14.1",
+    "coverage>=7.14.3",
 ]
 
 [tool.uv]
