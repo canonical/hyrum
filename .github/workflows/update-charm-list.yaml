@@ -30,7 +30,7 @@ jobs:
       BRANCH: chore/update-charm-list
       TITLE: "chore: refresh charm-list from Charmhub"
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           persist-credentials: false
 
