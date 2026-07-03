@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import enum
 import pathlib
 from collections.abc import Generator, Sequence
 from typing import Protocol, runtime_checkable
@@ -16,14 +17,29 @@ class PatcherError(RuntimeError):
     """
 
 
+class PatcherSkipReason(enum.Enum):
+    """Machine-readable categorisation of why a patcher skipped a charm."""
+
+    NO_PYPROJECT = 'no_pyproject'
+    MALFORMED_PYPROJECT = 'malformed_pyproject'
+    DEP_NOT_DECLARED = 'dep_not_declared'
+    VENDORED_LIB_ABSENT = 'vendored_lib_absent'
+
+
 class PatcherSkip(Exception):  # noqa: N818 — not an error; signals a no-op skip
     """Raised when a patcher has nothing to do for this repo.
 
     Distinct from :class:`PatcherError`: this is not a failure, it just
     means the charm doesn't use the thing being swapped (for example, doesn't
     vendor the targeted library), so the run is skipped rather than
-    reported as a patcher_error.
+    reported as a patcher_error. ``reason`` carries the machine-readable
+    category so callers (and the tally) can distinguish legitimate skips
+    from cases like a malformed ``pyproject.toml``.
     """
+
+    def __init__(self, reason: PatcherSkipReason, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 @runtime_checkable

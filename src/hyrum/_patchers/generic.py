@@ -21,6 +21,7 @@ import pathlib
 import shlex
 import tomllib
 from collections.abc import Generator, Sequence
+from typing import Literal
 
 from hyrum._patchers import base
 from hyrum._patchers._common import (
@@ -80,25 +81,35 @@ class DepSource:
 class GenericDepPatcher:
     """Point a charm at a chosen source for a single dependency.
 
-    By default, raises :class:`base.PatcherSkip` when the charm doesn't
-    declare the dependency — the swap is a no-op. Set
-    ``skip_if_absent=False`` to inject the dependency instead (used by
-    :class:`VendoredLibPatcher`, which is replacing a vendored library
-    with a fresh PyPI dep that the charm didn't previously have).
+    ``on_absent`` controls what happens when the charm doesn't declare
+    the dependency:
+
+    - ``'skip'`` (default) — raise :class:`base.PatcherSkip` so the
+      charm is skipped entirely rather than being run against an
+      unchanged tree.
+    - ``'inject'`` — inject the dependency as a fresh declaration.
+      Used by :class:`VendoredLibPatcher`, which replaces a vendored
+      library with a PyPI dep the charm didn't previously have.
     """
 
-    def __init__(self, source: DepSource, *, skip_if_absent: bool = True):
+    def __init__(
+        self,
+        source: DepSource,
+        *,
+        on_absent: Literal['skip', 'inject'] = 'skip',
+    ):
         self.source = source
-        self.skip_if_absent = skip_if_absent
+        self.on_absent = on_absent
 
     @contextlib.contextmanager
     def apply(self, repo: pathlib.Path) -> Generator[None, None, None]:
         """Patch ``repo``'s declaration of ``self.source.pkg_name``; restore on exit."""
         pyproject = repo / 'pyproject.toml'
         if not pyproject.exists():
-            if self.skip_if_absent:
+            if self.on_absent == 'skip':
                 raise base.PatcherSkip(
-                    f'no pyproject.toml — {self.source.pkg_name} is not a dependency'
+                    base.PatcherSkipReason.NO_PYPROJECT,
+                    f'no pyproject.toml — {self.source.pkg_name} is not a dependency',
                 )
             raise base.PatcherError(f'{repo} has no pyproject.toml')
 
@@ -118,10 +129,16 @@ class GenericDepPatcher:
         try:
             parsed = tomllib.loads(snapshots[pyproject] or '')
         except tomllib.TOMLDecodeError as exc:
-            raise base.PatcherError(f'could not parse {pyproject}: {exc}') from exc
+            raise base.PatcherSkip(
+                base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                f'could not parse {pyproject}: {exc}',
+            ) from exc
 
-        if self.skip_if_absent and not pkg_is_declared(parsed, self.source.pkg_name):
-            raise base.PatcherSkip(f'{self.source.pkg_name} is not a declared dependency')
+        if self.on_absent == 'skip' and not pkg_is_declared(parsed, self.source.pkg_name):
+            raise base.PatcherSkip(
+                base.PatcherSkipReason.DEP_NOT_DECLARED,
+                f'{self.source.pkg_name} is not a declared dependency',
+            )
 
         try:
             extras = collect_pyproject_pkg_extras(parsed, self.source.pkg_name)

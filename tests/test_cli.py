@@ -194,7 +194,7 @@ def test_build_patcher_vendored_swap():
         auto_python=True,
     )
     assert isinstance(patcher, patchers.VendoredLibPatcher)
-    assert patcher.swap.author == 'operator_libs_linux'
+    assert patcher.swap.host_charm == 'operator_libs_linux'
     assert patcher.swap.version == 0
     assert patcher.swap.lib_name == 'apt'
     assert patcher.swap.source.pkg_name == 'charmlibs-apt'

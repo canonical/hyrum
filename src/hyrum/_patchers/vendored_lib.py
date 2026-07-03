@@ -28,7 +28,7 @@ import dataclasses
 import logging
 import pathlib
 import re
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 
 from hyrum._patchers import base
 from hyrum._patchers._common import restore, snapshot
@@ -41,10 +41,10 @@ logger = logging.getLogger(__name__)
 class VendoredLibSwap:
     """Identify a vendored charm library and how to replace it.
 
-    ``author`` matches the directory name under ``lib/charms/`` (it uses
-    underscores in the Python package, e.g. ``operator_libs_linux``).
-    ``version`` is the integer version (``0`` for ``v0``). ``lib_name``
-    is the Python module name without ``.py``.
+    ``host_charm`` is the charm that publishes the library — it matches
+    the directory name under ``lib/charms/`` (with underscores, e.g.
+    ``operator_libs_linux``). ``version`` is the integer version (``0``
+    for ``v0``). ``lib_name`` is the Python module name without ``.py``.
 
     ``source`` is the PyPI replacement, expressed with the same
     :class:`DepSource` shape :class:`GenericDepPatcher` accepts.
@@ -55,7 +55,7 @@ class VendoredLibSwap:
     under a different dotted path.
     """
 
-    author: str
+    host_charm: str
     version: int
     lib_name: str
     source: DepSource
@@ -64,7 +64,7 @@ class VendoredLibSwap:
     @property
     def old_module(self) -> str:
         """Dotted module path the charm originally imported."""
-        return f'charms.{self.author}.v{self.version}.{self.lib_name}'
+        return f'charms.{self.host_charm}.v{self.version}.{self.lib_name}'
 
     @property
     def effective_new_module(self) -> str:
@@ -75,17 +75,17 @@ class VendoredLibSwap:
     def vendored_relpath(self) -> pathlib.PurePosixPath:
         """Path of the vendored file inside the charm repo."""
         return pathlib.PurePosixPath(
-            'lib', 'charms', self.author, f'v{self.version}', f'{self.lib_name}.py'
+            'lib', 'charms', self.host_charm, f'v{self.version}', f'{self.lib_name}.py'
         )
 
     @property
     def charm_libs_name(self) -> str:
         """``charm-libs`` ``lib:`` value for this library.
 
-        ``charmcraft.yaml`` writes the author with hyphens, even when the
+        ``charmcraft.yaml`` writes the charm with hyphens, even when the
         Python package uses underscores.
         """
-        return f'{self.author.replace("_", "-")}.{self.lib_name}'
+        return f'{self.host_charm.replace("_", "-")}.{self.lib_name}'
 
 
 class VendoredLibPatcher:
@@ -99,7 +99,10 @@ class VendoredLibPatcher:
         """Apply the swap to ``repo``; restore every touched file on exit."""
         vendored = repo / self.swap.vendored_relpath
         if not vendored.exists():
-            raise base.PatcherSkip(f'vendored library {self.swap.vendored_relpath} not found')
+            raise base.PatcherSkip(
+                base.PatcherSkipReason.VENDORED_LIB_ABSENT,
+                f'vendored library {self.swap.vendored_relpath} not found',
+            )
 
         sources = _collect_python_sources(repo)
         py_snapshots: dict[pathlib.Path, str] = {p: p.read_text() for p in sources}
@@ -123,7 +126,7 @@ class VendoredLibPatcher:
                 if stripped != charmcraft_snapshot:
                     charmcraft.write_text(stripped)
 
-            with GenericDepPatcher(self.swap.source, skip_if_absent=False).apply(repo):
+            with GenericDepPatcher(self.swap.source, on_absent='inject').apply(repo):
                 yield
         finally:
             for path, original in py_snapshots.items():
@@ -182,55 +185,115 @@ def _rewrite_imports(text: str, old_module: str, new_module: str) -> str:
     return text.replace(old_module, new_module)
 
 
+_CHARM_LIBS_HEADER_RE = re.compile(r'^charm-libs\s*:\s*(?P<rest>.*?)\s*(?:#.*)?$')
+_CHARM_LIBS_DASH_RE = re.compile(r'^(?P<indent>\s+)-\s')
+_CHARM_LIBS_KV_RE = re.compile(
+    r'^\s*(?:-\s*)?(?P<key>[A-Za-z0-9_-]+)\s*:\s*(?P<value>.*?)\s*(?:#.*)?$'
+)
+
+
 def _strip_charm_libs_entry(content: str, charm_libs_name: str) -> str:
     """Remove the ``charm-libs`` block entry whose ``lib:`` matches ``charm_libs_name``.
 
-    Conservative line-based edit so we don't pull in a YAML dependency.
-    Expects the canonical charmcraft layout, where each entry is a
-    two-key block::
-
-        charm-libs:
-          - lib: operator-libs-linux.apt
-            version: "0"
-
-    Only the matching ``- lib: …`` line and the immediately following
-    ``version:`` line at the same indent are removed. Entries with
-    additional unknown keys are left untouched and logged.
+    Scoped to the top-level ``charm-libs:`` section so unrelated
+    ``- lib:`` lines elsewhere in ``charmcraft.yaml`` can't collide.
+    Falls back to returning ``content`` unchanged if the block uses YAML
+    flow style (``charm-libs: [ ... ]`` / ``{ ... }``) — we don't try to
+    parse those without a YAML library.
     """
     lines = content.splitlines(keepends=True)
-    out: list[str] = []
-    i = 0
-    lib_re = re.compile(
-        r'^(?P<indent>\s*)-\s*lib\s*:\s*["\']?'
-        rf'{re.escape(charm_libs_name)}'
-        r'["\']?\s*(#.*)?$'
-    )
-    while i < len(lines):
-        match = lib_re.match(lines[i].rstrip('\n'))
-        if match is None:
-            out.append(lines[i])
-            i += 1
+    header_idx = _find_charm_libs_header(lines)
+    if header_idx is None:
+        return content
+
+    end_idx = _find_block_end(lines, header_idx + 1)
+    block = lines[header_idx + 1 : end_idx]
+
+    entries, prelude = _split_block_entries(block)
+    if entries is None:
+        return content
+
+    kept = [entry for entry in entries if _entry_lib_name(entry) != charm_libs_name]
+    if len(kept) == len(entries):
+        return content
+
+    new_block = ''.join(prelude) + ''.join(line for entry in kept for line in entry)
+    return ''.join(lines[: header_idx + 1]) + new_block + ''.join(lines[end_idx:])
+
+
+def _find_charm_libs_header(lines: Sequence[str]) -> int | None:
+    """Return the index of the top-level ``charm-libs:`` line, or ``None``."""
+    for i, raw in enumerate(lines):
+        stripped = raw.rstrip('\n')
+        if not stripped or stripped[:1].isspace() or stripped.startswith('#'):
             continue
-        indent = match.group('indent')
-        # Skip the ``- lib:`` line.
-        i += 1
-        # Skip continuation lines of the same entry (indented deeper than the
-        # ``-`` marker), conservatively limited to ``version:`` and comments.
-        deeper = indent + ' '
-        while i < len(lines):
-            stripped = lines[i].rstrip('\n')
-            if not stripped.strip():
-                break
-            if not stripped.startswith(deeper):
-                break
-            head = stripped.strip()
-            if head.startswith('version:') or head.startswith('#'):
-                i += 1
-                continue
-            logger.warning(
-                'unexpected charm-libs entry continuation, leaving in place: %r',
-                stripped,
-            )
-            out.append(lines[i])
-            i += 1
-    return ''.join(out)
+        match = _CHARM_LIBS_HEADER_RE.match(stripped)
+        if match is None:
+            continue
+        rest = match.group('rest')
+        if rest.startswith(('[', '{')):
+            logger.warning('flow-style charm-libs block, not stripping: %r', stripped)
+            return None
+        return i
+    return None
+
+
+def _find_block_end(lines: Sequence[str], start: int) -> int:
+    """Return the first index >= ``start`` where the ``charm-libs`` block ends."""
+    for j in range(start, len(lines)):
+        stripped = lines[j].rstrip('\n')
+        if not stripped.strip():
+            continue
+        if stripped.lstrip().startswith('#'):
+            continue
+        if not stripped[:1].isspace():
+            return j
+    return len(lines)
+
+
+def _split_block_entries(
+    block: Sequence[str],
+) -> tuple[list[list[str]] | None, list[str]]:
+    """Group ``block`` into sequence entries keyed by the leading ``-`` indent.
+
+    Returns ``(entries, prelude)`` where ``prelude`` is any content
+    (comments, blanks) before the first ``-``. Returns ``(None, [])`` if
+    the block has no ``-`` entries at all.
+    """
+    first_indent: str | None = None
+    for raw in block:
+        match = _CHARM_LIBS_DASH_RE.match(raw.rstrip('\n'))
+        if match is not None:
+            first_indent = match.group('indent')
+            break
+    if first_indent is None:
+        return None, []
+
+    entries: list[list[str]] = []
+    prelude: list[str] = []
+    current: list[str] | None = None
+    for raw in block:
+        match = _CHARM_LIBS_DASH_RE.match(raw.rstrip('\n'))
+        if match is not None and match.group('indent') == first_indent:
+            if current is not None:
+                entries.append(current)
+            current = [raw]
+        elif current is None:
+            prelude.append(raw)
+        else:
+            current.append(raw)
+    if current is not None:
+        entries.append(current)
+    return entries, prelude
+
+
+def _entry_lib_name(entry: Sequence[str]) -> str | None:
+    """Return the ``lib:`` value of a sequence ``entry``, or ``None`` if absent."""
+    for raw in entry:
+        stripped = raw.rstrip('\n')
+        if not stripped.strip() or stripped.lstrip().startswith('#'):
+            continue
+        match = _CHARM_LIBS_KV_RE.match(stripped)
+        if match is not None and match.group('key') == 'lib':
+            return match.group('value').strip().strip('"').strip("'")
+    return None

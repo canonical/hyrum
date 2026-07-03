@@ -122,7 +122,8 @@ class CharmlibPatcher:
         pyproject = repo / 'pyproject.toml'
         if not pyproject.exists():
             raise base.PatcherSkip(
-                f'no pyproject.toml — {self.source.pypi_name} is not a dependency'
+                base.PatcherSkipReason.NO_PYPROJECT,
+                f'no pyproject.toml — {self.source.pypi_name} is not a dependency',
             )
 
         yield from self._apply_pyproject(repo, pyproject)
@@ -156,10 +157,16 @@ class CharmlibPatcher:
         try:
             parsed = tomllib.loads(snapshots[pyproject] or '')
         except tomllib.TOMLDecodeError as exc:
-            raise base.PatcherError(f'could not parse {pyproject}: {exc}') from exc
+            raise base.PatcherSkip(
+                base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                f'could not parse {pyproject}: {exc}',
+            ) from exc
 
         if not pkg_is_declared(parsed, self.source.pypi_name):
-            raise base.PatcherSkip(f'{self.source.pypi_name} is not a declared dependency')
+            raise base.PatcherSkip(
+                base.PatcherSkipReason.DEP_NOT_DECLARED,
+                f'{self.source.pypi_name} is not a declared dependency',
+            )
 
         try:
             extras = collect_pyproject_pkg_extras(parsed, self.source.pypi_name)

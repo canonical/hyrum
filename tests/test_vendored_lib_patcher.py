@@ -87,7 +87,7 @@ def _build_charm(tmp_path: pathlib.Path) -> pathlib.Path:
 
 def _swap(**overrides) -> patchers.VendoredLibSwap:
     defaults = dict(
-        author='operator_libs_linux',
+        host_charm='operator_libs_linux',
         version=0,
         lib_name='apt',
         source=patchers.DepSource(pkg_name='charmlibs-apt', version='==1.0.0'),

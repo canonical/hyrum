@@ -104,6 +104,13 @@ def render(
         count = counts.get(status, 0)
         pct = f'{(count / total * 100):.0f}%' if total else '—'
         rows.append((status, str(count), pct))
+        if status == 'skipped' and count:
+            skip_kinds: collections.Counter[str] = collections.Counter(
+                o.skip_reason_kind.value for o in outcomes if o.skip_reason_kind is not None
+            )
+            for kind, kind_count in sorted(skip_kinds.items()):
+                kind_pct = f'{(kind_count / total * 100):.0f}%' if total else '—'
+                rows.append((f'  {kind}', str(kind_count), kind_pct))
     table = _format_table(
         rows,
         headers=None if no_headers else ('STATUS', 'COUNT', '%'),

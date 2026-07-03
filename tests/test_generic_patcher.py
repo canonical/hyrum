@@ -223,7 +223,8 @@ def test_unparseable_pyproject_raises(tmp_path: pathlib.Path):
     (tmp_path / 'pyproject.toml').write_text('not = valid = toml = at all\n')
     source = patchers.DepSource(pkg_name='requests', version='==1')
     with (
-        pytest.raises(patchers.PatcherError, match='could not parse'),
+        pytest.raises(patchers.PatcherSkip, match='could not parse') as excinfo,
         patchers.GenericDepPatcher(source).apply(tmp_path),
     ):
         pass
+    assert excinfo.value.reason is patchers.PatcherSkipReason.MALFORMED_PYPROJECT

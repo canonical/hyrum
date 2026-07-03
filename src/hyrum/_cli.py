@@ -318,11 +318,11 @@ def _build_vendored_patcher(
     lock_timeout: int,
 ) -> patchers.VendoredLibPatcher:
     new_pkg = parsed['vendored_pkg']
-    author = parsed['vendored_author']
+    host_charm = parsed['vendored_author']
     version = parsed['vendored_version']
     lib_name = parsed['vendored_lib']
     assert new_pkg is not None
-    assert author is not None
+    assert host_charm is not None
     assert version is not None
     assert lib_name is not None
     source = patchers.DepSource(
@@ -337,7 +337,7 @@ def _build_vendored_patcher(
         lock_timeout=lock_timeout,
     )
     swap = patchers.VendoredLibSwap(
-        author=author,
+        host_charm=host_charm,
         version=int(version),
         lib_name=lib_name,
         source=source,

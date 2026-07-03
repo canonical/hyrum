@@ -23,6 +23,7 @@ from hyrum._patchers.base import (
     Patcher,
     PatcherError,
     PatcherSkip,
+    PatcherSkipReason,
     PatcherStack,
 )
 from hyrum._patchers.charmlib_source import CharmlibPatcher, CharmlibSource
@@ -41,6 +42,7 @@ __all__ = [
     'Patcher',
     'PatcherError',
     'PatcherSkip',
+    'PatcherSkipReason',
     'PatcherStack',
     'VendoredLibPatcher',
     'VendoredLibSwap',
