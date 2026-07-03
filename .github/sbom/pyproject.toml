@@ -1,3 +1,9 @@
+# Kept as a separate project (not a dependency group of hyrum) because the
+# publish workflows run `cyclonedx-py environment .venv` to describe hyrum's
+# runtime closure. cyclonedx-py has to be installed somewhere to run, and it
+# must not live in the venv it measures — otherwise it and its transitive
+# tree would show up in the SBOM. A separate project gives it its own venv
+# without contorting `uv sync` flags on the main project.
 [project]
 name = "hyrum-sbom"
 version = "0"
