@@ -4,6 +4,11 @@
 
 Bulk-run a check (typically lint or unit tests) across many charm repositories, optionally swapping out one of their dependencies first.
 
+> [!WARNING]
+> Hyrum executes third-party code on your machine. Unit tests — and, in principle, even lint hooks — run with your user's privileges: anything you can do, a test can do. Charm test suites may not mock every side effect, so a test may write or delete files anywhere your user can reach, install packages, modify `crontab`, download arbitrary content, or reach out to the network.
+>
+> **Always run hyrum in an isolated VM** (for example, [Multipass](https://multipass.run/) or an LXD virtual machine): create a throwaway instance, install hyrum inside it, and dispose of the instance when you are done. Do not run checks on your workstation, laptop, or any host holding data you care about.
+
 ## Install
 
 ```text
