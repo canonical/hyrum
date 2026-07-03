@@ -77,7 +77,12 @@ updates:
 
   # ===================================================================
   # Python (uv), .github/sbom: isolated lockfile for cyclonedx-py used
-  # by the publish workflows. Same routine-lane shape as root.
+  # by the publish workflows. Needs its own dependabot entry because
+  # dependabot scans per-directory: uv.lock files outside the root are
+  # not discovered by the root entry above. The seam-based groups from
+  # root would all be inert here (only cyclonedx-bom is a direct dep),
+  # so this block collapses to a single minor+patch group; a major
+  # cyclonedx-bom bump falls through to its own PR.
   # ===================================================================
   - package-ecosystem: "uv"
     directory: "/.github/sbom"
@@ -92,28 +97,7 @@ updates:
       default-days: 7
       semver-major-days: 14
     groups:
-      charm-tech:
-        patterns:
-          - "ops"
-          - "ops-scenario"
-          - "ops-tracing"
-          - "jubilant"
-          - "pytest-jubilant"
-      dev-tooling:
-        patterns:
-          - "ruff"
-          - "pyright"
-          - "ty"
-          - "codespell"
-          - "coverage"
-          - "pre-commit"
-          - "types-*"
-          - "zizmor"
-      test-deps:
-        patterns:
-          - "pytest"
-          - "pytest-*"
-      runtime:
+      sbom:
         patterns:
           - "*"
         update-types:
