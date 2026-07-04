@@ -1,26 +1,105 @@
+# Routine version-update sweeps only. CVE patches are raised by the
+# repo-level "Dependabot security updates" toggle (managed in
+# canonical-repo-automation: features.dependabot_security_updates = true),
+# which is event-driven and does not honour the schedule below.
 version: 2
+
 updates:
+  # ===================================================================
+  # GitHub Actions: routine lane (monthly, single grouped PR)
+  # ===================================================================
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "monthly"  # This is hard-coded to the 1st of the month
+      interval: "monthly"
     labels:
       - "dependencies"
+    open-pull-requests-limit: 100
+    commit-message:
+      prefix: "chore"
     cooldown:
       default-days: 7
+      semver-major-days: 14
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # ===================================================================
+  # Python (uv), root: routine lane (monthly, grouped along three seams)
+  # ===================================================================
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "monthly"
     labels:
       - "dependencies"
+    open-pull-requests-limit: 100
+    commit-message:
+      prefix: "chore"
     cooldown:
       default-days: 7
+      semver-major-days: 14
+    groups:
+      # Charm Tech's own releases (lockstep-versioned; we trust the release).
+      charm-tech:
+        patterns:
+          - "ops"
+          - "ops-scenario"
+          - "ops-tracing"
+          - "jubilant"
+          - "pytest-jubilant"
+      # Linters / type-checkers / formatters / dev tooling. Majors ride along;
+      # we do not pin these and a major bump is low-risk to review in a batch.
+      dev-tooling:
+        patterns:
+          - "ruff"
+          - "pyright"
+          - "ty"
+          - "codespell"
+          - "coverage"
+          - "pre-commit"
+          - "types-*"
+          - "zizmor"
+      # Test runner + other shared test deps.
+      test-deps:
+        patterns:
+          - "pytest"
+          - "pytest-*"
+      # Everything else, minor + patch only. A runtime MAJOR falls through
+      # to its own ungrouped PR so it never silently rides a patch bundle.
+      runtime:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ===================================================================
+  # Python (uv), .github/sbom: isolated lockfile for cyclonedx-py used
+  # by the publish workflows. Needs its own dependabot entry because
+  # dependabot scans per-directory: uv.lock files outside the root are
+  # not discovered by the root entry above. The seam-based groups from
+  # root would all be inert here (only cyclonedx-bom is a direct dep),
+  # so this block collapses to a single minor+patch group; a major
+  # cyclonedx-bom bump falls through to its own PR.
+  # ===================================================================
   - package-ecosystem: "uv"
     directory: "/.github/sbom"
     schedule:
       interval: "monthly"
     labels:
       - "dependencies"
+    open-pull-requests-limit: 100
+    commit-message:
+      prefix: "chore"
     cooldown:
       default-days: 7
+      semver-major-days: 14
+    groups:
+      sbom:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
