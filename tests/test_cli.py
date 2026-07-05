@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import sys
 
 import pytest
 
@@ -16,7 +17,13 @@ def _run(argv: list[str]) -> int:
     try:
         cli.main(argv)
     except SystemExit as exc:
-        return int(exc.code) if exc.code is not None else 0
+        if exc.code is None:
+            return 0
+        if isinstance(exc.code, int):
+            return exc.code
+        # Mimic the interpreter: a string exit code is printed and exits 1.
+        print(exc.code, file=sys.stderr)
+        return 1
     return 0
 
 
@@ -440,6 +447,82 @@ def test_cli_save_results_writes_json(monkeypatch, tmp_path: pathlib.Path):
     # Identities are stored relative to the charms dir, not as raw cache paths.
     assert all(not o.repo.is_absolute() for o in loaded.outcomes)
     assert loaded.meta.target == 'unit'
+
+
+def test_cli_save_results_bad_directory_fails_before_running(
+    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    calls: list[str] = []
+
+    async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
+        calls.append(str(repo))
+        return runners.RunResult(
+            repo=repo,
+            runner=self.name,
+            target=target,
+            status=runners.RunStatus.PASSED,
+            returncode=0,
+            duration_s=0.01,
+        )
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--save-results',
+        str(tmp_path / 'missing-dir' / 'out.json'),
+    ])
+    captured = capsys.readouterr()
+    assert rc != 0
+    assert 'does not exist' in captured.err
+    assert calls == []  # failed before any charm ran
+
+
+def test_cli_save_failure_still_renders_report(
+    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+
+    async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
+        return runners.RunResult(
+            repo=repo,
+            runner=self.name,
+            target=target,
+            status=runners.RunStatus.PASSED,
+            returncode=0,
+            duration_s=0.01,
+        )
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
+
+    from hyrum import _results as results_mod
+
+    def failing_save(*args: object, **kwargs: object) -> None:
+        raise OSError('disk full')
+
+    monkeypatch.setattr(results_mod, 'save', failing_save)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--save-results',
+        str(tmp_path / 'out.json'),
+    ])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert 'hyrum: unit' in captured.out  # the report still rendered
 
 
 def test_cli_compare_subcommand_clean(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
