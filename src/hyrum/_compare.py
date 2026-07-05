@@ -124,8 +124,17 @@ _NON_PASSING = frozenset({'failed', 'timeout', 'patcher_error'})
 
 
 def _short(repo: str) -> str:
-    """Last path segment, so the table reads `owner__charm` not the full cache path."""
-    return pathlib.PurePosixPath(repo).name or repo
+    """Shorten a charm key for the table.
+
+    Keys saved by current hyrum are already charms-dir-relative
+    (``owner/charm``) and pass through unchanged. Absolute paths from older
+    results files keep their last two segments so different owners' charms
+    of the same name stay distinguishable.
+    """
+    path = pathlib.PurePosixPath(repo)
+    if not path.is_absolute():
+        return repo
+    return '/'.join(path.parts[-2:]) if len(path.parts) > 2 else repo
 
 
 def _md_escape(s: str) -> str:
