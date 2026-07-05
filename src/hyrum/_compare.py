@@ -103,15 +103,17 @@ def render(result: CompareResult, *, file: TextIO | None = None) -> None:
     green = report.GREEN if use_color else ''
     reset = report.RESET if use_color else ''
 
-    delta_pct = (result.current_pass_rate - result.baseline_pass_rate) * 100
+    # Percentage-*point* delta, one decimal: a 0.4-point regression must not
+    # round away to "-0%", and a bare "%" would read as a relative change.
+    delta_pts = (result.current_pass_rate - result.baseline_pass_rate) * 100
     n_new = len(result.new_failures)
     n_resolved = len(result.resolved)
-    sign = '+' if delta_pct >= 0 else ''
+    sign = '+' if delta_pts >= 0 else ''
     failure_word = 'failure' if n_new == 1 else 'failures'
     print(
-        f'Pass rate: {bold}{result.current_pass_rate * 100:.0f}%{reset} '
-        f'(was {result.baseline_pass_rate * 100:.0f}%) '
-        f'delta {bold}{sign}{delta_pct:.0f}%{reset} '
+        f'Pass rate: {bold}{result.current_pass_rate * 100:.1f}%{reset} '
+        f'(was {result.baseline_pass_rate * 100:.1f}%) '
+        f'delta {bold}{sign}{delta_pts:.1f} pts{reset} '
         f'({n_new} new {failure_word}, {n_resolved} resolved)',
         file=out,
     )
@@ -199,9 +201,9 @@ def render_markdown(
     print(f'# {title}', file=out)
     print(file=out)
     print(
-        f'Baseline pass rate: **{result.baseline_pass_rate * 100:.0f}%** '
+        f'Baseline pass rate: **{result.baseline_pass_rate * 100:.1f}%** '
         f'({result.baseline_passed}/{result.baseline_ran}). '
-        f'Current pass rate: **{result.current_pass_rate * 100:.0f}%** '
+        f'Current pass rate: **{result.current_pass_rate * 100:.1f}%** '
         f'({result.current_passed}/{result.current_ran}). '
         f'{len(result.new_failures)} new failure(s), '
         f'{len(result.resolved)} resolved, '

@@ -721,7 +721,8 @@ def _add_compare_subparser(
         'compare',
         help='Diff two saved hyrum runs.',
         description=(
-            'Diff two saved hyrum runs (status level): show new failures, resolved, new errors.'
+            'Diff two runs previously saved with `hyrum check --save-results`: '
+            'new failures, resolved charms, new errors, and the pass-rate delta.'
         ),
     )
     parser.add_argument('baseline', type=pathlib.Path, help='Path to the baseline results JSON.')
@@ -731,8 +732,11 @@ def _add_compare_subparser(
         action=argparse.BooleanOptionalAction,
         default=False,
         help=(
-            'Exit non-zero if there are any new failures or new errors versus '
-            'the baseline. [default: disabled]'
+            'Exit 1 on any regression: a charm that passed in the baseline now '
+            'fails, or hits a new infrastructure error (timeout or patcher '
+            'error). Charms present in only one of the runs never count as '
+            'regressions; if the two runs share no charms at all the gate '
+            'cannot be evaluated and hyrum exits 2. [default: disabled]'
         ),
     )
     parser.add_argument(
@@ -741,9 +745,10 @@ def _add_compare_subparser(
         choices=['text', 'markdown'],
         default='text',
         help=(
-            'text: the colourised status-level summary. markdown: a table with one row '
-            "per non-passing charm and a per-run failure summary (uses the saved Outcome's "
-            'summary field; v1 result files have no summaries). [default: text]'
+            'text: the colourised status-level summary. markdown: a table with '
+            'one row per non-passing charm, including a one-line failure '
+            'summary when the results file contains one (files written by '
+            'older hyrum versions do not). [default: text]'
         ),
     )
     parser.set_defaults(func=_run_compare)
@@ -936,7 +941,8 @@ def _run_compare(args: argparse.Namespace) -> int:
         current = results_mod.load(args.current)
     except ValueError as exc:
         print(f'hyrum: error: {exc}', file=sys.stderr)
-        return 1
+        # 2 = bad input (matching argparse), distinct from 1 = regression gate.
+        return 2
 
     if (
         baseline.meta.target
@@ -967,8 +973,13 @@ def _run_compare(args: argparse.Namespace) -> int:
         print()
         compare_mod.render(result)
 
-    if args.fail_on_regression and (result.new_failures or result.new_errors):
-        return 1
+    if args.fail_on_regression:
+        if result.disjoint:
+            # The gate can't be evaluated over runs with no charms in common;
+            # exiting 0 would green-light a meaningless comparison.
+            return 2
+        if result.new_failures or result.new_errors:
+            return 1
     return 0
 
 

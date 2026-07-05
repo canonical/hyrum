@@ -723,5 +723,66 @@ def test_cli_compare_rejects_bad_schema(
 
     rc = _run(['compare', str(base_path), str(cur_path)])
     captured = capsys.readouterr()
-    assert rc != 0
+    assert rc == 2  # bad input, distinct from a regression-gate failure (1)
     assert 'schema version' in captured.err
+    assert 'a.json' in captured.err  # the message names the offending file
+
+
+def test_cli_compare_missing_file_exits_2_with_message(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    from hyrum import _results as results_mod
+
+    cur_path = tmp_path / 'b.json'
+    results_mod.save([], cur_path)
+
+    rc = _run(['compare', str(tmp_path / 'missing.json'), str(cur_path)])
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert 'missing.json' in captured.err
+
+
+def test_cli_compare_disjoint_gate_exits_2(tmp_path: pathlib.Path):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    base = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    cur = [pool.Outcome(repo=pathlib.Path('other/bar'), status='failed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(base, base_path)
+    results_mod.save(cur, cur_path)
+
+    rc = _run(['compare', str(base_path), str(cur_path), '--fail-on-regression'])
+    assert rc == 2
+
+
+def test_cli_compare_markdown_fail_on_regression(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    base = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    cur = [
+        pool.Outcome(
+            repo=pathlib.Path('canonical/foo'), status='failed', summary='1 failed; ValueError: x'
+        )
+    ]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(base, base_path)
+    results_mod.save(cur, cur_path)
+
+    rc = _run([
+        'compare',
+        str(base_path),
+        str(cur_path),
+        '--format',
+        'markdown',
+        '--fail-on-regression',
+    ])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert '| Charm | Baseline | Current |' in captured.out
+    assert 'ValueError: x' in captured.out
