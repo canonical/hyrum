@@ -12,14 +12,10 @@ from __future__ import annotations
 
 import re
 
-# Strip ANSI CSI sequences. pytest, tox and uv emit colourised output by default;
-# without this every summary/exception regex misses on terminal-colour logs.
-_ANSI_RE = re.compile(rb'\x1b\[[0-9;]*[A-Za-z]')
-
-
-def _strip_ansi(buf: bytes) -> bytes:
-    return _ANSI_RE.sub(b'', buf)
-
+# Runners strip ANSI at capture time; stripping again here is belt-and-braces
+# for callers that hand in raw bytes. One shared implementation — two subtly
+# different CSI regexes in the codebase would be a maintenance trap.
+from hyrum._runners.base import strip_ansi as _strip_ansi
 
 # Pytest's final summary line, e.g. "=== 6 failed, 102 passed in 4.21s ==="
 # or "=== 12 errors in 0.30s ===" for collection-time failures. The trailer

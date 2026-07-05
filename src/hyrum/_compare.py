@@ -8,17 +8,10 @@ import sys
 from typing import TextIO
 
 from hyrum import _pool as pool
+from hyrum import _report as report
 
 _ERROR_STATUSES: frozenset[str] = frozenset({'patcher_error', 'timeout'})
 _RAN_STATUSES: frozenset[str] = frozenset({'passed', 'failed', 'timeout'})
-
-_ANSI = {
-    'reset': '\033[0m',
-    'bold': '\033[1m',
-    'red': '\033[31m',
-    'green': '\033[32m',
-    'bright_red': '\033[91m',
-}
 
 
 @dataclasses.dataclass
@@ -92,9 +85,9 @@ def _section(file: TextIO, title: str, charms: list[str], color: str, use_color:
         return
     width = max(len(title), max(len(c) for c in charms))
     bar = '─' * width
-    bold = _ANSI['bold'] if use_color else ''
-    tint = _ANSI[color] if use_color else ''
-    reset = _ANSI['reset'] if use_color else ''
+    bold = report.BOLD if use_color else ''
+    tint = color if use_color else ''
+    reset = report.RESET if use_color else ''
     print(file=file)
     print(f'{bold}{title}{reset}', file=file)
     print(bar, file=file)
@@ -105,10 +98,10 @@ def _section(file: TextIO, title: str, charms: list[str], color: str, use_color:
 def render(result: CompareResult, *, file: TextIO | None = None) -> None:
     """Print a plain-text diff summary of *result* to *file* (defaults to stdout)."""
     out: TextIO = file if file is not None else sys.stdout
-    use_color = hasattr(out, 'isatty') and out.isatty()
-    bold = _ANSI['bold'] if use_color else ''
-    green = _ANSI['green'] if use_color else ''
-    reset = _ANSI['reset'] if use_color else ''
+    use_color = report.use_colour(out)
+    bold = report.BOLD if use_color else ''
+    green = report.GREEN if use_color else ''
+    reset = report.RESET if use_color else ''
 
     delta_pct = (result.current_pass_rate - result.baseline_pass_rate) * 100
     n_new = len(result.new_failures)
@@ -123,12 +116,12 @@ def render(result: CompareResult, *, file: TextIO | None = None) -> None:
         file=out,
     )
 
-    _section(out, 'New failures', result.new_failures, 'red', use_color)
-    _section(out, 'Resolved', result.resolved, 'green', use_color)
-    _section(out, 'New errors', result.new_errors, 'bright_red', use_color)
+    _section(out, 'New failures', result.new_failures, report.RED, use_color)
+    _section(out, 'Resolved', result.resolved, report.GREEN, use_color)
+    _section(out, 'New errors', result.new_errors, report.BRIGHT_RED, use_color)
 
     if result.disjoint:
-        red = _ANSI['bright_red'] if use_color else ''
+        red = report.BRIGHT_RED if use_color else ''
         print(
             f'{red}Warning: the two runs have no charms in common — '
             f'this comparison is meaningless.{reset}',
