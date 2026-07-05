@@ -436,7 +436,10 @@ def test_cli_save_results_writes_json(monkeypatch, tmp_path: pathlib.Path):
     from hyrum import _results as results_mod
 
     loaded = results_mod.load(out)
-    assert any(o.status == 'passed' for o in loaded)
+    assert any(o.status == 'passed' for o in loaded.outcomes)
+    # Identities are stored relative to the charms dir, not as raw cache paths.
+    assert all(not o.repo.is_absolute() for o in loaded.outcomes)
+    assert loaded.meta.target == 'unit'
 
 
 def test_cli_compare_subcommand_clean(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
@@ -469,6 +472,87 @@ def test_cli_compare_fail_on_regression_exits_nonzero(tmp_path: pathlib.Path):
 
     rc = _run(['compare', str(base_path), str(cur_path), '--fail-on-regression'])
     assert rc == 1
+
+
+def test_cli_compare_detects_regression_across_checkouts(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """The UX-1 repro: same charms cached under different roots must still diff."""
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    alice = pathlib.Path('/home/alice/.cache/hyrum/charms')
+    ci = pathlib.Path('/github/workspace/cache')
+    base = [pool.Outcome(repo=alice / 'canonical' / 'foo', status='passed')]
+    cur = [pool.Outcome(repo=ci / 'canonical' / 'foo', status='failed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(base, base_path, base=alice)
+    results_mod.save(cur, cur_path, base=ci)
+
+    rc = _run(['compare', str(base_path), str(cur_path), '--fail-on-regression'])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert 'canonical/foo' in captured.out
+    assert 'New failures' in captured.out
+
+
+def test_cli_compare_warns_on_target_mismatch(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(outcomes, base_path, target='lint')
+    results_mod.save(outcomes, cur_path, target='unit')
+
+    rc = _run(['compare', str(base_path), str(cur_path)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'comparing different targets' in captured.err
+    assert "'lint'" in captured.err
+    assert "'unit'" in captured.err
+
+
+def test_cli_compare_text_output_includes_run_headers(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(outcomes, base_path, target='unit', patcher='ops @ x@main')
+    results_mod.save(outcomes, cur_path, target='unit', patcher='ops @ x@fix')
+
+    rc = _run(['compare', str(base_path), str(cur_path)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert f'Baseline: {base_path}' in captured.out
+    assert 'target unit' in captured.out
+    assert 'patch ops @ x@fix' in captured.out
+
+
+def test_cli_compare_markdown_title_includes_target(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='failed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(outcomes, base_path, target='unit')
+    results_mod.save(outcomes, cur_path, target='unit')
+
+    rc = _run(['compare', str(base_path), str(cur_path), '--format', 'markdown'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert '# hyrum run comparison (unit)' in captured.out
 
 
 def test_cli_compare_rejects_bad_schema(

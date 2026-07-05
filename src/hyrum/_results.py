@@ -3,23 +3,92 @@
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import json
 import pathlib
 
 from hyrum import _pool as pool
+from hyrum import _version
 
-SCHEMA_VERSION = 2
-_SUPPORTED_VERSIONS = frozenset({1, 2})
+SCHEMA_VERSION = 3
+_SUPPORTED_VERSIONS = frozenset({1, 2, 3})
 
 
-def save(outcomes: list[pool.Outcome], path: pathlib.Path) -> None:
-    """Serialise *outcomes* to a JSON file at *path* with a schema version header."""
+@dataclasses.dataclass(frozen=True)
+class RunMeta:
+    """Metadata about the run a results file was saved from.
+
+    All fields are empty strings when unknown (files saved by older hyrum
+    versions carry no metadata).
+    """
+
+    created_at: str = ''
+    hyrum_version: str = ''
+    target: str = ''
+    patcher: str = ''
+    charms_dir: str = ''
+
+
+@dataclasses.dataclass(frozen=True)
+class RunResults:
+    """One loaded results file: the outcomes plus the run's metadata."""
+
+    outcomes: list[pool.Outcome]
+    meta: RunMeta = RunMeta()
+
+
+def _identity(repo: pathlib.Path, base: pathlib.Path | None) -> str:
+    """Return a host-independent identity for *repo*: its path under *base*.
+
+    The cache layout is ``<charms-dir>/<owner>/<leaf>``, so relative to the
+    charms dir the identity is ``owner/leaf`` — stable across hosts,
+    checkouts, and however the user spelled ``--charms-dir``. Falls back to
+    the raw path when *repo* is not under *base*.
+    """
+    if base is None:
+        return str(repo)
+    try:
+        return str(repo.relative_to(base))
+    except ValueError:
+        pass
+    try:
+        return str(repo.resolve().relative_to(base.resolve()))
+    except ValueError:
+        return str(repo)
+
+
+def save(
+    outcomes: list[pool.Outcome],
+    path: pathlib.Path,
+    *,
+    base: pathlib.Path | None = None,
+    target: str = '',
+    patcher: str = '',
+) -> None:
+    """Serialise *outcomes* to a JSON file at *path* with a schema version header.
+
+    *base* is the charms dir; repo paths are stored relative to it so that
+    two runs from different hosts or checkouts compare by charm, not by
+    where the cache happened to live.
+    """
     records = []
     for outcome in outcomes:
         record = dataclasses.asdict(outcome)
-        record['repo'] = str(outcome.repo)
+        record['repo'] = _identity(outcome.repo, base)
         records.append(record)
-    path.write_text(json.dumps({'version': SCHEMA_VERSION, 'outcomes': records}, indent=2))
+    meta = RunMeta(
+        created_at=datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        hyrum_version=_version.__version__,
+        target=target,
+        patcher=patcher,
+        charms_dir=str(base) if base is not None else '',
+    )
+    document = {
+        'version': SCHEMA_VERSION,
+        'meta': dataclasses.asdict(meta),
+        'outcomes': records,
+    }
+    path.write_text(json.dumps(document, indent=2))
 
 
 def _load_outcome(record: object, *, path: pathlib.Path, index: int) -> pool.Outcome:
@@ -55,10 +124,22 @@ def _load_outcome(record: object, *, path: pathlib.Path, index: int) -> pool.Out
         ) from exc
 
 
-def load(path: pathlib.Path) -> list[pool.Outcome]:
-    """Load outcomes from *path*.
+def _load_meta(raw: dict[str, object], *, path: pathlib.Path) -> RunMeta:
+    """Build a RunMeta from the raw ``meta`` block, tolerating absent/extra keys."""
+    block = raw.get('meta')
+    if block is None:
+        return RunMeta()
+    if not isinstance(block, dict):
+        raise ValueError(f'{path}: not a hyrum results file (meta is not an object)')
+    known = {f.name for f in dataclasses.fields(RunMeta)}
+    return RunMeta(**{str(k): str(v) for k, v in block.items() if k in known})
 
-    Older v1 files load fine — the ``summary`` field added in v2 is left empty.
+
+def load(path: pathlib.Path) -> RunResults:
+    """Load a results file from *path*.
+
+    Older files load fine — the ``summary`` field added in v2 and the
+    ``meta`` block added in v3 are left empty.
 
     This is the validation boundary for user-supplied results files: any
     unreadable, non-JSON, or wrong-shape input raises :class:`ValueError`
@@ -85,4 +166,9 @@ def load(path: pathlib.Path) -> list[pool.Outcome]:
     outcomes = raw.get('outcomes')
     if not isinstance(outcomes, list):
         raise ValueError(f'{path}: not a hyrum results file (no outcomes list)')
-    return [_load_outcome(record, path=path, index=index) for index, record in enumerate(outcomes)]
+    return RunResults(
+        outcomes=[
+            _load_outcome(record, path=path, index=index) for index, record in enumerate(outcomes)
+        ],
+        meta=_load_meta(raw, path=path),
+    )

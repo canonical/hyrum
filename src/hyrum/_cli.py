@@ -335,6 +335,28 @@ def _build_patcher(
     return patchers.PatcherStack(stack)
 
 
+def _describe_patches(*, no_patch: bool, patches: Sequence[dict[str, str | None]]) -> str:
+    """One-line human-readable summary of the run's dependency swap, for run metadata."""
+    if no_patch:
+        return 'none'
+    specs = list(patches) if patches else [_DEFAULT_OPS_PATCH]
+    parts: list[str] = []
+    for spec in specs:
+        name = spec['pkg_name']
+        if spec.get('version'):
+            parts.append(f'{name}{spec["version"]}')
+        elif spec.get('path'):
+            parts.append(f'{name} @ {spec["path"]}')
+        else:
+            source = spec.get('url') or ''
+            if spec.get('branch'):
+                source += f'@{spec["branch"]}'
+            if spec.get('subdir'):
+                source += f'#subdirectory={spec["subdir"]}'
+            parts.append(f'{name} @ {source}')
+    return '; '.join(parts)
+
+
 def _build_runner(
     *,
     choice: runners.RunnerChoice,
@@ -746,7 +768,13 @@ def _run_check(args: argparse.Namespace) -> int:
     results.sort(key=lambda o: str(o.repo))
 
     if args.save_results_path is not None:
-        results_mod.save(results, args.save_results_path)
+        results_mod.save(
+            results,
+            args.save_results_path,
+            base=charms_dir,
+            target=args.target,
+            patcher=_describe_patches(no_patch=args.no_patch, patches=args.patches),
+        )
         logger.info('Wrote %d outcome(s) to %s', len(results), args.save_results_path)
 
     if not args.quiet:
@@ -788,18 +816,45 @@ def _run_get_charms(args: argparse.Namespace) -> int:
     return 0
 
 
+def _describe_run(label: str, path: pathlib.Path, meta: results_mod.RunMeta) -> str:
+    bits = [f'{label}: {path}']
+    if meta.created_at:
+        bits.append(f'saved {meta.created_at}')
+    if meta.target:
+        bits.append(f'target {meta.target}')
+    if meta.patcher:
+        bits.append(f'patch {meta.patcher}')
+    return f'{bits[0]} — {", ".join(bits[1:])}' if len(bits) > 1 else bits[0]
+
+
 def _run_compare(args: argparse.Namespace) -> int:
     try:
-        base = results_mod.load(args.baseline)
-        cur = results_mod.load(args.current)
+        baseline = results_mod.load(args.baseline)
+        current = results_mod.load(args.current)
     except ValueError as exc:
         print(f'hyrum: error: {exc}', file=sys.stderr)
         return 1
 
-    result = compare_mod.diff(base, cur)
+    if (
+        baseline.meta.target
+        and current.meta.target
+        and baseline.meta.target != current.meta.target
+    ):
+        print(
+            f'hyrum: warning: comparing different targets: baseline ran '
+            f'{baseline.meta.target!r}, current ran {current.meta.target!r}',
+            file=sys.stderr,
+        )
+
+    result = compare_mod.diff(baseline.outcomes, current.outcomes)
     if args.output_format == 'markdown':
-        compare_mod.render_markdown(base, cur)
+        target = current.meta.target or baseline.meta.target
+        title = f'hyrum run comparison ({target})' if target else 'hyrum run comparison'
+        compare_mod.render_markdown(baseline.outcomes, current.outcomes, title=title)
     else:
+        print(_describe_run('Baseline', args.baseline, baseline.meta))
+        print(_describe_run('Current', args.current, current.meta))
+        print()
         compare_mod.render(result)
 
     if args.fail_on_regression and (result.new_failures or result.new_errors):
