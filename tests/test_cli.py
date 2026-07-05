@@ -638,6 +638,26 @@ def test_cli_compare_markdown_title_includes_target(
     assert '# hyrum run comparison (unit)' in captured.out
 
 
+def test_cli_compare_disjoint_runs_warn_on_stderr(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    base = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    cur = [pool.Outcome(repo=pathlib.Path('other/bar'), status='failed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(base, base_path)
+    results_mod.save(cur, cur_path)
+
+    rc = _run(['compare', str(base_path), str(cur_path)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'no charms in common' in captured.err
+    assert 'No changes' not in captured.out
+
+
 def test_cli_compare_rejects_bad_schema(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):

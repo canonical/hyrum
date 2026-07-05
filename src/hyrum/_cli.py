@@ -867,6 +867,13 @@ def _run_compare(args: argparse.Namespace) -> int:
         )
 
     result = compare_mod.diff(baseline.outcomes, current.outcomes)
+    if result.disjoint:
+        print(
+            'hyrum: warning: the two runs have no charms in common — were they '
+            'saved from different charm collections, or by a hyrum version that '
+            'stored absolute paths?',
+            file=sys.stderr,
+        )
     if args.output_format == 'markdown':
         target = current.meta.target or baseline.meta.target
         title = f'hyrum run comparison ({target})' if target else 'hyrum run comparison'

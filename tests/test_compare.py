@@ -77,6 +77,43 @@ def test_pass_rate_zero_when_no_runs():
     assert result.current_pass_rate == pytest.approx(0.0)
 
 
+def test_diff_reports_set_drift():
+    base = [_o('alpha', 'passed'), _o('gone', 'passed')]
+    cur = [_o('alpha', 'passed'), _o('new', 'failed')]
+    result = compare_mod.diff(base, cur)
+    assert result.only_in_baseline == ['/cache/gone']
+    assert result.only_in_current == ['/cache/new']
+    assert result.common == 1
+    assert not result.disjoint
+    # A charm arriving already-failing is not a regression: no passed baseline.
+    assert result.new_failures == []
+
+
+def test_diff_disjoint_key_sets_flagged():
+    result = compare_mod.diff([_o('alpha', 'passed')], [_o('beta', 'failed')])
+    assert result.disjoint
+
+
+def test_render_disjoint_runs_warn_not_no_changes():
+    buf = io.StringIO()
+    result = compare_mod.diff([_o('alpha', 'passed')], [_o('beta', 'failed')])
+    compare_mod.render(result, file=buf)
+    output = buf.getvalue()
+    assert 'No changes' not in output
+    assert 'no charms in common' in output
+
+
+def test_render_mentions_set_drift():
+    buf = io.StringIO()
+    result = compare_mod.diff(
+        [_o('alpha', 'passed'), _o('gone', 'passed')],
+        [_o('alpha', 'passed')],
+    )
+    compare_mod.render(result, file=buf)
+    output = buf.getvalue()
+    assert '1 charm(s) only in baseline, 0 only in current' in output
+
+
 def test_render_quiet_when_no_diffs():
     buf = io.StringIO()
     result = compare_mod.diff([_o('a', 'passed')], [_o('a', 'passed')])
