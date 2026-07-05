@@ -53,7 +53,7 @@ class RunResult:
 
     @property
     def passed(self) -> bool:
-        """Return True if the runner exited cleanly."""
+        """Whether the runner exited cleanly."""
         return self.status is RunStatus.PASSED
 
 
