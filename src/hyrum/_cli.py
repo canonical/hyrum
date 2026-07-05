@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import dataclasses
 import itertools
+import json
 import logging
 import os
 import pathlib
@@ -742,13 +744,14 @@ def _add_compare_subparser(
     parser.add_argument(
         '--format',
         dest='output_format',
-        choices=['text', 'markdown'],
+        choices=['text', 'markdown', 'json'],
         default='text',
         help=(
             'text: the colourised status-level summary. markdown: a table with '
             'one row per non-passing charm, including a one-line failure '
             'summary when the results file contains one (files written by '
-            'older hyrum versions do not). [default: text]'
+            'older hyrum versions do not). json: the same diff as a '
+            "machine-readable object, with both runs' metadata. [default: text]"
         ),
     )
     parser.set_defaults(func=_run_compare)
@@ -963,7 +966,16 @@ def _run_compare(args: argparse.Namespace) -> int:
             'stored absolute paths?',
             file=sys.stderr,
         )
-    if args.output_format == 'markdown':
+    if args.output_format == 'json':
+        diff_fields = dataclasses.asdict(result)
+        diff_fields['disjoint'] = result.disjoint
+        payload = {
+            'baseline': {'path': str(args.baseline), 'meta': dataclasses.asdict(baseline.meta)},
+            'current': {'path': str(args.current), 'meta': dataclasses.asdict(current.meta)},
+            'diff': diff_fields,
+        }
+        print(json.dumps(payload, indent=2))
+    elif args.output_format == 'markdown':
         target = current.meta.target or baseline.meta.target
         title = f'hyrum run comparison ({target})' if target else 'hyrum run comparison'
         compare_mod.render_markdown(baseline.outcomes, current.outcomes, title=title)
