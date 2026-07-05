@@ -69,6 +69,25 @@ def test_save_identity_survives_differently_spelled_base(tmp_path: pathlib.Path)
     assert loaded.outcomes[0].repo == pathlib.Path('canonical/foo')
 
 
+def test_save_is_atomic_no_temp_file_left(tmp_path: pathlib.Path):
+    path = tmp_path / 'out.json'
+    results_mod.save(_outcomes(), path)
+    assert path.exists()
+    assert list(tmp_path.glob('*.tmp')) == []
+
+
+def test_save_failure_leaves_no_temp_file(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+    path = tmp_path / 'out.json'
+
+    def boom(self: pathlib.Path, target: pathlib.Path) -> pathlib.Path:
+        raise OSError('disk full')
+
+    monkeypatch.setattr(pathlib.Path, 'replace', boom)
+    with pytest.raises(OSError, match='disk full'):
+        results_mod.save(_outcomes(), path)
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_save_records_run_meta(tmp_path: pathlib.Path):
     path = tmp_path / 'out.json'
     results_mod.save(

@@ -796,6 +796,16 @@ def _run_check(args: argparse.Namespace) -> int:
     if not charms_dir.is_dir():
         sys.exit(f'hyrum: error: --charms-dir: {charms_dir} is not a directory.')
 
+    # Reject an unusable --save-results path now, not after a multi-hour run.
+    if args.save_results_path is not None:
+        save_parent = args.save_results_path.parent
+        if not save_parent.is_dir():
+            sys.exit(f'hyrum: error: --save-results: directory {save_parent} does not exist.')
+        if not os.access(save_parent, os.W_OK):
+            sys.exit(f'hyrum: error: --save-results: directory {save_parent} is not writable.')
+        if args.save_results_path.is_dir():
+            sys.exit(f'hyrum: error: --save-results: {args.save_results_path} is a directory.')
+
     _configure_logging(_resolve_log_level(quiet=args.quiet, verbosity=args.verbosity))
     if args.host_env_defaults:
         _apply_host_env_defaults(args.target)
@@ -850,15 +860,23 @@ def _run_check(args: argparse.Namespace) -> int:
     pool.add_skipped(results, skipped)
     results.sort(key=lambda o: str(o.repo))
 
+    save_failed = False
     if args.save_results_path is not None:
-        results_mod.save(
-            results,
-            args.save_results_path,
-            base=charms_dir,
-            target=args.target,
-            patcher=_describe_patches(no_patch=args.no_patch, patches=args.patches),
-        )
-        logger.info('Wrote %d outcome(s) to %s', len(results), args.save_results_path)
+        try:
+            results_mod.save(
+                results,
+                args.save_results_path,
+                base=charms_dir,
+                target=args.target,
+                patcher=_describe_patches(no_patch=args.no_patch, patches=args.patches),
+            )
+        except OSError as exc:
+            # Still render the report below — the run itself succeeded, and
+            # its output is all the user has left if the save was lost.
+            logger.error('Failed to write results to %s: %s', args.save_results_path, exc)
+            save_failed = True
+        else:
+            logger.info('Wrote %d outcome(s) to %s', len(results), args.save_results_path)
 
     if not args.quiet:
         report.render(
@@ -872,6 +890,8 @@ def _run_check(args: argparse.Namespace) -> int:
         failed = sum(1 for o in results if o.status in ('failed', 'timeout', 'patcher_error'))
         print(f'hyrum: {failed} charm(s) did not pass.', file=sys.stderr)
 
+    if save_failed:
+        return 1
     if not args.no_fail and not pool.passed(results):
         return 1
     return 0
