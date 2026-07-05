@@ -117,15 +117,15 @@ def test_markdown_render_includes_summaries_and_collapses_identical():
     output = buf.getvalue()
     assert '| Charm | Baseline | Current |' in output
     # alpha: same failure both sides → current cell is "same".
-    alpha_row = next(line for line in output.splitlines() if '| alpha ' in line)
+    alpha_row = next(line for line in output.splitlines() if '| cache/alpha ' in line)
     assert '| same |' in alpha_row
     assert '3 failed; ValueError: bad' in alpha_row
     # beta: a brand-new failure; both sides differ.
-    beta_row = next(line for line in output.splitlines() if '| beta ' in line)
+    beta_row = next(line for line in output.splitlines() if '| cache/beta ' in line)
     assert 'passed' in beta_row
     assert 'KeyError: x' in beta_row
     # gamma: persistent patcher_error → "same" too.
-    gamma_row = next(line for line in output.splitlines() if '| gamma ' in line)
+    gamma_row = next(line for line in output.splitlines() if '| cache/gamma ' in line)
     assert '| same |' in gamma_row
 
 
