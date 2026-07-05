@@ -135,6 +135,15 @@ def test_render_honours_no_color(monkeypatch: pytest.MonkeyPatch):
     assert '\x1b[' not in buf.getvalue()
 
 
+def test_render_delta_in_points_with_one_decimal():
+    base = [_o('a', 'passed'), _o('b', 'passed'), _o('c', 'passed')]
+    cur = [_o('a', 'passed'), _o('b', 'passed'), _o('c', 'failed')]
+    buf = io.StringIO()
+    compare_mod.render(compare_mod.diff(base, cur), file=buf)
+    output = buf.getvalue()
+    assert 'Pass rate: 66.7% (was 100.0%) delta -33.3 pts' in output
+
+
 def test_render_quiet_when_no_diffs():
     buf = io.StringIO()
     result = compare_mod.diff([_o('a', 'passed')], [_o('a', 'passed')])
