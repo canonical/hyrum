@@ -28,12 +28,20 @@ class CompareResult:
     new_failures: list[str]
     resolved: list[str]
     new_errors: list[str]
+    only_in_baseline: list[str]
+    only_in_current: list[str]
+    common: int
     baseline_pass_rate: float
     current_pass_rate: float
     baseline_passed: int
     baseline_ran: int
     current_passed: int
     current_ran: int
+
+    @property
+    def disjoint(self) -> bool:
+        """Both runs have charms but none in common — the compare is meaningless."""
+        return self.common == 0 and bool(self.only_in_baseline) and bool(self.only_in_current)
 
 
 def diff(baseline: list[pool.Outcome], current: list[pool.Outcome]) -> CompareResult:
@@ -67,6 +75,9 @@ def diff(baseline: list[pool.Outcome], current: list[pool.Outcome]) -> CompareRe
         new_failures=new_failures,
         resolved=resolved,
         new_errors=new_errors,
+        only_in_baseline=sorted(set(base_by_key) - set(cur_by_key)),
+        only_in_current=sorted(set(cur_by_key) - set(base_by_key)),
+        common=len(set(base_by_key) & set(cur_by_key)),
         baseline_pass_rate=base_passed / base_ran if base_ran else 0.0,
         current_pass_rate=cur_passed / cur_ran if cur_ran else 0.0,
         baseline_passed=base_passed,
@@ -116,8 +127,23 @@ def render(result: CompareResult, *, file: TextIO | None = None) -> None:
     _section(out, 'Resolved', result.resolved, 'green', use_color)
     _section(out, 'New errors', result.new_errors, 'bright_red', use_color)
 
-    if not result.new_failures and not result.resolved and not result.new_errors:
+    if result.disjoint:
+        red = _ANSI['bright_red'] if use_color else ''
+        print(
+            f'{red}Warning: the two runs have no charms in common — '
+            f'this comparison is meaningless.{reset}',
+            file=out,
+        )
+    elif not result.new_failures and not result.resolved and not result.new_errors:
         print(f'{green}No changes between runs.{reset}', file=out)
+
+    if result.only_in_baseline or result.only_in_current:
+        print(
+            f'Note: {len(result.only_in_baseline)} charm(s) only in baseline, '
+            f'{len(result.only_in_current)} only in current — '
+            f'these are excluded from the totals above.',
+            file=out,
+        )
 
 
 _NON_PASSING = frozenset({'failed', 'timeout', 'patcher_error'})
