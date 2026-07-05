@@ -88,7 +88,15 @@ def save(
         'meta': dataclasses.asdict(meta),
         'outcomes': records,
     }
-    path.write_text(json.dumps(document, indent=2))
+    # Write-then-rename so a crash mid-write can't leave a truncated JSON
+    # file that a later `hyrum compare` chokes on.
+    tmp = path.with_name(path.name + '.tmp')
+    try:
+        tmp.write_text(json.dumps(document, indent=2))
+        tmp.replace(path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _load_outcome(record: object, *, path: pathlib.Path, index: int) -> pool.Outcome:
