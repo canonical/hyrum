@@ -2,9 +2,27 @@
 
 from __future__ import annotations
 
+import logging
 import pathlib
+from collections.abc import Iterator
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _restore_root_logging() -> Iterator[None]:
+    """Undo the CLI's _configure_logging after each test.
+
+    CLI tests replace the root logger's handlers with a StreamHandler bound
+    to pytest's per-test capture stream; once that stream is closed, any
+    later test that logs would blow up writing to it.
+    """
+    root = logging.getLogger()
+    handlers = root.handlers[:]
+    level = root.level
+    yield
+    root.handlers[:] = handlers
+    root.setLevel(level)
 
 
 def make_charm(
