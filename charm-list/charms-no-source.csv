@@ -8,9 +8,11 @@ aws-iam
 aws-integrator
 azure-integrator
 barbican
+barbican-vault
 canal
 canonical-kubernetes-canal
 capsule-k8s
+ceilometer
 ceilometer-agent
 ceph-dashboard
 ceph-fs
@@ -25,6 +27,7 @@ cert-manager-webhook
 certbot
 charmed-etcd
 cinder
+cinder-ceph
 cinder-hitachi-vantara
 cinder-nimblestorage
 cinder-solidfire
@@ -41,6 +44,9 @@ etcd
 flannel
 gcp-integrator
 gitlab-runner
+glance
+gnocchi
+hacluster
 haproxy
 heat
 istio
@@ -52,6 +58,7 @@ katib
 katib-controller
 katib-ui
 keepalived
+keystone
 kfp-persistence
 kfp-schedwf
 kfp-ui
@@ -70,8 +77,10 @@ magma-orc8r
 magnum
 magnum-dashboard
 mailman3-core
+manila
 manila-ganesha
 manila-generic
+masakari
 masakari-monitors
 mattermost-k8s
 microceph
@@ -94,6 +103,7 @@ nova-compute-nvidia-vgpu
 ntp
 ntplog
 octavia
+octavia-dashboard
 opensearch
 openstack-base
 openstack-dashboard
@@ -104,6 +114,7 @@ osm-ha
 ovn-central
 ovn-chassis
 ovn-dedicated-chassis
+pacemaker-remote
 placement
 portainer
 portainer-agent
