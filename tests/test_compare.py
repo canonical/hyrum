@@ -114,6 +114,27 @@ def test_render_mentions_set_drift():
     assert '1 charm(s) only in baseline, 0 only in current' in output
 
 
+class _TtyStringIO(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+def test_render_colourises_on_a_tty(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv('NO_COLOR', raising=False)
+    buf = _TtyStringIO()
+    result = compare_mod.diff([_o('alpha', 'passed')], [_o('alpha', 'failed')])
+    compare_mod.render(result, file=buf)
+    assert '\x1b[' in buf.getvalue()
+
+
+def test_render_honours_no_color(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv('NO_COLOR', '1')
+    buf = _TtyStringIO()
+    result = compare_mod.diff([_o('alpha', 'passed')], [_o('alpha', 'failed')])
+    compare_mod.render(result, file=buf)
+    assert '\x1b[' not in buf.getvalue()
+
+
 def test_render_quiet_when_no_diffs():
     buf = io.StringIO()
     result = compare_mod.diff([_o('a', 'passed')], [_o('a', 'passed')])

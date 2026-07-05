@@ -18,16 +18,23 @@ from typing import TextIO
 from hyrum import _pool as pool
 
 # ANSI SGR codes, used only when the stream is a tty and NO_COLOR is unset.
-_RESET = '\033[0m'
+# Shared with the compare renderer so both commands colour identically.
+RESET = '\033[0m'
+BOLD = '\033[1m'
+RED = '\033[31m'
+GREEN = '\033[32m'
+YELLOW = '\033[33m'
+MAGENTA = '\033[35m'
+BRIGHT_RED = '\033[91m'
+DIM = '\033[2m'
 _STATUS_COLOURS: dict[str, str] = {
-    'passed': '\033[32m',  # green
-    'failed': '\033[31m',  # red
-    'no_target': '\033[33m',  # yellow
-    'timeout': '\033[35m',  # magenta
-    'patcher_error': '\033[91m',  # bright red
-    'skipped': '\033[2m',  # dim
+    'passed': GREEN,
+    'failed': RED,
+    'no_target': YELLOW,
+    'timeout': MAGENTA,
+    'patcher_error': BRIGHT_RED,
+    'skipped': DIM,
 }
-_BOLD = '\033[1m'
 
 
 def _relative(repo: pathlib.Path, base: pathlib.Path) -> str:
@@ -37,7 +44,8 @@ def _relative(repo: pathlib.Path, base: pathlib.Path) -> str:
         return str(repo)
 
 
-def _use_colour(stream: TextIO) -> bool:
+def use_colour(stream: TextIO) -> bool:
+    """Colourise only when *stream* is a tty and ``NO_COLOR`` is unset."""
     if os.environ.get('NO_COLOR'):
         return False
     return stream.isatty()
@@ -61,12 +69,12 @@ def _format_table(
         count_cell = row[1].rjust(widths[1])
         pct_cell = row[2].rjust(widths[2])
         if use_colour and header:
-            status_cell = f'{_BOLD}{status_cell}{_RESET}'
-            count_cell = f'{_BOLD}{count_cell}{_RESET}'
-            pct_cell = f'{_BOLD}{pct_cell}{_RESET}'
+            status_cell = f'{BOLD}{status_cell}{RESET}'
+            count_cell = f'{BOLD}{count_cell}{RESET}'
+            pct_cell = f'{BOLD}{pct_cell}{RESET}'
         elif use_colour and row[0] in colour_for_first:
             colour = colour_for_first[row[0]]
-            status_cell = f'{colour}{status_cell}{_RESET}'
+            status_cell = f'{colour}{status_cell}{RESET}'
         return f'{status_cell}  {count_cell}  {pct_cell}'
 
     lines: list[str] = []
@@ -90,14 +98,14 @@ def render(
     if stream is None:
         stream = sys.stdout
     assert stream is not None
-    use_colour = _use_colour(stream)
+    colour = use_colour(stream)
 
     counts = collections.Counter(o.status for o in outcomes)
     total = len(outcomes)
     ran = sum(counts.get(s, 0) for s in ('passed', 'failed', 'timeout'))
 
     title = f'hyrum: {target}'
-    print(f'{_BOLD}{title}{_RESET}' if use_colour else title, file=stream)
+    print(f'{BOLD}{title}{RESET}' if colour else title, file=stream)
 
     rows: list[tuple[str, str, str]] = []
     for status in pool.OUTCOME_STATUSES:
@@ -115,7 +123,7 @@ def render(
         rows,
         headers=None if no_headers else ('STATUS', 'COUNT', '%'),
         colour_for_first=_STATUS_COLOURS,
-        use_colour=use_colour,
+        use_colour=colour,
     )
     print(table, file=stream)
 
@@ -124,7 +132,7 @@ def render(
         pct = (passed_n / ran) * 100
 
         def emph(text: str) -> str:
-            return f'{_BOLD}{text}{_RESET}' if use_colour else text
+            return f'{BOLD}{text}{RESET}' if colour else text
 
         not_run = total - ran
         breakdown_parts = [
@@ -147,7 +155,7 @@ def render(
             if not offenders:
                 continue
             heading = f'\n{status}:'
-            print(f'{_BOLD}{heading}{_RESET}' if use_colour else heading, file=stream)
+            print(f'{BOLD}{heading}{RESET}' if colour else heading, file=stream)
             for outcome in sorted(offenders, key=lambda o: str(o.repo)):
                 detail = outcome.error or outcome.skip_reason or ''
                 trailer = f' — {detail}' if detail else ''
@@ -156,7 +164,7 @@ def render(
         skipped = [o for o in outcomes if o.status == 'skipped']
         if skipped:
             heading = '\nskipped:'
-            print(f'{_BOLD}{heading}{_RESET}' if use_colour else heading, file=stream)
+            print(f'{BOLD}{heading}{RESET}' if colour else heading, file=stream)
             for outcome in sorted(skipped, key=lambda o: str(o.repo)):
                 reason = outcome.skip_reason or ''
                 print(f'  {_relative(outcome.repo, base)} — {reason}', file=stream)
