@@ -150,6 +150,28 @@ hyrum check unit --no-fail
 # Dump each charm's stdout, stderr, and run metadata to a per-charm
 # file under the given directory for offline triage:
 hyrum check unit --log-dir ~/hyrum-runs/logs
+
+# Which charms does an ops branch break? Save an unpatched baseline,
+# save a patched run, and diff the two:
+hyrum check unit --no-patch --save-results baseline.json
+hyrum check unit --patch 'ops @ canonical:some-branch' --save-results patched.json
+hyrum compare baseline.json patched.json
+
+# Track fleet drift over time: save each (say, weekly) run and diff any
+# two. Charms are keyed by owner/name, not by cache path, so runs saved
+# on different hosts or from different checkouts compare fine:
+hyrum check unit --save-results "runs/$(date +%F).json"
+hyrum compare runs/2026-06-28.json runs/2026-07-05.json
+
+# CI gate over a stored baseline: exit 1 on any regression (a charm
+# that passed in the baseline now fails, or hits a new timeout or
+# patcher error), 2 if the runs share no charms and can't be compared:
+hyrum compare baseline.json current.json --fail-on-regression
+
+# The same diff as a markdown table (one row per non-passing charm,
+# with one-line failure summaries) or as machine-readable JSON:
+hyrum compare baseline.json current.json --format markdown
+hyrum compare baseline.json current.json --format json
 ```
 
 Output statuses:

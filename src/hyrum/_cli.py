@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import dataclasses
 import itertools
+import json
 import logging
 import os
 import pathlib
@@ -16,6 +18,7 @@ from collections.abc import Sequence
 
 import packaging.requirements
 
+from hyrum import _compare as compare_mod
 from hyrum import _config as config_loader
 from hyrum import _enumerate as enum_mod
 from hyrum import _filters as filt
@@ -24,6 +27,7 @@ from hyrum import _get_charms as get_charms
 from hyrum import _patchers as patchers
 from hyrum import _pool as pool
 from hyrum import _report as report
+from hyrum import _results as results_mod
 from hyrum import _runners as runners
 from hyrum import _version
 from hyrum._runners import make_runner, tox
@@ -31,14 +35,23 @@ from hyrum._runners import make_runner, tox
 logger = logging.getLogger('hyrum')
 
 
-class _UTCFormatter(logging.Formatter):
+_HOME_PREFIX = os.path.expanduser('~').rstrip('/') + '/'
+
+
+class _HyrumFormatter(logging.Formatter):
     converter = time.gmtime
+
+    def format(self, record: logging.LogRecord) -> str:
+        msg = super().format(record)
+        if _HOME_PREFIX in msg:
+            msg = msg.replace(_HOME_PREFIX, '~/')
+        return msg
 
 
 def _configure_logging(level: int) -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(
-        _UTCFormatter(fmt='%(asctime)s %(levelname)s %(message)s', datefmt='%Y-%m-%dT%H:%M:%SZ')
+        _HyrumFormatter(fmt='%(asctime)s %(levelname)s %(message)s', datefmt='%Y-%m-%dT%H:%M:%SZ')
     )
     root = logging.getLogger()
     root.handlers[:] = [handler]
@@ -403,6 +416,28 @@ def _build_patcher(
     return patchers.PatcherStack(stack)
 
 
+def _describe_patches(*, no_patch: bool, patches: Sequence[dict[str, str | None]]) -> str:
+    """One-line human-readable summary of the run's dependency swap, for run metadata."""
+    if no_patch:
+        return 'none'
+    specs = list(patches) if patches else [_DEFAULT_OPS_PATCH]
+    parts: list[str] = []
+    for spec in specs:
+        name = spec['pkg_name']
+        if spec.get('version'):
+            parts.append(f'{name}{spec["version"]}')
+        elif spec.get('path'):
+            parts.append(f'{name} @ {spec["path"]}')
+        else:
+            source = spec.get('url') or ''
+            if spec.get('branch'):
+                source += f'@{spec["branch"]}'
+            if spec.get('subdir'):
+                source += f'#subdirectory={spec["subdir"]}'
+            parts.append(f'{name} @ {source}')
+    return '; '.join(parts)
+
+
 def _build_runner(
     *,
     choice: runners.RunnerChoice,
@@ -667,7 +702,59 @@ def _add_check_subparser(
             'do not get mis-attributed to the charm. [default: enabled]'
         ),
     )
+    parser.add_argument(
+        '--save-results',
+        dest='save_results_path',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'After the run, write the outcomes as JSON to this path. The file can '
+            'later be fed to `hyrum compare` to diff against a subsequent run.'
+        ),
+    )
     parser.set_defaults(func=_run_check)
+    return parser
+
+
+def _add_compare_subparser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    parser = subparsers.add_parser(
+        'compare',
+        help='Diff two saved hyrum runs.',
+        description=(
+            'Diff two runs previously saved with `hyrum check --save-results`: '
+            'new failures, resolved charms, new errors, and the pass-rate delta.'
+        ),
+    )
+    parser.add_argument('baseline', type=pathlib.Path, help='Path to the baseline results JSON.')
+    parser.add_argument('current', type=pathlib.Path, help='Path to the current results JSON.')
+    parser.add_argument(
+        '--fail-on-regression',
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            'Exit 1 on any regression: a charm that passed in the baseline now '
+            'fails, or hits a new infrastructure error (timeout or patcher '
+            'error). Charms present in only one of the runs never count as '
+            'regressions; if the two runs share no charms at all the gate '
+            'cannot be evaluated and hyrum exits 2. [default: disabled]'
+        ),
+    )
+    parser.add_argument(
+        '--format',
+        dest='output_format',
+        choices=['text', 'markdown', 'json'],
+        default='text',
+        help=(
+            'text: the colourised status-level summary. markdown: a table with '
+            'one row per non-passing charm, including a one-line failure '
+            'summary when the results file contains one (files written by '
+            'older hyrum versions do not). json: the same diff as a '
+            "machine-readable object, with both runs' metadata. [default: text]"
+        ),
+    )
+    parser.set_defaults(func=_run_compare)
     return parser
 
 
@@ -707,6 +794,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--version', action='version', version=f'hyrum {_version.__version__}')
     subparsers = parser.add_subparsers(dest='command', metavar='COMMAND', required=True)
     _add_check_subparser(subparsers)
+    _add_compare_subparser(subparsers)
     _add_get_charms_subparser(subparsers)
     return parser
 
@@ -715,6 +803,16 @@ def _run_check(args: argparse.Namespace) -> int:
     charms_dir: pathlib.Path = args.charms_dir or _default_charms_dir()
     if not charms_dir.is_dir():
         sys.exit(f'hyrum: error: --charms-dir: {charms_dir} is not a directory.')
+
+    # Reject an unusable --save-results path now, not after a multi-hour run.
+    if args.save_results_path is not None:
+        save_parent = args.save_results_path.parent
+        if not save_parent.is_dir():
+            sys.exit(f'hyrum: error: --save-results: directory {save_parent} does not exist.')
+        if not os.access(save_parent, os.W_OK):
+            sys.exit(f'hyrum: error: --save-results: directory {save_parent} is not writable.')
+        if args.save_results_path.is_dir():
+            sys.exit(f'hyrum: error: --save-results: {args.save_results_path} is a directory.')
 
     _configure_logging(_resolve_log_level(quiet=args.quiet, verbosity=args.verbosity))
     if args.host_env_defaults:
@@ -770,6 +868,24 @@ def _run_check(args: argparse.Namespace) -> int:
     pool.add_skipped(results, skipped)
     results.sort(key=lambda o: str(o.repo))
 
+    save_failed = False
+    if args.save_results_path is not None:
+        try:
+            results_mod.save(
+                results,
+                args.save_results_path,
+                base=charms_dir,
+                target=args.target,
+                patcher=_describe_patches(no_patch=args.no_patch, patches=args.patches),
+            )
+        except OSError as exc:
+            # Still render the report below — the run itself succeeded, and
+            # its output is all the user has left if the save was lost.
+            logger.error('Failed to write results to %s: %s', args.save_results_path, exc)
+            save_failed = True
+        else:
+            logger.info('Wrote %d outcome(s) to %s', len(results), args.save_results_path)
+
     if not args.quiet:
         report.render(
             results,
@@ -782,6 +898,8 @@ def _run_check(args: argparse.Namespace) -> int:
         failed = sum(1 for o in results if o.status in ('failed', 'timeout', 'patcher_error'))
         print(f'hyrum: {failed} charm(s) did not pass.', file=sys.stderr)
 
+    if save_failed:
+        return 1
     if not args.no_fail and not pool.passed(results):
         return 1
     return 0
@@ -806,6 +924,74 @@ def _run_get_charms(args: argparse.Namespace) -> int:
     with source.open(newline='', encoding='utf-8') as f:
         rows: list[get_charms.CharmRow] = list(csv.DictReader(f))  # type: ignore[arg-type]
     asyncio.run(get_charms.process_rows(rows, dest))
+    return 0
+
+
+def _describe_run(label: str, path: pathlib.Path, meta: results_mod.RunMeta) -> str:
+    bits = [f'{label}: {path}']
+    if meta.created_at:
+        bits.append(f'saved {meta.created_at}')
+    if meta.target:
+        bits.append(f'target {meta.target}')
+    if meta.patcher:
+        bits.append(f'patch {meta.patcher}')
+    return f'{bits[0]} — {", ".join(bits[1:])}' if len(bits) > 1 else bits[0]
+
+
+def _run_compare(args: argparse.Namespace) -> int:
+    try:
+        baseline = results_mod.load(args.baseline)
+        current = results_mod.load(args.current)
+    except ValueError as exc:
+        print(f'hyrum: error: {exc}', file=sys.stderr)
+        # 2 = bad input (matching argparse), distinct from 1 = regression gate.
+        return 2
+
+    if (
+        baseline.meta.target
+        and current.meta.target
+        and baseline.meta.target != current.meta.target
+    ):
+        print(
+            f'hyrum: warning: comparing different targets: baseline ran '
+            f'{baseline.meta.target!r}, current ran {current.meta.target!r}',
+            file=sys.stderr,
+        )
+
+    result = compare_mod.diff(baseline.outcomes, current.outcomes)
+    if result.disjoint:
+        print(
+            'hyrum: warning: the two runs have no charms in common — were they '
+            'saved from different charm collections, or by a hyrum version that '
+            'stored absolute paths?',
+            file=sys.stderr,
+        )
+    if args.output_format == 'json':
+        diff_fields = dataclasses.asdict(result)
+        diff_fields['disjoint'] = result.disjoint
+        payload = {
+            'baseline': {'path': str(args.baseline), 'meta': dataclasses.asdict(baseline.meta)},
+            'current': {'path': str(args.current), 'meta': dataclasses.asdict(current.meta)},
+            'diff': diff_fields,
+        }
+        print(json.dumps(payload, indent=2))
+    elif args.output_format == 'markdown':
+        target = current.meta.target or baseline.meta.target
+        title = f'hyrum run comparison ({target})' if target else 'hyrum run comparison'
+        compare_mod.render_markdown(baseline.outcomes, current.outcomes, title=title)
+    else:
+        print(_describe_run('Baseline', args.baseline, baseline.meta))
+        print(_describe_run('Current', args.current, current.meta))
+        print()
+        compare_mod.render(result)
+
+    if args.fail_on_regression:
+        if result.disjoint:
+            # The gate can't be evaluated over runs with no charms in common;
+            # exiting 0 would green-light a meaningless comparison.
+            return 2
+        if result.new_failures or result.new_errors:
+            return 1
     return 0
 
 

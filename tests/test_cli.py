@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import sys
 
 import pytest
 
@@ -16,7 +17,13 @@ def _run(argv: list[str]) -> int:
     try:
         cli.main(argv)
     except SystemExit as exc:
-        return int(exc.code) if exc.code is not None else 0
+        if exc.code is None:
+            return 0
+        if isinstance(exc.code, int):
+            return exc.code
+        # Mimic the interpreter: a string exit code is printed and exits 1.
+        print(exc.code, file=sys.stderr)
+        return 1
     return 0
 
 
@@ -456,3 +463,349 @@ def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathli
     assert rc == 0
     assert 'PYO3_USE_ABI3_FORWARD_COMPATIBILITY' not in os.environ
     assert 'TOX_OVERRIDE' not in os.environ
+
+
+def test_cli_save_results_writes_json(monkeypatch, tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+
+    async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
+        return runners.RunResult(
+            repo=repo,
+            runner=self.name,
+            target=target,
+            status=runners.RunStatus.PASSED,
+            returncode=0,
+            duration_s=0.01,
+        )
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
+    out = tmp_path / 'run.json'
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--save-results',
+        str(out),
+    ])
+    assert rc == 0
+    assert out.exists()
+
+    from hyrum import _results as results_mod
+
+    loaded = results_mod.load(out)
+    assert any(o.status == 'passed' for o in loaded.outcomes)
+    # Identities are stored relative to the charms dir, not as raw cache paths.
+    assert all(not o.repo.is_absolute() for o in loaded.outcomes)
+    assert loaded.meta.target == 'unit'
+
+
+def test_cli_save_results_bad_directory_fails_before_running(
+    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    calls: list[str] = []
+
+    async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
+        calls.append(str(repo))
+        return runners.RunResult(
+            repo=repo,
+            runner=self.name,
+            target=target,
+            status=runners.RunStatus.PASSED,
+            returncode=0,
+            duration_s=0.01,
+        )
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--save-results',
+        str(tmp_path / 'missing-dir' / 'out.json'),
+    ])
+    captured = capsys.readouterr()
+    assert rc != 0
+    assert 'does not exist' in captured.err
+    assert calls == []  # failed before any charm ran
+
+
+def test_cli_save_failure_still_renders_report(
+    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+
+    async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
+        return runners.RunResult(
+            repo=repo,
+            runner=self.name,
+            target=target,
+            status=runners.RunStatus.PASSED,
+            returncode=0,
+            duration_s=0.01,
+        )
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
+
+    from hyrum import _results as results_mod
+
+    def failing_save(*args: object, **kwargs: object) -> None:
+        raise OSError('disk full')
+
+    monkeypatch.setattr(results_mod, 'save', failing_save)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--save-results',
+        str(tmp_path / 'out.json'),
+    ])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert 'hyrum: unit' in captured.out  # the report still rendered
+
+
+def test_cli_compare_subcommand_clean(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    a = [pool.Outcome(repo=pathlib.Path('/cache/alpha'), status='passed')]
+    b = [pool.Outcome(repo=pathlib.Path('/cache/alpha'), status='passed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(a, base_path)
+    results_mod.save(b, cur_path)
+
+    rc = _run(['compare', str(base_path), str(cur_path)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'No changes' in captured.out
+
+
+def test_cli_compare_fail_on_regression_exits_nonzero(tmp_path: pathlib.Path):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    base = [pool.Outcome(repo=pathlib.Path('/cache/alpha'), status='passed')]
+    cur = [pool.Outcome(repo=pathlib.Path('/cache/alpha'), status='failed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(base, base_path)
+    results_mod.save(cur, cur_path)
+
+    rc = _run(['compare', str(base_path), str(cur_path), '--fail-on-regression'])
+    assert rc == 1
+
+
+def test_cli_compare_detects_regression_across_checkouts(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """The UX-1 repro: same charms cached under different roots must still diff."""
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    alice = pathlib.Path('/home/alice/.cache/hyrum/charms')
+    ci = pathlib.Path('/github/workspace/cache')
+    base = [pool.Outcome(repo=alice / 'canonical' / 'foo', status='passed')]
+    cur = [pool.Outcome(repo=ci / 'canonical' / 'foo', status='failed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(base, base_path, base=alice)
+    results_mod.save(cur, cur_path, base=ci)
+
+    rc = _run(['compare', str(base_path), str(cur_path), '--fail-on-regression'])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert 'canonical/foo' in captured.out
+    assert 'New failures' in captured.out
+
+
+def test_cli_compare_warns_on_target_mismatch(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(outcomes, base_path, target='lint')
+    results_mod.save(outcomes, cur_path, target='unit')
+
+    rc = _run(['compare', str(base_path), str(cur_path)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'comparing different targets' in captured.err
+    assert "'lint'" in captured.err
+    assert "'unit'" in captured.err
+
+
+def test_cli_compare_text_output_includes_run_headers(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(outcomes, base_path, target='unit', patcher='ops @ x@main')
+    results_mod.save(outcomes, cur_path, target='unit', patcher='ops @ x@fix')
+
+    rc = _run(['compare', str(base_path), str(cur_path)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert f'Baseline: {base_path}' in captured.out
+    assert 'target unit' in captured.out
+    assert 'patch ops @ x@fix' in captured.out
+
+
+def test_cli_compare_markdown_title_includes_target(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='failed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(outcomes, base_path, target='unit')
+    results_mod.save(outcomes, cur_path, target='unit')
+
+    rc = _run(['compare', str(base_path), str(cur_path), '--format', 'markdown'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert '# hyrum run comparison (unit)' in captured.out
+
+
+def test_cli_compare_disjoint_runs_warn_on_stderr(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    base = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    cur = [pool.Outcome(repo=pathlib.Path('other/bar'), status='failed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(base, base_path)
+    results_mod.save(cur, cur_path)
+
+    rc = _run(['compare', str(base_path), str(cur_path)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'no charms in common' in captured.err
+    assert 'No changes' not in captured.out
+
+
+def test_cli_compare_json_output(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
+    import json
+
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    base = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    cur = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='failed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(base, base_path, target='unit')
+    results_mod.save(cur, cur_path, target='unit')
+
+    rc = _run(['compare', str(base_path), str(cur_path), '--format', 'json'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    payload = json.loads(captured.out)
+    assert payload['diff']['new_failures'] == ['canonical/foo']
+    assert payload['diff']['disjoint'] is False
+    assert payload['baseline']['meta']['target'] == 'unit'
+    assert payload['current']['path'] == str(cur_path)
+
+
+def test_cli_compare_rejects_bad_schema(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    base_path.write_text('{"version": 999, "outcomes": []}')
+    cur_path.write_text('{"version": 1, "outcomes": []}')
+
+    rc = _run(['compare', str(base_path), str(cur_path)])
+    captured = capsys.readouterr()
+    assert rc == 2  # bad input, distinct from a regression-gate failure (1)
+    assert 'schema version' in captured.err
+    assert 'a.json' in captured.err  # the message names the offending file
+
+
+def test_cli_compare_missing_file_exits_2_with_message(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    from hyrum import _results as results_mod
+
+    cur_path = tmp_path / 'b.json'
+    results_mod.save([], cur_path)
+
+    rc = _run(['compare', str(tmp_path / 'missing.json'), str(cur_path)])
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert 'missing.json' in captured.err
+
+
+def test_cli_compare_disjoint_gate_exits_2(tmp_path: pathlib.Path):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    base = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    cur = [pool.Outcome(repo=pathlib.Path('other/bar'), status='failed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(base, base_path)
+    results_mod.save(cur, cur_path)
+
+    rc = _run(['compare', str(base_path), str(cur_path), '--fail-on-regression'])
+    assert rc == 2
+
+
+def test_cli_compare_markdown_fail_on_regression(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    from hyrum import _pool as pool
+    from hyrum import _results as results_mod
+
+    base = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    cur = [
+        pool.Outcome(
+            repo=pathlib.Path('canonical/foo'), status='failed', summary='1 failed; ValueError: x'
+        )
+    ]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results_mod.save(base, base_path)
+    results_mod.save(cur, cur_path)
+
+    rc = _run([
+        'compare',
+        str(base_path),
+        str(cur_path),
+        '--format',
+        'markdown',
+        '--fail-on-regression',
+    ])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert '| Charm | Baseline | Current |' in captured.out
+    assert 'ValueError: x' in captured.out

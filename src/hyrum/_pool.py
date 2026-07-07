@@ -24,6 +24,7 @@ from typing import Final
 
 from hyrum import _patchers as patchers
 from hyrum import _runners as runners
+from hyrum import _summary as summary_mod
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ class Outcome:
     skip_reason: str = ''
     skip_reason_kind: patchers.PatcherSkipReason | None = None
     error: str = ''
+    summary: str = ''
 
     @classmethod
     def from_run_result(cls, result: runners.RunResult) -> Outcome:
@@ -63,6 +65,12 @@ class Outcome:
             target=result.target,
             duration_s=result.duration_s,
             returncode=result.returncode,
+            summary=summary_mod.from_run_output(
+                result.stdout,
+                result.stderr,
+                status=result.status.value,
+                returncode=result.returncode,
+            ),
         )
 
     @classmethod
@@ -83,7 +91,13 @@ class Outcome:
     @classmethod
     def patcher_error(cls, repo: pathlib.Path, target: str, message: str) -> Outcome:
         """Build an outcome for a patcher failure (distinct from a run failure)."""
-        return cls(repo=repo, status='patcher_error', target=target, error=message)
+        return cls(
+            repo=repo,
+            status='patcher_error',
+            target=target,
+            error=message,
+            summary=f'patcher: {message}'[:160],
+        )
 
 
 def _log_path(
@@ -228,6 +242,7 @@ async def run_pool(
                     status='patcher_error',
                     target=target,
                     error=f'{type(exc).__name__}: {exc}',
+                    summary=f'patcher: {type(exc).__name__}: {exc}'[:160],
                 )
                 if log_dir is not None:
                     _dump_patcher_error_log(
