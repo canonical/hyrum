@@ -1,6 +1,6 @@
 [project]
 name = "hyrum"
-version = "0.0.1.dev0"
+version = "1.0.0a1"
 description = "Bulk-run checks across many charm repositories with a dependency swapped out."
 readme = "README.md"
 requires-python = ">=3.11"
