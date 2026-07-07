@@ -31,10 +31,10 @@ jobs:
             --output-format JSON \
             --output-file sbom.cdx.json
       # Two separate attestations: SLSA provenance (how it was built)
-      # and CycloneDX SBOM (what's inside). attest-build-provenance
-      # doesn't accept sbom-path, so the SBOM predicate needs its own call.
+      # and CycloneDX SBOM (what's inside). actions/attest defaults to
+      # SLSA provenance when no sbom-path/predicate is given.
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763  # v4.1.1
         with:
           subject-path: 'dist/*'
       - name: Attest SBOM
