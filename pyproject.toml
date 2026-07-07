@@ -36,10 +36,10 @@ packages = ["src/hyrum"]
 # ---------------------------------------------------------------------------
 [dependency-groups]
 lint = [
-    "ruff>=0.15.19",
+    "ruff>=0.15.20",
     "codespell>=2.2",
     "zizmor>=1.26",
-    "pyright>=1.1.410",
+    "pyright>=1.1.411",
 ]
 unit = [
     "pytest>=9.1.1",
