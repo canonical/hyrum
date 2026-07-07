@@ -146,6 +146,61 @@ def test_parse_patch_rejects_garbage():
         cli._parse_patch('!!! not a requirement')
 
 
+def test_parse_patch_vendored_swap_pypi():
+    parsed = cli._parse_patch('charms.operator_libs_linux.v0.apt -> charmlibs-apt==1.0.0')
+    assert parsed == {
+        'pkg_name': 'charms.operator_libs_linux.v0.apt',
+        'vendored_author': 'operator_libs_linux',
+        'vendored_version': '0',
+        'vendored_lib': 'apt',
+        'vendored_pkg': 'charmlibs-apt',
+        'version': '==1.0.0',
+    }
+
+
+def test_parse_patch_vendored_swap_git_with_subdir():
+    parsed = cli._parse_patch(
+        'charms.operator_libs_linux.v0.apt -> '
+        'charmlibs-apt @ git+https://github.com/canonical/charmlibs@main#subdirectory=apt'
+    )
+    assert parsed == {
+        'pkg_name': 'charms.operator_libs_linux.v0.apt',
+        'vendored_author': 'operator_libs_linux',
+        'vendored_version': '0',
+        'vendored_lib': 'apt',
+        'vendored_pkg': 'charmlibs-apt',
+        'url': 'https://github.com/canonical/charmlibs',
+        'branch': 'main',
+        'subdir': 'apt',
+    }
+
+
+def test_parse_patch_vendored_rejects_bad_lhs():
+    with pytest.raises(Exception, match='vendored dotted form'):
+        cli._parse_patch('requests -> charmlibs-apt==1.0.0')
+
+
+def test_build_patcher_vendored_swap():
+    from hyrum import _patchers as patchers
+
+    patcher = cli._build_patcher(
+        no_patch=False,
+        patches=[
+            cli._parse_patch('charms.operator_libs_linux.v0.apt -> charmlibs-apt==1.0.0'),
+        ],
+        poetry_executable='poetry',
+        uv_executable='uv',
+        lock_timeout=60,
+        auto_python=True,
+    )
+    assert isinstance(patcher, patchers.VendoredLibPatcher)
+    assert patcher.swap.host_charm == 'operator_libs_linux'
+    assert patcher.swap.version == 0
+    assert patcher.swap.lib_name == 'apt'
+    assert patcher.swap.source.pkg_name == 'charmlibs-apt'
+    assert patcher.swap.source.version == '==1.0.0'
+
+
 def test_build_patcher_default_patches_ops():
     """No --patch and no --no-patch → patches ops from canonical:main."""
     from hyrum import _patchers as patchers

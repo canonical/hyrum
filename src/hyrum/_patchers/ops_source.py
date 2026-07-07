@@ -218,7 +218,10 @@ class OpsSourcePatcher:
         try:
             parsed = tomllib.loads(snapshots[pyproject] or '')
         except tomllib.TOMLDecodeError as exc:
-            raise base.PatcherError(f'could not parse {pyproject}: {exc}') from exc
+            raise base.PatcherSkip(
+                base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                f'could not parse {pyproject}: {exc}',
+            ) from exc
 
         try:
             ops_extras = _collect_pyproject_ops_extras(parsed)

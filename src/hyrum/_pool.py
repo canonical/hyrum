@@ -2,8 +2,7 @@
 
 One :class:`Outcome` per repo is produced. ``patcher_error`` is a
 distinct status from ``failed`` so callers can tell infrastructure-style
-problems (e.g. the dependency patcher couldn't parse a pyproject.toml)
-apart from genuine tox/make failures. The research doc calls this out
+problems apart from genuine tox/make failures. The research doc calls this out
 as a precondition for sensible run-to-run comparison later.
 
 Patchers remain synchronous context managers (the ``Patcher`` protocol
@@ -51,6 +50,7 @@ class Outcome:
     duration_s: float = 0.0
     returncode: int | None = None
     skip_reason: str = ''
+    skip_reason_kind: patchers.PatcherSkipReason | None = None
     error: str = ''
 
     @classmethod
@@ -66,9 +66,19 @@ class Outcome:
         )
 
     @classmethod
-    def skipped(cls, repo: pathlib.Path, reason: str) -> Outcome:
-        """Build a skipped outcome with a human-readable reason."""
-        return cls(repo=repo, status='skipped', skip_reason=reason)
+    def skipped(
+        cls,
+        repo: pathlib.Path,
+        reason: str,
+        *,
+        kind: patchers.PatcherSkipReason | None = None,
+    ) -> Outcome:
+        """Build a skipped outcome with a human-readable reason.
+
+        ``kind`` carries the machine-readable category when the skip came
+        from a patcher; up-front filter skips leave it as ``None``.
+        """
+        return cls(repo=repo, status='skipped', skip_reason=reason, skip_reason_kind=kind)
 
     @classmethod
     def patcher_error(cls, repo: pathlib.Path, target: str, message: str) -> Outcome:
@@ -163,6 +173,9 @@ async def run_one(
     try:
         cm = patcher.apply(repo)
         await asyncio.to_thread(cm.__enter__)
+    except patchers.PatcherSkip as exc:
+        logger.info('skipping %s: %s', repo, exc)
+        return Outcome.skipped(repo, str(exc), kind=exc.reason)
     except patchers.PatcherError as exc:
         logger.warning('patcher error in %s: %s', repo, exc)
         if log_dir is not None:

@@ -104,6 +104,13 @@ def render(
         count = counts.get(status, 0)
         pct = f'{(count / total * 100):.0f}%' if total else '—'
         rows.append((status, str(count), pct))
+        if status == 'skipped' and count:
+            skip_kinds: collections.Counter[str] = collections.Counter(
+                o.skip_reason_kind.value for o in outcomes if o.skip_reason_kind is not None
+            )
+            for kind, kind_count in sorted(skip_kinds.items()):
+                kind_pct = f'{(kind_count / total * 100):.0f}%' if total else '—'
+                rows.append((f'  {kind}', str(kind_count), kind_pct))
     table = _format_table(
         rows,
         headers=None if no_headers else ('STATUS', 'COUNT', '%'),
@@ -119,9 +126,16 @@ def render(
         def emph(text: str) -> str:
             return f'{_BOLD}{text}{_RESET}' if use_colour else text
 
+        not_run = total - ran
+        breakdown_parts = [
+            f'{counts.get(s, 0)} {s}'
+            for s in ('skipped', 'no_target', 'patcher_error')
+            if counts.get(s, 0)
+        ]
+        breakdown = f' ({", ".join(breakdown_parts)})' if breakdown_parts else ''
         print(
             f'{emph(str(passed_n))} of {emph(str(ran))} runs passed '
-            f'({emph(f"{pct:.0f}%")}); {total - ran} skipped or errored.',
+            f'({emph(f"{pct:.0f}%")}); {not_run} not run{breakdown}.',
             file=stream,
         )
     else:

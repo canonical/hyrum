@@ -198,10 +198,22 @@ def test_extras_preserved_on_version_swap(tmp_path: pathlib.Path):
 # ---- errors ------------------------------------------------------------------
 
 
-def test_missing_pyproject_raises(tmp_path: pathlib.Path):
+def test_missing_pyproject_skips(tmp_path: pathlib.Path):
     source = patchers.DepSource(pkg_name='requests', version='==1')
     with (
-        pytest.raises(patchers.PatcherError, match=r'no pyproject\.toml'),
+        pytest.raises(patchers.PatcherSkip, match=r'not a dependency'),
+        patchers.GenericDepPatcher(source).apply(tmp_path),
+    ):
+        pass
+
+
+def test_dep_not_declared_skips(tmp_path: pathlib.Path):
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname = "x"\nversion = "0"\ndependencies = ["click"]\n'
+    )
+    source = patchers.DepSource(pkg_name='requests', version='==1')
+    with (
+        pytest.raises(patchers.PatcherSkip, match=r'not a declared dependency'),
         patchers.GenericDepPatcher(source).apply(tmp_path),
     ):
         pass
@@ -211,7 +223,33 @@ def test_unparseable_pyproject_raises(tmp_path: pathlib.Path):
     (tmp_path / 'pyproject.toml').write_text('not = valid = toml = at all\n')
     source = patchers.DepSource(pkg_name='requests', version='==1')
     with (
-        pytest.raises(patchers.PatcherError, match='could not parse'),
+        pytest.raises(patchers.PatcherSkip, match='could not parse') as excinfo,
         patchers.GenericDepPatcher(source).apply(tmp_path),
     ):
         pass
+    assert excinfo.value.reason is patchers.PatcherSkipReason.MALFORMED_PYPROJECT
+
+
+def test_malformed_dependency_section_raises(tmp_path: pathlib.Path):
+    (tmp_path / 'pyproject.toml').write_text('[tool.poetry]\nname = "x"\ndependencies = "oops"\n')
+    source = patchers.DepSource(pkg_name='requests', version='==1')
+    with (
+        pytest.raises(patchers.PatcherSkip, match=r'\[tool\.poetry\.dependencies\]') as excinfo,
+        patchers.GenericDepPatcher(source).apply(tmp_path),
+    ):
+        pass
+    assert excinfo.value.reason is patchers.PatcherSkipReason.MALFORMED_PYPROJECT
+
+
+def test_malformed_dependency_groups_raises(tmp_path: pathlib.Path):
+    (tmp_path / 'pyproject.toml').write_text(
+        '[project]\nname = "x"\nversion = "0"\ndependencies = []\n'
+        '[dependency-groups]\ndev = "not-a-list"\n'
+    )
+    source = patchers.DepSource(pkg_name='requests', version='==1')
+    with (
+        pytest.raises(patchers.PatcherSkip, match=r'\[dependency-groups\]\.dev') as excinfo,
+        patchers.GenericDepPatcher(source).apply(tmp_path),
+    ):
+        pass
+    assert excinfo.value.reason is patchers.PatcherSkipReason.MALFORMED_PYPROJECT
