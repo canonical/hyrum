@@ -460,6 +460,72 @@ def test_pyproject_poetry_with_testing_extra(
         assert 'subdirectory = "testing"' in patched
 
 
+def test_pyproject_poetry_swaps_scenario_declared_separately(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch
+):
+    """Split idiom: ``ops = "^X"`` in main deps, ``ops-scenario = "*"`` in a group.
+
+    Poetry charms (e.g. the data-platform ones) commonly declare ``ops`` and
+    ``ops-scenario`` separately rather than using the ``ops = { extras = [
+    "testing"] }`` inline-table form. The companion swap must still fire.
+    """
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [tool.poetry]
+        name = "c"
+        version = "0"
+        description = ""
+        authors = ["x <x@x>"]
+
+        [tool.poetry.dependencies]
+        python = "^3.10"
+        ops = "^3.5.0"
+
+        [tool.poetry.group.unit.dependencies]
+        pytest = "*"
+        ops-scenario = "*"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        patched = _read(py)
+        assert 'ops = {git = "https://github.com/canonical/operator"' in patched
+        assert 'ops-scenario = {git = "https://github.com/canonical/operator"' in patched
+        assert 'subdirectory = "testing"' in patched
+        # Old PyPI-tracking declaration is gone; only the git-source version remains.
+        assert 'ops-scenario = "*"' not in patched
+
+
+def test_pyproject_poetry_leaves_scenario_alone_when_absent(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch
+):
+    """Don't inject ``ops-scenario`` when the charm doesn't declare it.
+
+    A charm that only uses ``ops`` (no testing extra, no separate scenario
+    dep) shouldn't grow a new companion dependency it never asked for.
+    """
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [tool.poetry]
+        name = "c"
+        version = "0"
+        description = ""
+        authors = ["x <x@x>"]
+
+        [tool.poetry.dependencies]
+        python = "^3.10"
+        ops = "^3.5.0"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        patched = _read(py)
+        assert 'ops = {git = "https://github.com/canonical/operator"' in patched
+        assert 'ops-scenario' not in patched
+
+
 # ---- OpsSource: PyPI version mode -------------------------------------------
 
 
