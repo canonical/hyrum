@@ -6,6 +6,7 @@ import textwrap
 import pytest
 
 from hyrum import _patchers as patchers
+from hyrum import python_version
 from hyrum._patchers import _common, ops_source
 from hyrum._patchers.charmlib_source import _lib_names
 
@@ -652,22 +653,22 @@ def test_lockfile_snapshots_restored(
     ],
 )
 def test_min_python_from_constraint(constraint, expected):
-    assert ops_source._min_python_from_constraint(constraint) == expected
+    assert python_version.min_python_from_constraint(constraint) == expected
 
 
 def test_min_python_from_pyproject_pep621():
     parsed = {'project': {'requires-python': '>=3.12,<4.0'}}
-    assert ops_source._min_python_from_pyproject(parsed) == (3, 12)
+    assert python_version.min_python_from_pyproject(parsed) == (3, 12)
 
 
 def test_min_python_from_pyproject_poetry_string():
     parsed = {'tool': {'poetry': {'dependencies': {'python': '^3.11'}}}}
-    assert ops_source._min_python_from_pyproject(parsed) == (3, 11)
+    assert python_version.min_python_from_pyproject(parsed) == (3, 11)
 
 
 def test_min_python_from_pyproject_poetry_table():
     parsed = {'tool': {'poetry': {'dependencies': {'python': {'version': '~3.10'}}}}}
-    assert ops_source._min_python_from_pyproject(parsed) == (3, 10)
+    assert python_version.min_python_from_pyproject(parsed) == (3, 10)
 
 
 def test_min_python_from_pyproject_pep621_wins_over_poetry():
@@ -675,22 +676,22 @@ def test_min_python_from_pyproject_pep621_wins_over_poetry():
         'project': {'requires-python': '>=3.12'},
         'tool': {'poetry': {'dependencies': {'python': '^3.10'}}},
     }
-    assert ops_source._min_python_from_pyproject(parsed) == (3, 12)
+    assert python_version.min_python_from_pyproject(parsed) == (3, 12)
 
 
 def test_min_python_from_pyproject_absent():
-    assert ops_source._min_python_from_pyproject({}) is None
+    assert python_version.min_python_from_pyproject({}) is None
 
 
 def test_wrap_with_uv_python_noop_without_version():
-    assert ops_source._wrap_with_uv_python(('poetry', 'lock'), None, ('uv',)) == (
+    assert python_version.wrap_with_uv_python(('poetry', 'lock'), None, ('uv',)) == (
         'poetry',
         'lock',
     )
 
 
 def test_wrap_with_uv_python_prefixes_uv_run():
-    assert ops_source._wrap_with_uv_python(('poetry', 'lock'), (3, 12), ('uv',)) == (
+    assert python_version.wrap_with_uv_python(('poetry', 'lock'), (3, 12), ('uv',)) == (
         'uv',
         'run',
         '--no-project',
@@ -703,7 +704,7 @@ def test_wrap_with_uv_python_prefixes_uv_run():
 
 
 def test_wrap_with_uv_python_respects_uv_executable():
-    assert ops_source._wrap_with_uv_python(
+    assert python_version.wrap_with_uv_python(
         ('poetry', 'lock'), (3, 11), ('uvx', '--from', 'uv')
     ) == (
         'uvx',

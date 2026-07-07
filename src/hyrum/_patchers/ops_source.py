@@ -33,6 +33,7 @@ from typing import Any
 
 import packaging.requirements
 
+from hyrum import python_version
 from hyrum._patchers import base
 from hyrum._patchers._common import (
     detect_pyproject_flavour,
@@ -245,15 +246,17 @@ class OpsSourcePatcher:
             py_version: tuple[int, int] | None = None
             if self.ops.auto_python:
                 try:
-                    py_version = _min_python_from_pyproject(tomllib.loads(new_text))
+                    py_version = python_version.min_python_from_pyproject(tomllib.loads(new_text))
                 except tomllib.TOMLDecodeError:
-                    py_version = _min_python_from_pyproject(parsed)
+                    py_version = python_version.min_python_from_pyproject(parsed)
 
             if flavour == 'poetry':
                 base_cmd = (*shlex.split(' '.join(self.ops.poetry_executable)), 'lock')
                 run_lock(
                     repo,
-                    _wrap_with_uv_python(base_cmd, py_version, self.ops.uv_executable),
+                    python_version.wrap_with_uv_python(
+                        base_cmd, py_version, self.ops.uv_executable
+                    ),
                     self.ops.lock_timeout,
                     on_failure_remove=poetry_lock,
                 )
@@ -700,70 +703,72 @@ def _patch_pyproject_poetry(original: str, ops: OpsSource, ops_extras: set[str])
     )
 
 
-_PYTHON_BOUND_RE = re.compile(r'(>=|>|==|~=|~|\^)\s*(\d+)\.(\d+)')
+def _detect_pyproject_flavour(parsed: dict[str, Any], uv_lock_present: bool) -> str:
+    """Return ``"uv"`` / ``"poetry"`` / ``"pep621"`` / ``"unknown"``.
 
-
-def _min_python_from_constraint(constraint: str) -> tuple[int, int] | None:
-    """Return the lowest ``(major, minor)`` Python that satisfies ``constraint``.
-
-    Accepts PEP 440 specifiers (``>=3.12,<4.0``) and Poetry shorthand
-    (``^3.10``, ``~3.10``). Only lower-bound operators are considered;
-    upper bounds (``<``, ``<=``) are ignored because they don't widen the
-    set of acceptable interpreters.
-
-    Returns ``None`` if no lower bound is present.
+    A pyproject is treated as ``uv`` if it carries the uv signal (a
+    ``[tool.uv]`` table or a ``uv.lock``) alongside deps declared in any
+    of the standard PEP 621 / PEP 735 locations:
+    ``[project.dependencies]``, ``[project.optional-dependencies]``, or
+    ``[dependency-groups]``.
     """
-    bounds: list[tuple[int, int]] = []
-    for op, major_s, minor_s in _PYTHON_BOUND_RE.findall(constraint):
-        major, minor = int(major_s), int(minor_s)
-        if op == '>':
-            minor += 1
-        bounds.append((major, minor))
-    if not bounds:
-        return None
-    return max(bounds)
-
-
-def _min_python_from_pyproject(parsed: dict[str, Any]) -> tuple[int, int] | None:
-    """Extract the project's minimum Python from a parsed pyproject.toml."""
-    project: dict[str, Any] = parsed.get('project', {})
-    requires_python = project.get('requires-python')
-    if isinstance(requires_python, str):
-        bound = _min_python_from_constraint(requires_python)
-        if bound is not None:
-            return bound
-    poetry: dict[str, Any] = parsed.get('tool', {}).get('poetry', {})
-    python_dep: Any = poetry.get('dependencies', {}).get('python')
-    if isinstance(python_dep, str):
-        return _min_python_from_constraint(python_dep)
-    if isinstance(python_dep, dict):
-        version = python_dep.get('version')
-        if isinstance(version, str):
-            return _min_python_from_constraint(version)
-    return None
-
-
-def _wrap_with_uv_python(
-    cmd: Sequence[str],
-    py_version: tuple[int, int] | None,
-    uv_executable: Sequence[str],
-) -> tuple[str, ...]:
-    """Prefix ``cmd`` with ``uv run --no-project --python X.Y --`` when ``py_version`` is set.
-
-    ``--no-project`` keeps uv from interpreting the charm's ``pyproject.toml``
-    as a uv project: some charms have a ``[project]`` table without a
-    ``version`` (legal under Poetry's ``package-mode = false``, rejected by
-    uv), which would otherwise abort ``uv run`` before it ever gets to
-    invoke poetry.
-    """
-    if py_version is None:
-        return tuple(cmd)
-    return (
-        *uv_executable,
-        'run',
-        '--no-project',
-        '--python',
-        f'{py_version[0]}.{py_version[1]}',
-        '--',
-        *cmd,
+    project = parsed.get('project', {})
+    has_project_table = isinstance(project, dict) and bool(project)
+    has_pep621_deps = (
+        'dependencies' in project
+        or 'optional-dependencies' in project
+        or 'dependency-groups' in parsed
     )
+    if has_pep621_deps and (uv_lock_present or 'uv' in parsed.get('tool', {})):
+        return 'uv'
+    if 'poetry' in parsed.get('tool', {}):
+        return 'poetry'
+    if has_pep621_deps or has_project_table:
+        return 'pep621'
+    return 'unknown'
+
+
+def _run_lock(
+    repo: pathlib.Path,
+    cmd: Sequence[str],
+    timeout: int,
+    *,
+    on_failure_remove: pathlib.Path | None = None,
+) -> None:
+    """Best-effort regenerate a lockfile. Logs (never raises) on failure.
+
+    Some charms have unresolvable dev dependencies under the patched
+    ``ops`` source; in that case we just delete the lockfile so the
+    runner can install without it.
+    """
+    # Strip ``VIRTUAL_ENV`` so the charm's lock isn't pinned to hyrum's own
+    # venv. Poetry in particular reads ``VIRTUAL_ENV`` to decide the project's
+    # "current Python" and rejects ``poetry lock`` if it disagrees with the
+    # project's requires-python — even when we wrap with ``uv run --python``.
+    env = {k: v for k, v in os.environ.items() if k != 'VIRTUAL_ENV'}
+    try:
+        result = subprocess.run(  # noqa: S603 — cmd built from project config
+            list(cmd),
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            timeout=timeout,
+            env=env,
+        )
+    except FileNotFoundError:
+        logger.warning('%s not found, skipping lock for %s', cmd[0], repo)
+        return
+    except subprocess.TimeoutExpired:
+        logger.warning('%s lock timed out after %ds for %s', cmd[0], timeout, repo)
+        if on_failure_remove and on_failure_remove.exists():
+            on_failure_remove.unlink()
+        return
+    if result.returncode != 0:
+        logger.warning(
+            '%s lock failed for %s: %s',
+            cmd[0],
+            repo,
+            result.stderr.decode(errors='replace').strip(),
+        )
+        if on_failure_remove and on_failure_remove.exists():
+            on_failure_remove.unlink()
