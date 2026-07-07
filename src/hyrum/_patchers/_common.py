@@ -16,6 +16,8 @@ from typing import Any
 
 import packaging.requirements
 
+from hyrum._patchers import base
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,17 +58,29 @@ def collect_pyproject_pkg_extras(data: dict[str, Any], pkg_name: str) -> set[str
     # destructure without lighting up pyright-strict.
     poetry: dict[str, Any] = data.get('tool', {}).get('poetry', {})
     for section in ('dependencies', 'dev-dependencies'):
-        deps: Any = poetry.get(section, {})
-        if isinstance(deps, dict):
-            dep: Any = deps.get(pkg_name)
-            if isinstance(dep, dict) and 'extras' in dep:
-                extras.update(str(e) for e in dep['extras'])
-    for group in poetry.get('group', {}).values():
-        group_deps: Any = group.get('dependencies', {})
-        if isinstance(group_deps, dict):
-            dep = group_deps.get(pkg_name)
-            if isinstance(dep, dict) and 'extras' in dep:
-                extras.update(str(e) for e in dep['extras'])
+        if section not in poetry:
+            continue
+        deps: Any = poetry[section]
+        if not isinstance(deps, dict):
+            raise base.PatcherSkip(
+                base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                f'[tool.poetry.{section}] is not a table',
+            )
+        dep: Any = deps.get(pkg_name)
+        if isinstance(dep, dict) and 'extras' in dep:
+            extras.update(str(e) for e in dep['extras'])
+    for group_name, group in poetry.get('group', {}).items():
+        if 'dependencies' not in group:
+            continue
+        group_deps: Any = group['dependencies']
+        if not isinstance(group_deps, dict):
+            raise base.PatcherSkip(
+                base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                f'[tool.poetry.group.{group_name}.dependencies] is not a table',
+            )
+        dep = group_deps.get(pkg_name)
+        if isinstance(dep, dict) and 'extras' in dep:
+            extras.update(str(e) for e in dep['extras'])
 
     project: dict[str, Any] = data.get('project', {})
     for dep_str in project.get('dependencies', []):
@@ -77,12 +91,21 @@ def collect_pyproject_pkg_extras(data: dict[str, Any], pkg_name: str) -> set[str
 
     # PEP 735 [dependency-groups]: same shape as optional-dependencies but at
     # top-level. Used by uv-managed charms that don't put deps under [project].
-    dep_groups: Any = data.get('dependency-groups', {})
-    if isinstance(dep_groups, dict):
-        for group_value in dep_groups.values():
-            if isinstance(group_value, list):
-                for dep_str in group_value:
-                    extras.update(_extras_from_pep508_line(str(dep_str)))
+    if 'dependency-groups' in data:
+        dep_groups: Any = data['dependency-groups']
+        if not isinstance(dep_groups, dict):
+            raise base.PatcherSkip(
+                base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                '[dependency-groups] is not a table',
+            )
+        for group_name, group_value in dep_groups.items():
+            if not isinstance(group_value, list):
+                raise base.PatcherSkip(
+                    base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                    f'[dependency-groups].{group_name} is not an array',
+                )
+            for dep_str in group_value:
+                extras.update(_extras_from_pep508_line(str(dep_str)))
 
     return extras
 
@@ -107,17 +130,29 @@ def pkg_is_declared(data: dict[str, Any], pkg_name: str) -> bool:
 
     poetry: dict[str, Any] = data.get('tool', {}).get('poetry', {})
     for section in ('dependencies', 'dev-dependencies'):
-        deps: Any = poetry.get(section, {})
-        if isinstance(deps, dict):
-            for name in deps:
-                if _norm(str(name)) == target:
-                    return True
-    for group in poetry.get('group', {}).values():
-        group_deps: Any = group.get('dependencies', {})
-        if isinstance(group_deps, dict):
-            for name in group_deps:
-                if _norm(str(name)) == target:
-                    return True
+        if section not in poetry:
+            continue
+        deps: Any = poetry[section]
+        if not isinstance(deps, dict):
+            raise base.PatcherSkip(
+                base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                f'[tool.poetry.{section}] is not a table',
+            )
+        for name in deps:
+            if _norm(str(name)) == target:
+                return True
+    for group_name, group in poetry.get('group', {}).items():
+        if 'dependencies' not in group:
+            continue
+        group_deps: Any = group['dependencies']
+        if not isinstance(group_deps, dict):
+            raise base.PatcherSkip(
+                base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                f'[tool.poetry.group.{group_name}.dependencies] is not a table',
+            )
+        for name in group_deps:
+            if _norm(str(name)) == target:
+                return True
 
     project: dict[str, Any] = data.get('project', {})
     for dep_str in project.get('dependencies', []):
@@ -128,13 +163,22 @@ def pkg_is_declared(data: dict[str, Any], pkg_name: str) -> bool:
             if _matches_pep508(str(dep_str)):
                 return True
 
-    dep_groups: Any = data.get('dependency-groups', {})
-    if isinstance(dep_groups, dict):
-        for group_value in dep_groups.values():
-            if isinstance(group_value, list):
-                for dep_str in group_value:
-                    if _matches_pep508(str(dep_str)):
-                        return True
+    if 'dependency-groups' in data:
+        dep_groups: Any = data['dependency-groups']
+        if not isinstance(dep_groups, dict):
+            raise base.PatcherSkip(
+                base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                '[dependency-groups] is not a table',
+            )
+        for group_name, group_value in dep_groups.items():
+            if not isinstance(group_value, list):
+                raise base.PatcherSkip(
+                    base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                    f'[dependency-groups].{group_name} is not an array',
+                )
+            for dep_str in group_value:
+                if _matches_pep508(str(dep_str)):
+                    return True
 
     return False
 
