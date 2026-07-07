@@ -44,6 +44,28 @@ def test_render_summary_percentage(tmp_path: pathlib.Path):
     out = _render(outcomes, base=tmp_path)
     # 2 of 3 ran passed (skipped is not counted as a run).
     assert '2' in out and 'of' in out and '3' in out
+    assert '1 not run (1 skipped)' in out
+
+
+def test_render_summary_itemises_non_run_categories(tmp_path: pathlib.Path):
+    outcomes = [
+        pool.Outcome(repo=tmp_path / 'a', status='passed'),
+        pool.Outcome(repo=tmp_path / 'b', status='skipped'),
+        pool.Outcome(repo=tmp_path / 'c', status='skipped'),
+        pool.Outcome(repo=tmp_path / 'd', status='no_target'),
+        pool.Outcome(repo=tmp_path / 'e', status='patcher_error'),
+    ]
+    out = _render(outcomes, base=tmp_path)
+    assert '4 not run (2 skipped, 1 no_target, 1 patcher_error)' in out
+
+
+def test_render_summary_omits_breakdown_when_all_ran(tmp_path: pathlib.Path):
+    outcomes = [
+        pool.Outcome(repo=tmp_path / 'a', status='passed'),
+        pool.Outcome(repo=tmp_path / 'b', status='failed'),
+    ]
+    out = _render(outcomes, base=tmp_path)
+    assert out.rstrip().endswith('0 not run.')
 
 
 def test_render_verbose_lists_failures(tmp_path: pathlib.Path):

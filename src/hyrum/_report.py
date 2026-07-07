@@ -126,9 +126,16 @@ def render(
         def emph(text: str) -> str:
             return f'{_BOLD}{text}{_RESET}' if use_colour else text
 
+        not_run = total - ran
+        breakdown_parts = [
+            f'{counts.get(s, 0)} {s}'
+            for s in ('skipped', 'no_target', 'patcher_error')
+            if counts.get(s, 0)
+        ]
+        breakdown = f' ({", ".join(breakdown_parts)})' if breakdown_parts else ''
         print(
             f'{emph(str(passed_n))} of {emph(str(ran))} runs passed '
-            f'({emph(f"{pct:.0f}%")}); {total - ran} skipped or errored.',
+            f'({emph(f"{pct:.0f}%")}); {not_run} not run{breakdown}.',
             file=stream,
         )
     else:
