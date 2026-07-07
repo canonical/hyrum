@@ -404,17 +404,21 @@ def _strip_ops_declarations(original: str) -> str:
     return ''.join(out_lines)
 
 
+def _line_declares_poetry_pkg(stripped: str, pkg_name: str, pep_re: re.Pattern[str]) -> bool:
+    return (
+        stripped == pkg_name
+        or stripped.startswith(f'{pkg_name} ')
+        or stripped.startswith(f'{pkg_name}=')
+        or bool(pep_re.match(stripped))
+    )
+
+
 def _strip_companion_declarations(content: str, pkg_name: str) -> str:
     out_lines: list[str] = []
     pep_re = re.compile(rf'^{re.escape(pkg_name)}\s*=')
     for raw in content.splitlines(keepends=True):
         stripped = raw.split('#', 1)[0].strip().strip('"').strip("'")
-        if (
-            stripped == pkg_name
-            or stripped.startswith(f'{pkg_name} ')
-            or stripped.startswith(f'{pkg_name}=')
-            or pep_re.match(stripped)
-        ):
+        if _line_declares_poetry_pkg(stripped, pkg_name, pep_re):
             continue
         out_lines.append(raw)
     return ''.join(out_lines)
@@ -689,11 +693,10 @@ def _patch_pyproject_poetry(original: str, ops: OpsSource, ops_extras: set[str])
     if ops.overrides_companions():
         for extra, (pkg, subdir) in _COMPANION_PACKAGES.items():
             # Swap the companion when either (a) the charm asked for the
-            # matching ``ops`` extra, so ``ops`` will pull it in transitively,
+            # matching ``ops`` extra, as ``ops`` tries to pull the extra in
+            # from PyPI even when ``ops`` is being sourced from git,
             # or (b) the charm declares the companion as a top-level poetry
-            # dep in its own right (``ops-scenario = "*"``). The extras-only
-            # gate misses case (b), leaving companions pointed at PyPI even
-            # when ``ops`` is being sourced from git.
+            # dep in its own right (``ops-scenario = "*"``).
             if extra not in ops_extras and not _pyproject_declares_poetry_pkg(content, pkg):
                 continue
             content = _strip_companion_declarations(content, pkg)
@@ -709,19 +712,14 @@ def _patch_pyproject_poetry(original: str, ops: OpsSource, ops_extras: set[str])
 def _pyproject_declares_poetry_pkg(content: str, pkg_name: str) -> bool:
     """Return True if ``pkg_name`` is declared as a top-level Poetry dep.
 
-    Matches the same shapes ``_strip_companion_declarations`` targets: a
-    bare ``pkg`` line, ``pkg = ...``, or ``pkg == ...`` at column zero after
+    Uses the same predicate as ``_strip_companion_declarations``: a bare
+    ``pkg`` line, ``pkg = ...``, or ``pkg == ...`` at column zero after
     stripping any surrounding whitespace and comments.
     """
     pep_re = re.compile(rf'^{re.escape(pkg_name)}\s*=')
     for raw in content.splitlines():
         stripped = raw.split('#', 1)[0].strip().strip('"').strip("'")
-        if (
-            stripped == pkg_name
-            or stripped.startswith(f'{pkg_name} ')
-            or stripped.startswith(f'{pkg_name}=')
-            or pep_re.match(stripped)
-        ):
+        if _line_declares_poetry_pkg(stripped, pkg_name, pep_re):
             return True
     return False
 
