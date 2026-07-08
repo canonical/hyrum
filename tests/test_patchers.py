@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pathlib
 import textwrap
+import tomllib
 
 import pytest
 
@@ -254,8 +255,6 @@ def test_pyproject_uv_is_idempotent_under_existing_sources(
     pyproject as ``original`` and inserted a second ``ops = { git = … }``
     line under the same ``[tool.uv.sources]`` table.
     """
-    import tomllib
-
     py = tmp_path / 'pyproject.toml'
     op_url = 'https://github.com/canonical/operator'
     py.write_text(
