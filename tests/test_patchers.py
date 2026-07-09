@@ -244,7 +244,7 @@ def test_pyproject_uv_adds_tool_uv_sources(tmp_path: pathlib.Path, ops_branch: p
         assert '"ops @ git+https://github.com/canonical/operator@fix/X"' in patched
 
 
-def test_pyproject_uv_is_idempotent_under_existing_sources(
+def test_pyproject_uv_is_unchanged_under_existing_sources(
     tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
 ):
     """A pyproject already carrying our ``[tool.uv.sources]`` block re-patches cleanly.

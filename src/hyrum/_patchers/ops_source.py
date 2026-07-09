@@ -422,15 +422,9 @@ _UV_SOURCES_OPS_LINE_RE = re.compile(r'^(ops|ops-scenario|ops-tracing)\s*=')
 def _strip_uv_sources_ops_entries(text: str) -> str:
     """Remove ``ops``/``ops-scenario``/``ops-tracing`` entries from ``[tool.uv.sources]``.
 
-    Makes :func:`_patch_pyproject_uv` idempotent: a previous run (or a sibling
-    process sharing the charm cache) may have left ``ops = { git = … }`` lines
-    behind under ``[tool.uv.sources]``; without this scrub, re-patching produces
-    duplicate TOML keys and ``uv`` fails before any test runs.
-
-    The scrub is scoped to the ``[tool.uv.sources]`` table only — we mustn't
-    touch ``"ops…"`` PEP 508 strings inside ``dependencies = […]`` arrays
-    (which :func:`_rewrite_pep508_ops_strings` has already converted to git
-    URLs).
+    Makes :func:`_patch_pyproject_uv` idempotent. If a previous run (or a sibling
+    process sharing the charm cache) has left ``ops = { git = … }`` lines behind,
+    scrub them so that patching doesn't produce duplicate TOML keys.
     """
     out_lines: list[str] = []
     section = ''
