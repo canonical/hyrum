@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pathlib
 import textwrap
+import tomllib
 
 import pytest
 
@@ -241,6 +242,48 @@ def test_pyproject_uv_adds_tool_uv_sources(tmp_path: pathlib.Path, ops_branch: p
         # hard pins (``ops==X.Y``) don't conflict with HEAD ops.
         assert 'ops>=2.10' not in patched
         assert '"ops @ git+https://github.com/canonical/operator@fix/X"' in patched
+
+
+def test_pyproject_uv_is_unchanged_under_existing_sources(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
+):
+    """A pyproject already carrying our ``[tool.uv.sources]`` block re-patches cleanly.
+
+    Reproduces the duplicate-key crash that surfaced when two ``hyrum check``
+    invocations shared a charm cache: the first run's restore lost the race
+    with the second run's snapshot, so the second run saw the patched
+    pyproject as ``original`` and inserted a second ``ops = { git = … }``
+    line under the same ``[tool.uv.sources]`` table.
+    """
+    py = tmp_path / 'pyproject.toml'
+    op_url = 'https://github.com/canonical/operator'
+    py.write_text(
+        textwrap.dedent(f"""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops @ git+{op_url}@fix/X",
+        ]
+
+        [tool.uv]
+        dev-dependencies = []
+
+        [tool.uv.sources]
+        ops = {{ git = "{op_url}", branch = "fix/X" }}
+        ops-scenario = {{ git = "{op_url}", branch = "fix/X", subdirectory = "testing" }}
+        ops-tracing = {{ git = "{op_url}", branch = "fix/X", subdirectory = "tracing" }}
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        patched = _read(py)
+        # Parses cleanly — no duplicate ``ops``/``ops-scenario``/``ops-tracing``
+        # entries inside ``[tool.uv.sources]``.
+        tomllib.loads(patched)
+        assert patched.count('\nops = { git ') == 1
+        assert patched.count('\nops-scenario = { git ') == 1
+        assert patched.count('\nops-tracing = { git ') == 1
 
 
 def test_pyproject_uv_always_hoists_all_companions(

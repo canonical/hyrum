@@ -416,6 +416,32 @@ def _line_declares_poetry_pkg(stripped: str, pkg_name: str, pep_re: re.Pattern[s
     )
 
 
+_UV_SOURCES_OPS_LINE_RE = re.compile(r'^(ops|ops-scenario|ops-tracing)\s*=')
+
+
+def _strip_uv_sources_ops_entries(text: str) -> str:
+    """Remove ``ops``/``ops-scenario``/``ops-tracing`` entries from ``[tool.uv.sources]``.
+
+    Makes :func:`_patch_pyproject_uv` idempotent. If a previous run (or a sibling
+    process sharing the charm cache) has left ``ops = { git = … }`` lines behind,
+    scrub them so that patching doesn't produce duplicate TOML keys.
+    """
+    out_lines: list[str] = []
+    section = ''
+    for raw in text.splitlines(keepends=True):
+        header = _SECTION_HEADER_RE.match(raw)
+        if header:
+            section = header.group(1).strip()
+            out_lines.append(raw)
+            continue
+        if section == 'tool.uv.sources':
+            stripped = raw.split('#', 1)[0].strip()
+            if _UV_SOURCES_OPS_LINE_RE.match(stripped):
+                continue
+        out_lines.append(raw)
+    return ''.join(out_lines)
+
+
 def _strip_companion_declarations(content: str, pkg_name: str) -> str:
     out_lines: list[str] = []
     pep_re = re.compile(rf'^{re.escape(pkg_name)}\s*=')
@@ -637,6 +663,7 @@ def _patch_pyproject_uv(
         companion_direct.append(pkg)
 
     out = _rewrite_pep508_ops_strings(original, ops)
+    out = _strip_uv_sources_ops_entries(out)
 
     block = '\n'.join(source_lines)
     if '[tool.uv.sources]' in out:
