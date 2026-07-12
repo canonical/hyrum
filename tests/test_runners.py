@@ -90,6 +90,30 @@ async def test_tox_runner_fail(tmp_path: pathlib.Path, spawner):
     assert result.stderr == b'AssertionError'
 
 
+async def test_tox_runner_strips_ansi_from_captured_output(tmp_path: pathlib.Path, spawner):
+    # tox sets PY_COLORS=1 for its subprocesses (charms hard-code it too),
+    # so pytest emits CSI sequences even when stdout is a pipe. Strip at the
+    # runner so log files and the summary extractor see plain text.
+    spawner(
+        FakeProc(
+            returncode=1,
+            stdout=b'\x1b[31mFAILED\x1b[0m tests/test_x.py::test_y\n',
+            stderr=b'\x1b[1mE\x1b[0m AssertionError\n',
+        )
+    )
+    result = await runners.ToxRunner().run(tmp_path, 'unit')
+    assert result.stdout == b'FAILED tests/test_x.py::test_y\n'
+    assert result.stderr == b'E AssertionError\n'
+
+
+async def test_tox_runner_strips_ansi_with_intermediate_bytes(tmp_path: pathlib.Path, spawner):
+    # CSI sequences may include intermediate bytes (0x20-0x2F) between the
+    # parameter and final bytes, e.g. `ESC[1 q` (set cursor style).
+    spawner(FakeProc(returncode=0, stdout=b'before\x1b[1 qafter\n'))
+    result = await runners.ToxRunner().run(tmp_path, 'unit')
+    assert result.stdout == b'beforeafter\n'
+
+
 async def test_tox_runner_no_target_when_rc_254(tmp_path: pathlib.Path, spawner):
     spawner(FakeProc(returncode=254))
     result = await runners.ToxRunner().run(tmp_path, 'unit')
