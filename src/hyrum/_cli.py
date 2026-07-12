@@ -31,17 +31,17 @@ from hyrum._runners import make_runner, tox
 logger = logging.getLogger('hyrum')
 
 
+# rstrip guards against HOME=/ (e.g. root on a minimal container), where the
+# raw expansion would make _HOME_PREFIX '//' and rewrite every '/' to '~/'.
 _HOME_PREFIX = os.path.expanduser('~').rstrip('/') + '/'
+_HOME_RE = re.compile(r'(^|[^\w./-])' + re.escape(_HOME_PREFIX))
 
 
 class _HyrumFormatter(logging.Formatter):
     converter = time.gmtime
 
     def format(self, record: logging.LogRecord) -> str:
-        msg = super().format(record)
-        if _HOME_PREFIX in msg:
-            msg = msg.replace(_HOME_PREFIX, '~/')
-        return msg
+        return _HOME_RE.sub(r'\1~/', super().format(record))
 
 
 def _configure_logging(level: int) -> None:
