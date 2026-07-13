@@ -1,7 +1,7 @@
 """Heuristic one-line failure summaries extracted from runner output.
 
 The goal is a short, human-readable string per non-passing outcome so the
-markdown comparison table is readable without round-tripping to the log files.
+Markdown comparison table is readable without round-tripping to the log files.
 Patterns are tuned for the common failure shapes we see across the charm
 fleet — pytest result lines, common Python exception classes, missing build
 tooling, package-resolver errors — and fall back to a generic ``exit N`` blurb
