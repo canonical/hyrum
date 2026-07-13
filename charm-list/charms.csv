@@ -44,7 +44,6 @@ Identity,https://github.com/canonical/sssd-operator,,manual
 IS,https://git.launchpad.net/apt-stresstest-charm,,manual
 IS,https://git.launchpad.net/autocert-charm,,manual
 IS,https://git.launchpad.net/bind-resolver-charm,,manual
-IS,https://github.com/canonical/cloudflared-operator,,manual
 IS,https://git.launchpad.net/container-log-archive-charm,,manual
 IS,https://github.com/canonical/content-cache-operator,,manual
 IS,https://git.launchpad.net/content-cache-charm,,manual
@@ -377,7 +376,6 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/charmed-etcd-benchmark-operator,,auto-discover
 ,https://github.com/canonical/charmed-gh-jira-sync-bot,,auto-discover
 ,https://github.com/canonical/chrony-client-operator,,auto-discover
-,https://github.com/canonical/cloudflare-configurator-operator,,auto-discover
 ,https://github.com/canonical/cluster-api-k8s,,auto-discover
 ,https://github.com/canonical/comsys-libs,,auto-discover
 ,https://github.com/canonical/comsys-openldap-k8s-operator,,auto-discover

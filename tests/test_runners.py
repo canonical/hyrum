@@ -106,6 +106,15 @@ async def test_tox_runner_strips_ansi_from_captured_output(tmp_path: pathlib.Pat
     assert result.stderr == b'E AssertionError\n'
 
 
+async def test_tox_runner_strips_ansi_with_intermediate_bytes(tmp_path: pathlib.Path, spawner):
+    # CSI sequences may include intermediate bytes (0x20-0x2F) between the
+    # parameter and final bytes, e.g. `ESC[1 q` (set cursor style).
+    spawner(FakeProc(returncode=0, stdout=b'before\x1b[1 qafter\n'))
+    result = await runners.ToxRunner().run(tmp_path, 'unit')
+    assert result.stdout == b'beforeafter\n'
+
+
+
 async def test_tox_runner_no_target_when_rc_254(tmp_path: pathlib.Path, spawner):
     spawner(FakeProc(returncode=254))
     result = await runners.ToxRunner().run(tmp_path, 'unit')
