@@ -19,49 +19,85 @@ from ._runners import base as _runners_base
 # tolerates extras like "516 warnings" before the duration, plus the
 # parenthesised "(0:03:00)" wall-clock pytest appends on longer runs.
 _PYTEST_SUMMARY_RE = re.compile(
-    rb'=+\s*(?:(\d+)\s+failed)?[,\s]*(?:(\d+)\s+passed)?[,\s]*(?:(\d+)\s+errors?)?'
-    rb'[^\n=]*in\s+[\d.]+\s*s[^\n=]*=+',
+    rb"""
+    =+ \s*
+    (?: (\d+) \s+ failed  )? [,\s]*
+    (?: (\d+) \s+ passed  )? [,\s]*
+    (?: (\d+) \s+ errors? )?
+    [^\n=]* in \s+ [\d.]+ \s* s [^\n=]* =+
+    """,
+    re.VERBOSE,
 )
 
 # Pytest's "no tests collected" / "no tests ran" line.
-_NO_TESTS_RE = re.compile(rb'=+\s*no tests ran\s+in\s+[\d.]+\s*s\s*=+', re.I)
+_NO_TESTS_RE = re.compile(
+    rb"""
+    =+ \s* no \s+ tests \s+ ran
+    \s+ in \s+ [\d.]+ \s* s \s* =+
+    """,
+    re.I | re.VERBOSE,
+)
 
 # Exception class name shape: optional dotted module prefix
 # (``unittest.mock.``, ``scenario.errors.``…), optional CamelCase head, and a
 # ``Error`` / ``Exception`` / ``Warning`` suffix. Used in three regexes below.
+# Kept re.VERBOSE-safe (no literal whitespace) so callers can embed it in
+# verbose patterns without further escaping.
 _EXC_NAME = rb'(?:\w+\.)*(?:[A-Z]\w*?)?(?:Error|Exception|Warning)'
 
 # Lines pytest prints for raised exceptions, e.g. "E   ValueError: bad thing".
-_PYTEST_E_LINE_RE = re.compile(rb'^E\s+(' + _EXC_NAME + rb'):\s*(.*)$', re.M)
+_PYTEST_E_LINE_RE = re.compile(
+    rb'^ E \s+ (' + _EXC_NAME + rb') : \s* (.*) $',
+    re.M | re.VERBOSE,
+)
 
 # A bare exception line outside pytest, e.g. "ModuleNotFoundError: No module named 'ops'".
 # Leading whitespace is allowed: pip / setuptools indents tracebacks several spaces.
-_BARE_EXC_RE = re.compile(rb'^\s*(' + _EXC_NAME + rb'):\s*(.+)$', re.M)
+_BARE_EXC_RE = re.compile(
+    rb'^ \s* (' + _EXC_NAME + rb') : \s* (.+) $',
+    re.M | re.VERBOSE,
+)
 
 # pytest's "short test summary info" line, e.g.
 # ``FAILED tests/foo.py::test_x - scenario.errors.InconsistentScenarioError: ...``.
 # These give us the failing exception class *per test*, which lets the summary
 # tally classes ("InconsistentScenarioError x13") rather than report a single
 # first-match exception.
-_PYTEST_FAILED_LINE_RE = re.compile(rb'^FAILED\s+\S+(?:\s+-\s+(' + _EXC_NAME + rb'))?', re.M)
+_PYTEST_FAILED_LINE_RE = re.compile(
+    rb'^ FAILED \s+ \S+ (?: \s+ - \s+ (' + _EXC_NAME + rb') )?',
+    re.M | re.VERBOSE,
+)
 
 # Poetry's two-line error format: "  TypeError" on one line, blank, then the message.
 _POETRY_ERROR_RE = re.compile(
-    rb'^\s+([A-Z][\w.]*(?:Error|Exception))\s*\n\s*\n\s+(\S[^\n]*)',
-    re.M,
+    rb"""
+    ^ \s+ ( [A-Z] [\w.]* (?: Error | Exception ) ) \s* \n
+      \s* \n
+      \s+ ( \S [^\n]* )
+    """,
+    re.M | re.VERBOSE,
 )
 
 # uv / pip's "no such file or directory: <coverage>" — coverage missing from .tox.
-_MISSING_COVERAGE_RE = re.compile(rb"can't open file '\S+coverage':")
+_MISSING_COVERAGE_RE = re.compile(
+    rb"""
+    can't \s open \s file \s ' \S+ coverage ' :
+    """,
+    re.VERBOSE,
+)
 
 # tox refuses to run an external command that isn't in ``allowlist_externals``.
 # Emitted as ``<env>: failed with <cmd> is not allowed, use allowlist_externals to allow it``.
 _TOX_ALLOWLIST_RE = re.compile(
-    rb'failed with (\S+) is not allowed, use allowlist_externals to allow it',
+    rb"""
+    failed \s with \s (\S+) \s is \s not \s allowed ,
+    \s use \s allowlist_externals \s to \s allow \s it
+    """,
+    re.VERBOSE,
 )
 
 # pytest collection-error block intro.
-_COLLECTION_ERROR_RE = re.compile(rb'ERROR collecting (\S+)')
+_COLLECTION_ERROR_RE = re.compile(rb'ERROR \s collecting \s (\S+)', re.VERBOSE)
 
 # Common host-build pitfalls. Order matters — the first hit wins.
 _BUILD_PATTERNS: tuple[tuple[bytes, str], ...] = (
@@ -73,50 +109,72 @@ _BUILD_PATTERNS: tuple[tuple[bytes, str], ...] = (
 
 _RESOLVER_PATTERNS: tuple[tuple[re.Pattern[bytes], str], ...] = (
     (
-        re.compile(rb'The lockfile at `?uv\.lock`? needs to be updated'),
+        re.compile(
+            rb'The \s lockfile \s at \s `? uv\.lock `? \s needs \s to \s be \s updated',
+            re.VERBOSE,
+        ),
         'uv: lockfile out of date (--locked refused)',
     ),
     (
-        re.compile(rb'No solution found when resolving[^\n]*'),
+        re.compile(rb'No \s solution \s found \s when \s resolving [^\n]*', re.VERBOSE),
         'uv resolve: no solution',
     ),
     (
-        re.compile(rb'URL dependencies must be expressed as direct requirements'),
+        re.compile(
+            rb"""
+            URL \s dependencies \s must \s be \s expressed
+            \s as \s direct \s requirements
+            """,
+            re.VERBOSE,
+        ),
         'uv resolve: URL dep must be a direct requirement',
     ),
     (
-        re.compile(rb'Failed to resolve dependencies for `([^`]+)`'),
+        re.compile(
+            rb'Failed \s to \s resolve \s dependencies \s for \s ` ([^`]+) `',
+            re.VERBOSE,
+        ),
         'uv resolve: failed to resolve dependencies',
     ),
     (
-        re.compile(rb'Because [^\n]*depends on[^\n]*'),
+        re.compile(rb'Because [^\n]* depends \s on [^\n]*', re.VERBOSE),
         'uv resolve: dependency conflict',
     ),
     (
-        re.compile(rb'SolverProblemError[^\n]*'),
+        re.compile(rb'SolverProblemError [^\n]*', re.VERBOSE),
         'poetry resolve: solver error',
     ),
     (
-        re.compile(rb'PackageNotFoundError[^\n]*'),
+        re.compile(rb'PackageNotFoundError [^\n]*', re.VERBOSE),
         'poetry resolve: package not found',
     ),
 )
 
 # pytest's "ERROR: file or directory not found" usage error.
 _PYTEST_MISSING_PATH_RE = re.compile(
-    rb'ERROR:\s+file or directory not found:\s+(\S+)',
+    rb"""
+    ERROR : \s+ file \s or \s directory \s not \s found : \s+ (\S+)
+    """,
+    re.VERBOSE,
 )
 
 # pyproject.toml parse errors. The first form is uv's TOML parser, the second
 # is tomllib via tox. Both show up when the OpsSource patcher leaves a stray
 # duplicate ``ops = …`` line behind — frequent enough to dedicate a pattern to.
 _TOML_DUPLICATE_KEY_RE = re.compile(
-    rb'(?:duplicate key|Cannot overwrite a value)',
+    rb"""
+    (?:
+        duplicate \s key
+      | Cannot \s overwrite \s a \s value
+    )
+    """,
+    re.VERBOSE,
 )
 
 # Stale poetry.lock detected by poetry install.
 _POETRY_LOCK_STALE_RE = re.compile(
-    rb'pyproject\.toml changed significantly since poetry\.lock',
+    rb'pyproject\.toml \s changed \s significantly \s since \s poetry\.lock',
+    re.VERBOSE,
 )
 
 _MAX_LEN = 160
@@ -302,7 +360,19 @@ def from_run_output(
     if missing:
         path = missing.group(1).decode('utf-8', 'replace')
         # Trim the leading cache prefix so the result reads as a test path.
-        short = re.sub(r'^.*?/(tests?/[^/]+(?:/[^/]+)*)$', r'\1', path) or path
+        short = (
+            re.sub(
+                r"""
+                ^ .*? /
+                ( tests? / [^/]+ (?: /[^/]+ )* )
+                $
+                """,
+                r'\1',
+                path,
+                flags=re.VERBOSE,
+            )
+            or path
+        )
         return _truncate(f'pytest: path not found: {short}')
 
     build = _resolver_or_build(combined)
