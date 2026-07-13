@@ -20,11 +20,12 @@ from ._runners import base as _runners_base
 # parenthesised "(0:03:00)" wall-clock pytest appends on longer runs.
 _PYTEST_SUMMARY_RE = re.compile(
     rb"""
-    =+ \s*
-    (?: (\d+) \s+ failed  )? [,\s]*
-    (?: (\d+) \s+ passed  )? [,\s]*
-    (?: (\d+) \s+ errors? )?
-    [^\n=]* in \s+ [\d.]+ \s* s [^\n=]* =+
+    =+ \s*                            # leading "===" banner
+    (?: (\d+) \s+ failed  )? [,\s]*   # optional failed count
+    (?: (\d+) \s+ passed  )? [,\s]*   # optional passed count
+    (?: (\d+) \s+ errors? )?          # optional error count
+    [^\n=]* in \s+ [\d.]+ \s* s       # "in 4.21s" trailer (tolerates "516 warnings")
+    [^\n=]* =+                        # trailing "===" (may include "(0:03:00)" wall-clock)
     """,
     re.VERBOSE,
 )
@@ -32,8 +33,9 @@ _PYTEST_SUMMARY_RE = re.compile(
 # Pytest's "no tests collected" / "no tests ran" line.
 _NO_TESTS_RE = re.compile(
     rb"""
-    =+ \s* no \s+ tests \s+ ran
-    \s+ in \s+ [\d.]+ \s* s \s* =+
+    =+ \s* no \s+ tests \s+ ran   # banner + "no tests ran"
+    \s+ in \s+ [\d.]+ \s* s \s*   # duration trailer
+    =+                            # closing banner
     """,
     re.I | re.VERBOSE,
 )
@@ -47,14 +49,18 @@ _EXC_NAME = rb'(?:\w+\.)*(?:[A-Z]\w*?)?(?:Error|Exception|Warning)'
 
 # Lines pytest prints for raised exceptions, for example "E   ValueError: bad thing".
 _PYTEST_E_LINE_RE = re.compile(
-    rb'^ E \s+ (' + _EXC_NAME + rb') : \s* (.*) $',
+    rb'^ E \s+ ('  # pytest's "E   " prefix, then the exception class
+    + _EXC_NAME
+    + rb') : \s* (.*) $',  # ": message" (message may be empty)
     re.M | re.VERBOSE,
 )
 
 # A bare exception line outside pytest, for example "ModuleNotFoundError: No module named 'ops'".
 # Leading whitespace is allowed: pip / setuptools indents tracebacks several spaces.
 _BARE_EXC_RE = re.compile(
-    rb'^ \s* (' + _EXC_NAME + rb') : \s* (.+) $',
+    rb'^ \s* ('  # allow leading indent (pip/setuptools traceback)
+    + _EXC_NAME
+    + rb') : \s* (.+) $',  # ": message" (require a non-empty message)
     re.M | re.VERBOSE,
 )
 
@@ -64,16 +70,17 @@ _BARE_EXC_RE = re.compile(
 # tally classes ("InconsistentScenarioError x13") rather than report a single
 # first-match exception.
 _PYTEST_FAILED_LINE_RE = re.compile(
-    rb'^ FAILED \s+ \S+ (?: \s+ - \s+ (' + _EXC_NAME + rb') )?',
+    rb'^ FAILED \s+ \S+'  # "FAILED tests/foo.py::test_x"
+    rb' (?: \s+ - \s+ (' + _EXC_NAME + rb') )?',  # optional " - <exception class>"
     re.M | re.VERBOSE,
 )
 
 # Poetry's two-line error format: "  TypeError" on one line, blank, then the message.
 _POETRY_ERROR_RE = re.compile(
     rb"""
-    ^ \s+ ( [A-Z] [\w.]* (?: Error | Exception ) ) \s* \n
-      \s* \n
-      \s+ ( \S [^\n]* )
+    ^ \s+ ( [A-Z] [\w.]* (?: Error | Exception ) ) \s* \n  # indented "  TypeError" line
+      \s* \n                                               # blank separator line
+      \s+ ( \S [^\n]* )                                    # indented message line
     """,
     re.M | re.VERBOSE,
 )
@@ -81,7 +88,7 @@ _POETRY_ERROR_RE = re.compile(
 # uv / pip's "no such file or directory: <coverage>" — coverage missing from .tox.
 _MISSING_COVERAGE_RE = re.compile(
     rb"""
-    can't \s open \s file \s ' \S+ coverage ' :
+    can't \s open \s file \s ' \S+ coverage ' :   # "can't open file '<path>/coverage':"
     """,
     re.VERBOSE,
 )
@@ -90,8 +97,8 @@ _MISSING_COVERAGE_RE = re.compile(
 # Emitted as ``<env>: failed with <cmd> is not allowed, use allowlist_externals to allow it``.
 _TOX_ALLOWLIST_RE = re.compile(
     rb"""
-    failed \s with \s (\S+) \s is \s not \s allowed ,
-    \s use \s allowlist_externals \s to \s allow \s it
+    failed \s with \s (\S+) \s is \s not \s allowed ,   # captures the offending command
+    \s use \s allowlist_externals \s to \s allow \s it  # tox's remediation hint
     """,
     re.VERBOSE,
 )
@@ -122,8 +129,8 @@ _RESOLVER_PATTERNS: tuple[tuple[re.Pattern[bytes], str], ...] = (
     (
         re.compile(
             rb"""
-            URL \s dependencies \s must \s be \s expressed
-            \s as \s direct \s requirements
+            URL \s dependencies \s must \s be \s expressed  # uv's exact wording,
+            \s as \s direct \s requirements                 # split across two lines
             """,
             re.VERBOSE,
         ),
@@ -153,7 +160,7 @@ _RESOLVER_PATTERNS: tuple[tuple[re.Pattern[bytes], str], ...] = (
 # pytest's "ERROR: file or directory not found" usage error.
 _PYTEST_MISSING_PATH_RE = re.compile(
     rb"""
-    ERROR : \s+ file \s or \s directory \s not \s found : \s+ (\S+)
+    ERROR : \s+ file \s or \s directory \s not \s found : \s+ (\S+)  # captures the missing path
     """,
     re.VERBOSE,
 )
@@ -164,8 +171,8 @@ _PYTEST_MISSING_PATH_RE = re.compile(
 _TOML_DUPLICATE_KEY_RE = re.compile(
     rb"""
     (?:
-        duplicate \s key
-      | Cannot \s overwrite \s a \s value
+        duplicate \s key              # tomllib (via tox)
+      | Cannot \s overwrite \s a \s value  # uv's TOML parser
     )
     """,
     re.VERBOSE,
