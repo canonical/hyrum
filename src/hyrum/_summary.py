@@ -12,14 +12,7 @@ from __future__ import annotations
 
 import re
 
-# Strip ANSI CSI sequences. pytest, tox and uv emit colourised output by default;
-# without this every summary/exception regex misses on terminal-colour logs.
-_ANSI_RE = re.compile(rb'\x1b\[[0-9;]*[A-Za-z]')
-
-
-def _strip_ansi(buf: bytes) -> bytes:
-    return _ANSI_RE.sub(b'', buf)
-
+from ._runners import base as _runners_base
 
 # Pytest's final summary line, e.g. "=== 6 failed, 102 passed in 4.21s ==="
 # or "=== 12 errors in 0.30s ===" for collection-time failures. The trailer
@@ -249,8 +242,8 @@ def from_run_output(
     if status == 'no_target':
         return 'target not present'
 
-    stdout = _strip_ansi(stdout)
-    stderr = _strip_ansi(stderr)
+    stdout = _runners_base.strip_ansi(stdout)
+    stderr = _runners_base.strip_ansi(stderr)
     combined = stdout + b'\n' + stderr
 
     counts_result = _pytest_counts(stdout)
