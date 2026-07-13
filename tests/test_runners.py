@@ -114,7 +114,6 @@ async def test_tox_runner_strips_ansi_with_intermediate_bytes(tmp_path: pathlib.
     assert result.stdout == b'beforeafter\n'
 
 
-
 async def test_tox_runner_no_target_when_rc_254(tmp_path: pathlib.Path, spawner):
     spawner(FakeProc(returncode=254))
     result = await runners.ToxRunner().run(tmp_path, 'unit')
