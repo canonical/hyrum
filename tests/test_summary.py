@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from hyrum import _summary as summary_mod
+from hyrum import _summary
 
 
 def _s(stdout: bytes = b'', stderr: bytes = b'', *, status: str = 'failed', rc: int | None = 1):
-    return summary_mod.from_run_output(stdout, stderr, status=status, returncode=rc)
+    return _summary.from_run_output(stdout, stderr, status=status, returncode=rc)
 
 
 def test_passed_status_returns_empty():

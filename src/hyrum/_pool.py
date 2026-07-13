@@ -24,7 +24,7 @@ from typing import Final
 
 from hyrum import _patchers as patchers
 from hyrum import _runners as runners
-from hyrum import _summary as summary_mod
+from hyrum import _summary
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class Outcome:
             target=result.target,
             duration_s=result.duration_s,
             returncode=result.returncode,
-            summary=summary_mod.from_run_output(
+            summary=_summary.from_run_output(
                 result.stdout,
                 result.stderr,
                 status=result.status.value,
