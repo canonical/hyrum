@@ -14,7 +14,7 @@ import re
 
 from ._runners import base as _runners_base
 
-# Pytest's final summary line, e.g. "=== 6 failed, 102 passed in 4.21s ==="
+# Pytest's final summary line, for example "=== 6 failed, 102 passed in 4.21s ==="
 # or "=== 12 errors in 0.30s ===" for collection-time failures. The trailer
 # tolerates extras like "516 warnings" before the duration, plus the
 # parenthesised "(0:03:00)" wall-clock pytest appends on longer runs.
@@ -45,20 +45,20 @@ _NO_TESTS_RE = re.compile(
 # verbose patterns without further escaping.
 _EXC_NAME = rb'(?:\w+\.)*(?:[A-Z]\w*?)?(?:Error|Exception|Warning)'
 
-# Lines pytest prints for raised exceptions, e.g. "E   ValueError: bad thing".
+# Lines pytest prints for raised exceptions, for example "E   ValueError: bad thing".
 _PYTEST_E_LINE_RE = re.compile(
     rb'^ E \s+ (' + _EXC_NAME + rb') : \s* (.*) $',
     re.M | re.VERBOSE,
 )
 
-# A bare exception line outside pytest, e.g. "ModuleNotFoundError: No module named 'ops'".
+# A bare exception line outside pytest, for example "ModuleNotFoundError: No module named 'ops'".
 # Leading whitespace is allowed: pip / setuptools indents tracebacks several spaces.
 _BARE_EXC_RE = re.compile(
     rb'^ \s* (' + _EXC_NAME + rb') : \s* (.+) $',
     re.M | re.VERBOSE,
 )
 
-# pytest's "short test summary info" line, e.g.
+# pytest's "short test summary info" line, for example
 # ``FAILED tests/foo.py::test_x - scenario.errors.InconsistentScenarioError: ...``.
 # These give us the failing exception class *per test*, which lets the summary
 # tally classes ("InconsistentScenarioError x13") rather than report a single
