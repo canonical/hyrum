@@ -802,11 +802,11 @@ def _run_check(args: argparse.Namespace) -> int:
     if args.save_results_path is not None:
         save_parent = args.save_results_path.parent
         if not save_parent.is_dir():
-            sys.exit(f'hyrum: error: --save-results: directory {save_parent} does not exist.')
+            sys.exit(f'hyrum: error: --save-results directory {save_parent} does not exist.')
         if not os.access(save_parent, os.W_OK):
-            sys.exit(f'hyrum: error: --save-results: directory {save_parent} is not writable.')
+            sys.exit(f'hyrum: error: --save-results directory {save_parent} is not writable.')
         if args.save_results_path.is_dir():
-            sys.exit(f'hyrum: error: --save-results: {args.save_results_path} is a directory.')
+            sys.exit(f'hyrum: error: --save-results path {args.save_results_path} is a directory.')
 
     _configure_logging(_resolve_log_level(quiet=args.quiet, verbosity=args.verbosity))
     if args.host_env_defaults:
@@ -875,10 +875,11 @@ def _run_check(args: argparse.Namespace) -> int:
         except OSError as exc:
             # Still render the report below — the run itself succeeded, and
             # its output is all the user has left if the save was lost.
-            logger.error('Failed to write results to %s: %s', args.save_results_path, exc)
+            logger.error('Cannot write results to %s: %s', args.save_results_path, exc)
             save_failed = True
         else:
-            logger.info('Wrote %d outcome(s) to %s', len(results), args.save_results_path)
+            noun = 'outcome' if len(results) == 1 else 'outcomes'
+            logger.info('Wrote %d %s to %s', len(results), noun, args.save_results_path)
 
     if not args.quiet:
         report.render(
