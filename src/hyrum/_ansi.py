@@ -1,4 +1,4 @@
-"""Shared ANSI SGR palette and colour-enable detection.
+"""Shared ANSI palette and colour-enable detection.
 
 Colour is emitted only when the target stream is a tty and the
 ``NO_COLOR`` environment variable is unset.
