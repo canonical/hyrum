@@ -31,7 +31,6 @@ and stall the whole TaskGroup.
 CharmRow = typing.TypedDict(
     'CharmRow',
     {
-        'Charm Name': typing.NotRequired[str],
         'Repository': str,
         'Branch (if not the default)': typing.NotRequired[str],
     },
@@ -91,8 +90,8 @@ async def process_rows(
             if not row.get('Repository'):
                 logger.warning('Skipping row without Repository: %r', row)
                 continue
-            name = row.get('Charm Name', '')
             repository = row['Repository'].rstrip('/')
+            name = _repo_label(repository)
             branch = row.get('Branch (if not the default)') or None
             repo_path = repo_folder(dest, repository, branch)
             if repo_path.exists():
@@ -108,6 +107,12 @@ async def process_rows(
     logger.info('get-charms: %d succeeded, %d failed.', succeeded, len(failures))
     if failures:
         logger.warning('Failed: %s', ', '.join(failures))
+
+
+def _repo_label(repository: str) -> str:
+    """Return ``owner/name`` from a repository URL, for display in logs."""
+    parts = repository.rstrip('/').rsplit('/', 2)
+    return f'{parts[-2]}/{parts[-1]}'
 
 
 def repo_folder(dest: pathlib.Path, repository: str, branch: str | None) -> pathlib.Path:
