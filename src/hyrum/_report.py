@@ -9,25 +9,24 @@ redirected).
 from __future__ import annotations
 
 import collections
-import os
 import pathlib
 import sys
 from collections.abc import Iterable
 from typing import TextIO
 
+from hyrum import _ansi
 from hyrum import _pool as pool
 
-# ANSI SGR codes, used only when the stream is a tty and NO_COLOR is unset.
-_RESET = '\033[0m'
+_RESET = _ansi.RESET
+_BOLD = _ansi.BOLD
 _STATUS_COLOURS: dict[str, str] = {
-    'passed': '\033[32m',  # green
-    'failed': '\033[31m',  # red
-    'no_target': '\033[33m',  # yellow
-    'timeout': '\033[35m',  # magenta
-    'patcher_error': '\033[91m',  # bright red
-    'skipped': '\033[2m',  # dim
+    'passed': _ansi.GREEN,
+    'failed': _ansi.RED,
+    'no_target': _ansi.YELLOW,
+    'timeout': _ansi.MAGENTA,
+    'patcher_error': _ansi.BRIGHT_RED,
+    'skipped': _ansi.DIM,
 }
-_BOLD = '\033[1m'
 
 
 def _relative(repo: pathlib.Path, base: pathlib.Path) -> str:
@@ -35,12 +34,6 @@ def _relative(repo: pathlib.Path, base: pathlib.Path) -> str:
         return str(repo.relative_to(base))
     except ValueError:
         return str(repo)
-
-
-def _use_colour(stream: TextIO) -> bool:
-    if os.environ.get('NO_COLOR'):
-        return False
-    return stream.isatty()
 
 
 def _format_table(
@@ -90,7 +83,7 @@ def render(
     if stream is None:
         stream = sys.stdout
     assert stream is not None
-    use_colour = _use_colour(stream)
+    use_colour = _ansi.use_colour(stream)
 
     counts = collections.Counter(o.status for o in outcomes)
     total = len(outcomes)
