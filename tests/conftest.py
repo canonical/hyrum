@@ -2,9 +2,27 @@
 
 from __future__ import annotations
 
+import logging
 import pathlib
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _reset_root_logging():
+    # hyrum._cli._configure_logging replaces root's handlers with a
+    # StreamHandler that captures sys.stderr at construction time. Pytest
+    # rebinds sys.stderr per test, so a handler left over from an earlier
+    # test can end up writing to a closed capture buffer.
+    root = logging.getLogger()
+    saved_handlers = root.handlers[:]
+    saved_level = root.level
+    yield
+    for h in root.handlers:
+        if h not in saved_handlers:
+            h.close()
+    root.handlers[:] = saved_handlers
+    root.setLevel(saved_level)
 
 
 def make_charm(
