@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from hyrum import _enumerate as enum_mod
+from hyrum import _enumerate
 
 from .conftest import make_charm
 
@@ -12,14 +12,14 @@ from .conftest import make_charm
 def test_flat_layout(charm_cache: pathlib.Path):
     make_charm(charm_cache / 'alpha')
     make_charm(charm_cache / 'beta')
-    found = sorted(p.name for p in enum_mod.iter_charm_repos(charm_cache))
+    found = sorted(p.name for p in _enumerate.iter_charm_repos(charm_cache))
     assert found == ['alpha', 'beta']
 
 
 def test_dotdirs_ignored(charm_cache: pathlib.Path):
     make_charm(charm_cache / 'alpha')
     make_charm(charm_cache / '.git')
-    found = [p.name for p in enum_mod.iter_charm_repos(charm_cache)]
+    found = [p.name for p in _enumerate.iter_charm_repos(charm_cache)]
     assert found == ['alpha']
 
 
@@ -29,7 +29,7 @@ def test_bundle_expands_to_inner_charms(charm_cache: pathlib.Path):
     (bundle / 'bundle.yaml').write_text('applications: {}\n')
     make_charm(bundle / 'charms' / 'inner-a')
     make_charm(bundle / 'charms' / 'inner-b')
-    found = sorted(p.name for p in enum_mod.iter_charm_repos(charm_cache))
+    found = sorted(p.name for p in _enumerate.iter_charm_repos(charm_cache))
     assert found == ['inner-a', 'inner-b']
 
 
@@ -40,7 +40,7 @@ def test_monorepo_with_charm_subdirs(charm_cache: pathlib.Path):
     make_charm(mono / 'agent')
     # Bare subdir without charm markers is ignored.
     (mono / 'docs').mkdir()
-    found = sorted(p.name for p in enum_mod.iter_charm_repos(charm_cache))
+    found = sorted(p.name for p in _enumerate.iter_charm_repos(charm_cache))
     assert found == ['agent', 'controller']
 
 
@@ -49,10 +49,10 @@ def test_legacy_charms_yielded_for_filter_layer(charm_cache: pathlib.Path):
     legacy = make_charm(charm_cache / 'legacy')
     (legacy / 'reactive').mkdir()
     make_charm(charm_cache / 'modern')
-    found = [p.name for p in enum_mod.iter_charm_repos(charm_cache)]
+    found = [p.name for p in _enumerate.iter_charm_repos(charm_cache)]
     assert found == ['legacy', 'modern']
 
 
 def test_missing_cache_raises(tmp_path: pathlib.Path):
     with pytest.raises(FileNotFoundError):
-        list(enum_mod.iter_charm_repos(tmp_path / 'missing'))
+        list(_enumerate.iter_charm_repos(tmp_path / 'missing'))

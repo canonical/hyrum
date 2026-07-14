@@ -16,18 +16,15 @@ from collections.abc import Sequence
 
 import packaging.requirements
 
-from hyrum import _compare as compare_mod
+from hyrum import _compare, _enumerate, _results, _version
 from hyrum import _config as config_loader
-from hyrum import _enumerate as enum_mod
 from hyrum import _filters as filt
 from hyrum import _frameworks as frameworks
 from hyrum import _get_charms as get_charms
 from hyrum import _patchers as patchers
 from hyrum import _pool as pool
 from hyrum import _report as report
-from hyrum import _results as results_mod
 from hyrum import _runners as runners
-from hyrum import _version
 from hyrum._runners import make_runner, tox
 
 logger = logging.getLogger('hyrum')
@@ -481,7 +478,7 @@ def _select_repos(
 
     repos: list[pathlib.Path] = []
     skipped: list[tuple[pathlib.Path, str]] = []
-    raw = enum_mod.iter_charm_repos(cache)
+    raw = _enumerate.iter_charm_repos(cache)
     if limit > 0:
         raw = itertools.islice(raw, limit)
     for repo in raw:
@@ -868,7 +865,7 @@ def _run_check(args: argparse.Namespace) -> int:
     save_failed = False
     if args.save_results_path is not None:
         try:
-            results_mod.save(
+            _results.save(
                 results,
                 args.save_results_path,
                 base=charms_dir,
@@ -924,7 +921,7 @@ def _run_get_charms(args: argparse.Namespace) -> int:
     return 0
 
 
-def _describe_run(label: str, path: pathlib.Path, meta: results_mod.RunMeta) -> str:
+def _describe_run(label: str, path: pathlib.Path, meta: _results.RunMeta) -> str:
     bits = [f'{label}: {path}']
     if meta.created_at:
         bits.append(f'saved {meta.created_at}')
@@ -937,8 +934,8 @@ def _describe_run(label: str, path: pathlib.Path, meta: results_mod.RunMeta) -> 
 
 def _run_compare(args: argparse.Namespace) -> int:
     try:
-        baseline = results_mod.load(args.baseline)
-        current = results_mod.load(args.current)
+        baseline = _results.load(args.baseline)
+        current = _results.load(args.current)
     except ValueError as exc:
         print(f'hyrum: error: {exc}', file=sys.stderr)
         return 1
@@ -954,16 +951,16 @@ def _run_compare(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    result = compare_mod.diff(baseline.outcomes, current.outcomes)
+    result = _compare.diff(baseline.outcomes, current.outcomes)
     if args.output_format == 'markdown':
         target = current.meta.target or baseline.meta.target
         title = f'hyrum run comparison ({target})' if target else 'hyrum run comparison'
-        compare_mod.render_markdown(baseline.outcomes, current.outcomes, title=title)
+        _compare.render_markdown(baseline.outcomes, current.outcomes, title=title)
     else:
         print(_describe_run('Baseline', args.baseline, baseline.meta))
         print(_describe_run('Current', args.current, current.meta))
         print()
-        compare_mod.render(result)
+        _compare.render(result)
 
     if args.fail_on_regression and (result.new_failures or result.new_errors):
         return 1
