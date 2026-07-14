@@ -146,9 +146,6 @@ def _load_meta(raw: dict[str, object], *, path: pathlib.Path) -> RunMeta:
 def load(path: pathlib.Path) -> RunResults:
     """Load a results file from *path*.
 
-    Older files load fine — the ``summary`` field added in v2 and the
-    ``meta`` block added in v3 are left empty.
-
     This is the validation boundary for user-supplied results files: any
     unreadable, non-JSON, or wrong-shape input raises :class:`ValueError`
     with a message that names the offending file.

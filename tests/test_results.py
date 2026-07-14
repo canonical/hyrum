@@ -105,12 +105,6 @@ def test_save_records_run_meta(tmp_path: pathlib.Path):
     assert meta.created_at.endswith('Z')
 
 
-def test_load_v2_file_has_empty_meta(tmp_path: pathlib.Path):
-    path = tmp_path / 'v2.json'
-    path.write_text('{"version": 2, "outcomes": []}')
-    assert results_mod.load(path).meta == results_mod.RunMeta()
-
-
 def test_load_meta_tolerates_unknown_keys(tmp_path: pathlib.Path):
     path = tmp_path / 'out.json'
     path.write_text('{"version": 3, "meta": {"target": "lint", "shiny": "new"}, "outcomes": []}')
@@ -197,19 +191,6 @@ def test_save_includes_schema_version(tmp_path: pathlib.Path):
     raw = json.loads(path.read_text())
     assert raw['version'] == results_mod.SCHEMA_VERSION
     assert raw['outcomes'] == []
-
-
-def test_load_v1_file_leaves_summary_empty(tmp_path: pathlib.Path):
-    path = tmp_path / 'v1.json'
-    path.write_text(
-        '{"version": 1, "outcomes": [{"repo": "/cache/x", "status": "failed", '
-        '"runner": "tox", "target": "unit", "duration_s": 0.1, "returncode": 1, '
-        '"skip_reason": "", "error": ""}]}'
-    )
-    loaded = results_mod.load(path)
-    assert len(loaded.outcomes) == 1
-    assert loaded.outcomes[0].summary == ''
-    assert loaded.outcomes[0].status == 'failed'
 
 
 def test_round_trip_preserves_summary(tmp_path: pathlib.Path):

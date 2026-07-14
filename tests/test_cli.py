@@ -615,7 +615,7 @@ def test_cli_compare_fail_on_regression_exits_nonzero(tmp_path: pathlib.Path):
 def test_cli_compare_detects_regression_across_checkouts(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):
-    """The UX-1 repro: same charms cached under different roots must still diff."""
+    """Same charms cached under different roots must still diff."""
     from hyrum import _pool as pool
     from hyrum import _results as results_mod
 
