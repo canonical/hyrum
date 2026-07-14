@@ -743,7 +743,7 @@ def _add_compare_subparser(
         help=(
             'text: the colourised status-level summary. markdown: a table with one row '
             "per non-passing charm and a per-run failure summary (uses the saved Outcome's "
-            'summary field; v1 result files have no summaries). [default: text]'
+            'summary field. [default: text]'
         ),
     )
     parser.set_defaults(func=_run_compare)
