@@ -105,8 +105,7 @@ versions that don't build on the host Python) and is not something
 ## Usage
 
 ```bash
-# Install with uv. --prerelease=allow is needed while hyrum is on a
-# pre-release version:
+# Install the initial pre-release version:
 uv tool install --prerelease=allow hyrum
 
 # Grab the curated charm list (or bring your own CSV with the same
@@ -115,8 +114,7 @@ mkdir -p charm-list
 curl -sSfL -o charm-list/charms.csv \
     https://raw.githubusercontent.com/canonical/hyrum/main/charm-list/charms.csv
 
-# Populate the local cache with every charm in the CSV (shallow clones,
-# pulls for repos that already exist):
+# Populate the local cache with every charm in the CSV:
 hyrum get-charms
 
 # Run `tox -e unit` across every charm in the default cache
