@@ -165,8 +165,8 @@ def discover_charmhub_urls(client: CharmhubClient) -> tuple[dict[str, str], list
 
 NON_GIT_HOSTS = frozenset({
     # Launchpad's bug tracker and code-browser hosts — not git remotes. Some
-    # Charmhub publishers point ``source`` (or ``bugs-url``) at these; treating
-    # them as clone URLs produces rows that fail every runner.
+    # Charmhub publishers point ``source`` at these; treating them as clone
+    # URLs produces rows that fail every runner.
     'bugs.launchpad.net',
     'code.launchpad.net',
 })

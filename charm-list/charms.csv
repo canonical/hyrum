@@ -165,7 +165,6 @@ Telco,https://github.com/canonical/vault-k8s-operator,,manual
 ,https://github.com/jenkinsci/jenkins-charm,,auto
 ,https://github.com/canonical/jimm,,manual
 ,https://github.com/canonical/juju-dashboard,,auto
-,https://github.com/canonical/bundle-jupyter/issues/,,auto
 ,https://github.com/canonical/k8s-operator,,manual
 ,https://opendev.org/openstack/charm-keystone,,auto
 ,https://opendev.org/openstack/charm-keystone-kerberos,,auto
@@ -226,7 +225,7 @@ Telco,https://github.com/canonical/vault-k8s-operator,,manual
 ,https://github.com/canonical/tempo-operators,,auto
 ,https://github.com/battlemidget/juju-charm-znc,,auto
 ,https://github.com/canonical/charm-anbox-cloud,,auto
-,https://github.com/juju-solutions/bundle-kubeflow/issues,,auto
+,https://github.com/canonical/bundle-kubeflow,,auto
 ,https://github.com/canonical/chrony-operator,,auto
 ,https://git.launchpad.net/charm-easyrsa,,auto
 ,https://git.launchpad.net/charm-kubernetes-worker,,auto
@@ -643,5 +642,4 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/wazuh-indexer-operator,,auto-discover
 ,https://github.com/canonical/webteam-juju-demos-testing,,auto-discover
 ,https://github.com/canonical/webteam-webbot,,auto-discover
-,https://github.com/canonical/bundle-jupyter,,auto
 ,https://git.launchpad.net/landscape-charm,,auto
