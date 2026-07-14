@@ -153,11 +153,29 @@ def discover_charmhub_urls(client: CharmhubClient) -> tuple[dict[str, str], list
         if not name:
             continue
         url = client.source_url(name)
-        if url:
+        if url and is_plausible_git_url(url):
             complete[name] = url
+        elif url:
+            logger.info('Ignoring non-git source URL for %s: %s', name, url)
+            incomplete.append(name)
         else:
             incomplete.append(name)
     return complete, sorted(incomplete)
+
+
+NON_GIT_HOSTS = frozenset({
+    # Launchpad's bug tracker and code-browser hosts — not git remotes. Some
+    # Charmhub publishers point ``source`` at these; treating them as clone
+    # URLs produces rows that fail every runner.
+    'bugs.launchpad.net',
+    'code.launchpad.net',
+})
+
+
+def is_plausible_git_url(url: str) -> bool:
+    """Return whether ``url`` is a host we can actually clone from."""
+    host = urllib.parse.urlsplit(url).netloc.lower()
+    return bool(host) and host not in NON_GIT_HOSTS
 
 
 def merge(
@@ -365,25 +383,15 @@ class CharmhubClient:
         return data['packages']
 
     def source_url(self, charm: str) -> str | None:
-        """Return the source URL recorded for ``charm`` on Charmhub, if any.
-
-        Falls back to ``bugs-url`` when ``source`` is absent — that matches
-        what ``canonical/operator``'s ``update-published-charms-tests-workflow.py``
-        does and recovers a useful fraction of older charms.
-        """
-        for field, accessor in (
-            ('result.links', lambda d: d['result']['links']['source'][0]),
-            ('result.bugs-url', lambda d: d['result']['bugs-url']),
-        ):
-            url = f'{CHARMHUB_INFO_URL}/{charm}?fields={field}'
-            try:
-                with urllib.request.urlopen(url, timeout=self.timeout) as response:  # noqa: S310
-                    data = json.loads(response.read().decode())
-                return accessor(data)
-            except (urllib.error.HTTPError, KeyError, IndexError):
-                continue
-        logger.info('No source URL on Charmhub for %s', charm)
-        return None
+        """Return the source URL recorded for ``charm`` on Charmhub, if any."""
+        url = f'{CHARMHUB_INFO_URL}/{charm}?fields=result.links'
+        try:
+            with urllib.request.urlopen(url, timeout=self.timeout) as response:  # noqa: S310
+                data = json.loads(response.read().decode())
+            return data['result']['links']['source'][0]
+        except (urllib.error.HTTPError, KeyError, IndexError):
+            logger.info('No source URL on Charmhub for %s', charm)
+            return None
 
 
 class GitHubClient:

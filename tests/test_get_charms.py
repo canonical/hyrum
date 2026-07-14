@@ -87,7 +87,6 @@ async def test_process_rows_clones_missing_destination(tmp_path: pathlib.Path, s
     fake = spawner(FakeProc(returncode=0))
     rows = [
         {
-            'Charm Name': 'foo',
             'Repository': 'https://github.com/canonical/foo',
             'Branch (if not the default)': '',
         }
@@ -106,7 +105,6 @@ async def test_process_rows_pulls_existing_destination(tmp_path: pathlib.Path, s
     fake = spawner(FakeProc(returncode=0))
     rows = [
         {
-            'Charm Name': 'foo',
             'Repository': 'https://github.com/canonical/foo',
             'Branch (if not the default)': '',
         }
@@ -123,7 +121,6 @@ async def test_process_rows_includes_branch_flag_in_clone(tmp_path: pathlib.Path
     fake = spawner(FakeProc(returncode=0))
     rows = [
         {
-            'Charm Name': 'foo',
             'Repository': 'https://github.com/canonical/foo',
             'Branch (if not the default)': '24.04',
         }
@@ -141,8 +138,8 @@ async def test_process_rows_skips_rows_without_repository(tmp_path: pathlib.Path
     # No procs queued: any subprocess call would fail the FakeSpawner assertion.
     spawner()
     rows = [
-        {'Charm Name': '', 'Repository': '', 'Branch (if not the default)': ''},
-        {'Charm Name': 'header-only', 'Repository': '', 'Branch (if not the default)': ''},
+        {'Repository': '', 'Branch (if not the default)': ''},
+        {'Repository': '', 'Branch (if not the default)': ''},
     ]
     with caplog.at_level(logging.WARNING, logger=get_charms.logger.name):
         await get_charms.process_rows(rows, tmp_path)
@@ -152,7 +149,7 @@ async def test_process_rows_skips_rows_without_repository(tmp_path: pathlib.Path
 async def test_process_rows_handles_missing_branch_column(tmp_path: pathlib.Path, spawner):
     """A CSV without the Branch column shouldn't crash."""
     fake = spawner(FakeProc(returncode=0))
-    rows = [{'Charm Name': 'foo', 'Repository': 'https://github.com/canonical/foo'}]
+    rows = [{'Repository': 'https://github.com/canonical/foo'}]
     await get_charms.process_rows(rows, tmp_path)
 
     argv, _ = fake.calls[0]
@@ -163,7 +160,6 @@ async def test_process_rows_strips_trailing_slash_from_repository(tmp_path: path
     fake = spawner(FakeProc(returncode=0))
     rows = [
         {
-            'Charm Name': 'foo',
             'Repository': 'https://github.com/canonical/foo/',
             'Branch (if not the default)': '',
         }
@@ -179,7 +175,6 @@ async def test_process_rows_logs_error_on_clone_failure(tmp_path: pathlib.Path, 
     spawner(FakeProc(returncode=128, stderr_bytes=b'fatal: remote not found\n'))
     rows = [
         {
-            'Charm Name': 'foo',
             'Repository': 'https://github.com/canonical/foo',
             'Branch (if not the default)': '',
         }
@@ -187,7 +182,7 @@ async def test_process_rows_logs_error_on_clone_failure(tmp_path: pathlib.Path, 
     with caplog.at_level(logging.ERROR, logger=get_charms.logger.name):
         await get_charms.process_rows(rows, tmp_path)
     assert any(
-        'Could not clone foo' in r.message and 'fatal: remote not found' in r.message
+        'Could not clone canonical/foo' in r.message and 'fatal: remote not found' in r.message
         for r in caplog.records
     )
     # %r keeps the message on a single line.
@@ -198,12 +193,10 @@ async def test_process_rows_logs_summary(tmp_path: pathlib.Path, spawner, caplog
     spawner(FakeProc(returncode=0), FakeProc(returncode=128))
     rows = [
         {
-            'Charm Name': 'good',
             'Repository': 'https://github.com/canonical/good',
             'Branch (if not the default)': '',
         },
         {
-            'Charm Name': 'bad',
             'Repository': 'https://github.com/canonical/bad',
             'Branch (if not the default)': '',
         },
@@ -211,7 +204,7 @@ async def test_process_rows_logs_summary(tmp_path: pathlib.Path, spawner, caplog
     with caplog.at_level(logging.INFO, logger=get_charms.logger.name):
         await get_charms.process_rows(rows, tmp_path)
     assert any('1 succeeded, 1 failed' in r.message for r in caplog.records)
-    assert any('Failed: bad' in r.message for r in caplog.records)
+    assert any('Failed: canonical/bad' in r.message for r in caplog.records)
 
 
 # ---- _default_source --------------------------------------------------------

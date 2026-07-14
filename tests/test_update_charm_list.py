@@ -367,6 +367,26 @@ def test_discover_separates_complete_and_incomplete():
     assert incomplete == ['bar', 'quux']
 
 
+def test_discover_treats_non_git_hosts_as_incomplete():
+    charmhub = FakeCharmhub({
+        'good': 'https://github.com/canonical/good',
+        'bugs': 'https://bugs.launchpad.net/bugs-charm/+filebug',
+        'browse': 'https://code.launchpad.net/browse-charm/+git',
+    })
+    complete, incomplete = uut.discover_charmhub_urls(charmhub)
+    assert complete == {'good': 'https://github.com/canonical/good'}
+    assert incomplete == ['browse', 'bugs']
+
+
+def test_is_plausible_git_url():
+    assert uut.is_plausible_git_url('https://github.com/canonical/foo')
+    assert uut.is_plausible_git_url('https://git.launchpad.net/foo')
+    assert uut.is_plausible_git_url('https://opendev.org/openstack/charm-aodh')
+    assert not uut.is_plausible_git_url('https://bugs.launchpad.net/foo')
+    assert not uut.is_plausible_git_url('https://code.launchpad.net/foo/+git')
+    assert not uut.is_plausible_git_url('not-a-url')
+
+
 def test_no_source_sidecar_is_written(tmp_path: pathlib.Path):
     csv_path = tmp_path / 'charms.csv'
     write_csv(csv_path, f'{HEADER}\n')
