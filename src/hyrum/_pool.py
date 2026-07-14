@@ -96,7 +96,7 @@ class Outcome:
             status='patcher_error',
             target=target,
             error=message,
-            summary=f'patcher: {message}'[:160],
+            summary=_summary.truncate(f'patcher: {message}'),
         )
 
 
@@ -242,7 +242,7 @@ async def run_pool(
                     status='patcher_error',
                     target=target,
                     error=f'{type(exc).__name__}: {exc}',
-                    summary=f'patcher: {type(exc).__name__}: {exc}'[:160],
+                    summary=_summary.truncate(f'patcher: {type(exc).__name__}: {exc}'),
                 )
                 if log_dir is not None:
                     _dump_patcher_error_log(

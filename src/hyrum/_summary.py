@@ -49,18 +49,22 @@ _EXC_NAME = rb'(?:\w+\.)*(?:[A-Z]\w*?)?(?:Error|Exception|Warning)'
 
 # Lines pytest prints for raised exceptions, for example "E   ValueError: bad thing".
 _PYTEST_E_LINE_RE = re.compile(
-    rb'^ E \s+ ('  # pytest's "E   " prefix, then the exception class
-    + _EXC_NAME
-    + rb') : \s* (.*) $',  # ": message" (message may be empty)
+    rb"""
+    ^ E \s+ ( %s )        # pytest's "E   " prefix, then the exception class
+    : \s* (.*) $          # ": message" (message may be empty)
+    """
+    % _EXC_NAME,
     re.M | re.VERBOSE,
 )
 
 # A bare exception line outside pytest, for example "ModuleNotFoundError: No module named 'ops'".
 # Leading whitespace is allowed: pip / setuptools indents tracebacks several spaces.
 _BARE_EXC_RE = re.compile(
-    rb'^ \s* ('  # allow leading indent (pip/setuptools traceback)
-    + _EXC_NAME
-    + rb') : \s* (.+) $',  # ": message" (require a non-empty message)
+    rb"""
+    ^ \s* ( %s )          # allow leading indent (pip/setuptools traceback)
+    : \s* (.+) $          # ": message" (require a non-empty message)
+    """
+    % _EXC_NAME,
     re.M | re.VERBOSE,
 )
 
@@ -70,8 +74,11 @@ _BARE_EXC_RE = re.compile(
 # tally classes ("InconsistentScenarioError x13") rather than report a single
 # first-match exception.
 _PYTEST_FAILED_LINE_RE = re.compile(
-    rb'^ FAILED \s+ \S+'  # "FAILED tests/foo.py::test_x"
-    rb' (?: \s+ - \s+ (' + _EXC_NAME + rb') )?',  # optional " - <exception class>"
+    rb"""
+    ^ FAILED \s+ \S+                    # "FAILED tests/foo.py::test_x"
+    (?: \s+ - \s+ ( %s ) )?             # optional " - <exception class>"
+    """
+    % _EXC_NAME,
     re.M | re.VERBOSE,
 )
 
@@ -187,7 +194,7 @@ _POETRY_LOCK_STALE_RE = re.compile(
 _MAX_LEN = 160
 
 
-def _truncate(s: str) -> str:
+def truncate(s: str) -> str:
     s = s.strip().replace('\n', ' ').replace('\r', ' ')
     if len(s) > _MAX_LEN:
         return s[: _MAX_LEN - 1] + '…'
@@ -324,32 +331,32 @@ def from_run_output(
         allow = _TOX_ALLOWLIST_RE.search(combined)
         if allow:
             cmd = allow.group(1).decode('utf-8', 'replace')
-            return _truncate(f'tests passed ({counts}); tox: {cmd!s} not in allowlist_externals')
+            return truncate(f'tests passed ({counts}); tox: {cmd!s} not in allowlist_externals')
         if returncode == 3:
-            return _truncate(f'tests passed ({counts}); pytest exit 3 (internal error)')
-        return _truncate(f'tests passed ({counts}); post-test step failed (exit {returncode})')
+            return truncate(f'tests passed ({counts}); pytest exit 3 (internal error)')
+        return truncate(f'tests passed ({counts}); post-test step failed (exit {returncode})')
 
     # For runs with multiple test failures, prefer a tally of the FAILED-line
     # exception classes over a single first-match exception — it's far more
     # informative when failures cluster around one or two root causes.
     tally = _failed_test_tally(combined)
     if counts and tally:
-        return _truncate(f'{counts}; {tally}')
+        return truncate(f'{counts}; {tally}')
     if counts and exc:
         # With multiple failures, the first exception's full message can't
         # represent all of them — collapse to ``ClassName xN`` if we know the
         # count, otherwise just the short class name.
         if _pytest_failed_count(stdout) > 1:
             short = _shortname(exc.split(':', 1)[0])
-            return _truncate(f'{counts}; {short} x{_pytest_failed_count(stdout)}')
-        return _truncate(f'{counts}; {exc}')
+            return truncate(f'{counts}; {short} x{_pytest_failed_count(stdout)}')
+        return truncate(f'{counts}; {exc}')
     if counts:
-        return _truncate(counts)
+        return truncate(counts)
 
     collection = _COLLECTION_ERROR_RE.search(combined)
     if collection and exc:
         path = collection.group(1).decode('utf-8', 'replace')
-        return _truncate(f'collection error in {path}: {exc}')
+        return truncate(f'collection error in {path}: {exc}')
 
     if _NO_TESTS_RE.search(combined):
         return 'pytest: no tests ran'
@@ -380,14 +387,14 @@ def from_run_output(
             )
             or path
         )
-        return _truncate(f'pytest: path not found: {short}')
+        return truncate(f'pytest: path not found: {short}')
 
     build = _resolver_or_build(combined)
     if build:
-        return _truncate(build)
+        return truncate(build)
 
     if exc:
-        return _truncate(exc)
+        return truncate(exc)
 
     if returncode is not None:
         return f'exit {returncode}'
