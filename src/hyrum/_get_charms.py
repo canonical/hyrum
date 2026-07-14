@@ -31,7 +31,6 @@ and stall the whole TaskGroup.
 CharmRow = typing.TypedDict(
     'CharmRow',
     {
-        'Charm Name': typing.NotRequired[str],
         'Repository': str,
         'Branch (if not the default)': typing.NotRequired[str],
     },
@@ -45,6 +44,15 @@ DEFAULT_SOURCE_CANDIDATES = (
 )
 
 
+DEFAULT_WORKERS = 16
+"""Cap concurrent git subprocesses so a large charm list can't blow ``ulimit -n``.
+
+Each in-flight ``git clone`` holds several fds (asyncio pipes + git's own
+network/pack fds); a Multipass VM's default 1024-fd limit is trivially
+exceeded when running unbounded across ~700 charms.
+"""
+
+
 def find_default_source() -> pathlib.Path | None:
     """Return the first existing default candidate, or ``None`` if none exist."""
     for candidate in DEFAULT_SOURCE_CANDIDATES:
@@ -56,28 +64,55 @@ def find_default_source() -> pathlib.Path | None:
 async def process_rows(
     rows: typing.Iterable[CharmRow],
     dest: pathlib.Path,
+    *,
+    workers: int = DEFAULT_WORKERS,
 ) -> None:
-    """Clone or pull each repository row concurrently."""
+    """Clone or pull each repository row concurrently.
+
+    ``workers`` caps how many ``git`` subprocesses run at once so a large
+    charm list can't exhaust the process file-descriptor limit.
+    """
+    sem = asyncio.Semaphore(max(1, workers))
+
+    async def _pull_bounded(repo_path: pathlib.Path, name: str) -> bool:
+        async with sem:
+            return await _pull(repo_path, name)
+
+    async def _clone_bounded(
+        repo_path: pathlib.Path, name: str, repository: str, branch: str | None
+    ) -> bool:
+        async with sem:
+            return await _clone(repo_path, name, repository, branch)
+
     tasks: list[tuple[str, asyncio.Task[bool]]] = []
     async with asyncio.TaskGroup() as tg:
         for row in rows:
             if not row.get('Repository'):
                 logger.warning('Skipping row without Repository: %r', row)
                 continue
-            name = row.get('Charm Name', '')
             repository = row['Repository'].rstrip('/')
+            name = _repo_label(repository)
             branch = row.get('Branch (if not the default)') or None
             repo_path = repo_folder(dest, repository, branch)
             if repo_path.exists():
-                tasks.append((name, tg.create_task(_pull(repo_path, name))))
+                tasks.append((name, tg.create_task(_pull_bounded(repo_path, name))))
             else:
-                tasks.append((name, tg.create_task(_clone(repo_path, name, repository, branch))))
+                tasks.append((
+                    name,
+                    tg.create_task(_clone_bounded(repo_path, name, repository, branch)),
+                ))
 
     failures = [name for name, task in tasks if not task.result()]
     succeeded = len(tasks) - len(failures)
     logger.info('get-charms: %d succeeded, %d failed.', succeeded, len(failures))
     if failures:
         logger.warning('Failed: %s', ', '.join(failures))
+
+
+def _repo_label(repository: str) -> str:
+    """Return ``owner/name`` from a repository URL, for display in logs."""
+    parts = repository.rstrip('/').rsplit('/', 2)
+    return f'{parts[-2]}/{parts[-1]}'
 
 
 def repo_folder(dest: pathlib.Path, repository: str, branch: str | None) -> pathlib.Path:
