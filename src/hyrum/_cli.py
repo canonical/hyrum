@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import dataclasses
 import itertools
 import logging
 import os
@@ -118,6 +119,41 @@ def _resolve_path(raw: str) -> str:
     return str(pathlib.Path(raw).expanduser().resolve())
 
 
+@dataclasses.dataclass(frozen=True)
+class PatchSpec:
+    """A parsed ``--patch`` value.
+
+    Non-vendored patches carry ``pkg_name`` plus one of {``version``,
+    ``path``, or (``url`` [+ ``branch`` [+ ``subdir``])}. Vendored-library
+    swaps additionally set the four ``vendored_*`` fields; ``pkg_name`` is
+    then the dotted LHS (``charms.<author>.v<n>.<lib>``) and
+    ``vendored_pkg`` is the replacement package name.
+    """
+
+    pkg_name: str
+    version: str | None = None
+    url: str | None = None
+    branch: str | None = None
+    subdir: str | None = None
+    path: str | None = None
+    vendored_author: str | None = None
+    vendored_version: str | None = None
+    vendored_lib: str | None = None
+    vendored_pkg: str | None = None
+
+    def __str__(self) -> str:
+        if self.version:
+            return f'{self.pkg_name}{self.version}'
+        if self.path:
+            return f'{self.pkg_name} @ {self.path}'
+        source = self.url or ''
+        if self.branch:
+            source += f'@{self.branch}'
+        if self.subdir:
+            source += f'#subdirectory={self.subdir}'
+        return f'{self.pkg_name} @ {source}'
+
+
 def _parse_patch_source(rhs: str, *, pkg_name: str) -> dict[str, str | None]:
     """Parse the source half of ``name @ <source>``.
 
@@ -158,7 +194,7 @@ def _parse_patch_source(rhs: str, *, pkg_name: str) -> dict[str, str | None]:
     raise argparse.ArgumentTypeError(f'--patch: cannot parse source {rhs!r} for {pkg_name!r}')
 
 
-def _parse_patch(arg: str) -> dict[str, str | None]:
+def _parse_patch(arg: str) -> PatchSpec:
     """Parse a ``--patch`` value.
 
     Forms:
@@ -204,16 +240,14 @@ def _parse_patch(arg: str) -> dict[str, str | None]:
                 f'--patch: empty replacement spec after "->" in {arg!r}'
             )
         new_spec = _parse_patch(rhs_spec)
-        new_pkg = new_spec['pkg_name']
-        assert new_pkg is not None
-        return {
-            **new_spec,
-            'pkg_name': lhs,
-            'vendored_author': m.group(1),
-            'vendored_version': m.group(2),
-            'vendored_lib': m.group(3),
-            'vendored_pkg': new_pkg,
-        }
+        return dataclasses.replace(
+            new_spec,
+            pkg_name=lhs,
+            vendored_author=m.group(1),
+            vendored_version=m.group(2),
+            vendored_lib=m.group(3),
+            vendored_pkg=new_spec.pkg_name,
+        )
 
     name, sep, rhs = text.partition(' @ ')
     if sep:
@@ -222,7 +256,7 @@ def _parse_patch(arg: str) -> dict[str, str | None]:
             raise argparse.ArgumentTypeError(f'--patch: empty package name in {arg!r}')
         if not _PEP503_NAME_RE.match(pkg_name):
             raise argparse.ArgumentTypeError(f'--patch: invalid package name {pkg_name!r}')
-        return {'pkg_name': pkg_name, **_parse_patch_source(rhs.strip(), pkg_name=pkg_name)}
+        return PatchSpec(pkg_name=pkg_name, **_parse_patch_source(rhs.strip(), pkg_name=pkg_name))
 
     try:
         req = packaging.requirements.Requirement(text)
@@ -234,18 +268,18 @@ def _parse_patch(arg: str) -> dict[str, str | None]:
             f'a ``@`` source (git+URL, file:// path, owner:branch shorthand), '
             f'or a bare path'
         )
-    return {'pkg_name': req.name, 'version': str(req.specifier)}
+    return PatchSpec(pkg_name=req.name, version=str(req.specifier))
 
 
-_DEFAULT_OPS_PATCH: dict[str, str | None] = {
-    'pkg_name': 'ops',
-    'url': 'https://github.com/canonical/operator',
-    'branch': 'main',
-}
+_DEFAULT_OPS_PATCH = PatchSpec(
+    pkg_name='ops',
+    url='https://github.com/canonical/operator',
+    branch='main',
+)
 
 
 def _build_ops_patcher(
-    parsed: dict[str, str | None],
+    spec: PatchSpec,
     *,
     poetry_executable: str,
     uv_executable: str,
@@ -253,10 +287,10 @@ def _build_ops_patcher(
     auto_python: bool,
 ) -> patchers.OpsSourcePatcher:
     ops = patchers.OpsSource(
-        url=parsed.get('url') or 'https://github.com/canonical/operator',
-        branch=parsed.get('branch'),
-        version=parsed.get('version'),
-        path=parsed.get('path'),
+        url=spec.url or 'https://github.com/canonical/operator',
+        branch=spec.branch,
+        version=spec.version,
+        path=spec.path,
         poetry_executable=tuple(poetry_executable.split()),
         uv_executable=tuple(uv_executable.split()),
         lock_timeout=lock_timeout,
@@ -266,21 +300,19 @@ def _build_ops_patcher(
 
 
 def _build_dep_patcher(
-    parsed: dict[str, str | None],
+    spec: PatchSpec,
     *,
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
 ) -> patchers.GenericDepPatcher:
-    name = parsed['pkg_name']
-    assert name is not None
     source = patchers.DepSource(
-        pkg_name=name,
-        version=parsed.get('version'),
-        url=parsed.get('url'),
-        branch=parsed.get('branch'),
-        subdir=parsed.get('subdir'),
-        path=parsed.get('path'),
+        pkg_name=spec.pkg_name,
+        version=spec.version,
+        url=spec.url,
+        branch=spec.branch,
+        subdir=spec.subdir,
+        path=spec.path,
         poetry_executable=tuple(poetry_executable.split()),
         uv_executable=tuple(uv_executable.split()),
         lock_timeout=lock_timeout,
@@ -289,28 +321,26 @@ def _build_dep_patcher(
 
 
 def _build_charmlib_patcher(
-    parsed: dict[str, str | None],
+    spec: PatchSpec,
     *,
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
 ) -> patchers.CharmlibPatcher:
-    name = parsed['pkg_name']
-    assert name is not None
-    if parsed.get('path') is not None:
+    if spec.path is not None:
         raise argparse.ArgumentTypeError(
             f'--patch: charmlibs deps must be patched from a git source, '
-            f'not a local path: {name!r}'
+            f'not a local path: {spec.pkg_name!r}'
         )
-    if parsed.get('version') is not None:
+    if spec.version is not None:
         raise argparse.ArgumentTypeError(
             f'--patch: charmlibs deps must be patched from a git source, '
-            f'not a version pin: {name!r}'
+            f'not a version pin: {spec.pkg_name!r}'
         )
     source = patchers.CharmlibSource(
-        pkg_name=name,
-        url=parsed.get('url') or 'https://github.com/canonical/charmlibs',
-        branch=parsed.get('branch'),
+        pkg_name=spec.pkg_name,
+        url=spec.url or 'https://github.com/canonical/charmlibs',
+        branch=spec.branch,
         poetry_executable=tuple(poetry_executable.split()),
         uv_executable=tuple(uv_executable.split()),
         lock_timeout=lock_timeout,
@@ -319,35 +349,31 @@ def _build_charmlib_patcher(
 
 
 def _build_vendored_patcher(
-    parsed: dict[str, str | None],
+    spec: PatchSpec,
     *,
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
 ) -> patchers.VendoredLibPatcher:
-    new_pkg = parsed['vendored_pkg']
-    host_charm = parsed['vendored_author']
-    version = parsed['vendored_version']
-    lib_name = parsed['vendored_lib']
-    assert new_pkg is not None
-    assert host_charm is not None
-    assert version is not None
-    assert lib_name is not None
+    assert spec.vendored_pkg is not None
+    assert spec.vendored_author is not None
+    assert spec.vendored_version is not None
+    assert spec.vendored_lib is not None
     source = patchers.DepSource(
-        pkg_name=new_pkg,
-        version=parsed.get('version'),
-        url=parsed.get('url'),
-        branch=parsed.get('branch'),
-        subdir=parsed.get('subdir'),
-        path=parsed.get('path'),
+        pkg_name=spec.vendored_pkg,
+        version=spec.version,
+        url=spec.url,
+        branch=spec.branch,
+        subdir=spec.subdir,
+        path=spec.path,
         poetry_executable=tuple(poetry_executable.split()),
         uv_executable=tuple(uv_executable.split()),
         lock_timeout=lock_timeout,
     )
     swap = patchers.VendoredLibSwap(
-        host_charm=host_charm,
-        version=int(version),
-        lib_name=lib_name,
+        host_charm=spec.vendored_author,
+        version=int(spec.vendored_version),
+        lib_name=spec.vendored_lib,
         source=source,
     )
     return patchers.VendoredLibPatcher(swap)
@@ -355,21 +381,18 @@ def _build_vendored_patcher(
 
 def _build_patcher(
     *,
-    no_patch: bool,
-    patches: Sequence[dict[str, str | None]],
+    patches: Sequence[PatchSpec],
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
     auto_python: bool,
 ) -> patchers.Patcher:
-    if no_patch:
+    if not patches:
         return patchers.NullPatcher()
-    specs = list(patches) if patches else [_DEFAULT_OPS_PATCH]
     stack: list[patchers.Patcher] = []
-    for spec in specs:
-        pkg_name = spec['pkg_name']
-        assert pkg_name is not None
-        if spec.get('vendored_author') is not None:
+    for spec in patches:
+        pkg_name = spec.pkg_name
+        if spec.vendored_author is not None:
             stack.append(
                 _build_vendored_patcher(
                     spec,
@@ -411,26 +434,11 @@ def _build_patcher(
     return patchers.PatcherStack(stack)
 
 
-def _describe_patches(*, no_patch: bool, patches: Sequence[dict[str, str | None]]) -> str:
+def _describe_patches(patches: Sequence[PatchSpec]) -> str:
     """One-line human-readable summary of the run's dependency swap, for run metadata."""
-    if no_patch:
+    if not patches:
         return 'none'
-    specs = list(patches) if patches else [_DEFAULT_OPS_PATCH]
-    parts: list[str] = []
-    for spec in specs:
-        name = spec['pkg_name']
-        if spec.get('version'):
-            parts.append(f'{name}{spec["version"]}')
-        elif spec.get('path'):
-            parts.append(f'{name} @ {spec["path"]}')
-        else:
-            source = spec.get('url') or ''
-            if spec.get('branch'):
-                source += f'@{spec["branch"]}'
-            if spec.get('subdir'):
-                source += f'#subdirectory={spec["subdir"]}'
-            parts.append(f'{name} @ {source}')
-    return '; '.join(parts)
+    return '; '.join(str(spec) for spec in patches)
 
 
 def _build_runner(
@@ -826,18 +834,23 @@ def _run_check(args: argparse.Namespace) -> int:
         raise SystemExit('--no-patch is mutually exclusive with --patch')
     seen_pkgs: set[str] = set()
     for spec in args.patches:
-        name = spec['pkg_name']
-        if name in seen_pkgs:
-            raise SystemExit(f'--patch specified more than once for {name!r}')
-        seen_pkgs.add(name)
+        if spec.pkg_name in seen_pkgs:
+            raise SystemExit(f'--patch specified more than once for {spec.pkg_name!r}')
+        seen_pkgs.add(spec.pkg_name)
+    if args.no_patch:
+        patch_specs: list[PatchSpec] = []
+    elif args.patches:
+        patch_specs = list(args.patches)
+    else:
+        patch_specs = [_DEFAULT_OPS_PATCH]
     patcher = _build_patcher(
-        no_patch=args.no_patch,
-        patches=args.patches,
+        patches=patch_specs,
         poetry_executable=args.poetry_executable,
         uv_executable=args.uv_executable,
         lock_timeout=args.lock_timeout,
         auto_python=args.auto_python,
     )
+    patcher_desc = _describe_patches(patch_specs)
     runner = _build_runner(
         choice=runners.RunnerChoice(args.runner_choice),
         tox_executable=args.tox_executable,
@@ -870,7 +883,7 @@ def _run_check(args: argparse.Namespace) -> int:
                 args.save_results_path,
                 base=charms_dir,
                 target=args.target,
-                patcher=_describe_patches(no_patch=args.no_patch, patches=args.patches),
+                patcher=patcher_desc,
             )
         except OSError as exc:
             # Still render the report below — the run itself succeeded, and
@@ -923,14 +936,9 @@ def _run_get_charms(args: argparse.Namespace) -> int:
 
 
 def _describe_run(label: str, path: pathlib.Path, meta: _results.RunMeta) -> str:
-    bits = [f'{label}: {path}']
-    if meta.created_at:
-        bits.append(f'saved {meta.created_at}')
-    if meta.target:
-        bits.append(f'target {meta.target}')
-    if meta.patcher:
-        bits.append(f'patch {meta.patcher}')
-    return f'{bits[0]} — {", ".join(bits[1:])}' if len(bits) > 1 else bits[0]
+    prefix = f'{label}: {path}'
+    summary = meta.summary()
+    return f'{prefix} — {summary}' if summary else prefix
 
 
 def _run_compare(args: argparse.Namespace) -> int:
@@ -956,7 +964,7 @@ def _run_compare(args: argparse.Namespace) -> int:
     if args.output_format == 'markdown':
         target = current.meta.target or baseline.meta.target
         title = f'hyrum run comparison ({target})' if target else 'hyrum run comparison'
-        _compare.render_markdown(baseline.outcomes, current.outcomes, title=title)
+        _compare.render_markdown(baseline.outcomes, current.outcomes, result, title=title)
     else:
         print(_describe_run('Baseline', args.baseline, baseline.meta))
         print(_describe_run('Current', args.current, current.meta))

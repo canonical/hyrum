@@ -76,16 +76,34 @@ def test_save_is_atomic_no_temp_file_left(tmp_path: pathlib.Path):
     assert list(tmp_path.glob('*.tmp')) == []
 
 
-def test_save_failure_leaves_no_temp_file(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+def test_save_write_failure_removes_temp_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A crashed write leaves no half-written tmp file behind."""
     path = tmp_path / 'out.json'
 
-    def boom(self: pathlib.Path, target: pathlib.Path) -> pathlib.Path:
+    def boom(self: pathlib.Path, data: str, *args: object, **kwargs: object) -> int:
         raise OSError('disk full')
 
-    monkeypatch.setattr(pathlib.Path, 'replace', boom)
+    monkeypatch.setattr(pathlib.Path, 'write_text', boom)
     with pytest.raises(OSError, match='disk full'):
         results.save(_outcomes(), path)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_save_replace_failure_preserves_temp_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """If the atomic rename fails, keep the fully-written tmp file for recovery."""
+    path = tmp_path / 'out.json'
+
+    def boom(self: pathlib.Path, target: pathlib.Path) -> pathlib.Path:
+        raise OSError('cross-device')
+
+    monkeypatch.setattr(pathlib.Path, 'replace', boom)
+    with pytest.raises(OSError, match='cross-device'):
+        results.save(_outcomes(), path)
+    assert list(tmp_path.iterdir()) == [path.with_name(path.name + '.tmp')]
 
 
 def test_save_records_run_meta(tmp_path: pathlib.Path):

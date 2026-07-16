@@ -21,8 +21,8 @@ class CompareResult:
     new_failures: list[str]
     resolved: list[str]
     new_errors: list[str]
-    baseline_pass_rate: float
-    current_pass_rate: float
+    baseline_pass_rate: float | None
+    current_pass_rate: float | None
     baseline_passed: int
     baseline_ran: int
     current_passed: int
@@ -60,8 +60,8 @@ def diff(baseline: list[pool.Outcome], current: list[pool.Outcome]) -> CompareRe
         new_failures=new_failures,
         resolved=resolved,
         new_errors=new_errors,
-        baseline_pass_rate=base_passed / base_ran if base_ran else 0.0,
-        current_pass_rate=cur_passed / cur_ran if cur_ran else 0.0,
+        baseline_pass_rate=base_passed / base_ran if base_ran else None,
+        current_pass_rate=cur_passed / cur_ran if cur_ran else None,
         baseline_passed=base_passed,
         baseline_ran=base_ran,
         current_passed=cur_passed,
@@ -72,16 +72,18 @@ def diff(baseline: list[pool.Outcome], current: list[pool.Outcome]) -> CompareRe
 def _section(file: TextIO, title: str, charms: list[str], tint_code: str, use_color: bool) -> None:
     if not charms:
         return
-    width = max(len(title), max(len(c) for c in charms))
-    bar = '─' * width
     bold = _ansi.BOLD if use_color else ''
     tint = tint_code if use_color else ''
     reset = _ansi.RESET if use_color else ''
     print(file=file)
-    print(f'{bold}{title}{reset}', file=file)
-    print(bar, file=file)
+    print(f'{bold}{title.upper()}{reset}', file=file)
+    print(file=file)
     for charm in charms:
         print(f'  {tint}{charm}{reset}', file=file)
+
+
+def _fmt_pct(rate: float | None) -> str:
+    return 'n/a' if rate is None else f'{rate * 100:.0f}%'
 
 
 def render(result: CompareResult, *, file: TextIO | None = None) -> None:
@@ -92,15 +94,21 @@ def render(result: CompareResult, *, file: TextIO | None = None) -> None:
     green = _ansi.GREEN if use_color else ''
     reset = _ansi.RESET if use_color else ''
 
-    delta_pct = (result.current_pass_rate - result.baseline_pass_rate) * 100
     n_new = len(result.new_failures)
     n_resolved = len(result.resolved)
-    sign = '+' if delta_pct >= 0 else ''
     failure_word = 'failure' if n_new == 1 else 'failures'
+    current_pct = _fmt_pct(result.current_pass_rate)
+    baseline_pct = _fmt_pct(result.baseline_pass_rate)
+    if result.current_pass_rate is None or result.baseline_pass_rate is None:
+        delta_str = 'n/a'
+    else:
+        delta_pct = (result.current_pass_rate - result.baseline_pass_rate) * 100
+        sign = '+' if delta_pct >= 0 else ''
+        delta_str = f'{sign}{delta_pct:.0f}%'
     print(
-        f'Pass rate: {bold}{result.current_pass_rate * 100:.0f}%{reset} '
-        f'(was {result.baseline_pass_rate * 100:.0f}%) '
-        f'delta {bold}{sign}{delta_pct:.0f}%{reset} '
+        f'Pass rate: {bold}{current_pct}{reset} '
+        f'(was {baseline_pct}) '
+        f'delta {bold}{delta_str}{reset} '
         f'({n_new} new {failure_word}, {n_resolved} resolved)',
         file=out,
     )
@@ -150,6 +158,7 @@ def _cell(outcome: pool.Outcome | None) -> str:
 def render_markdown(
     baseline: list[pool.Outcome],
     current: list[pool.Outcome],
+    result: CompareResult,
     *,
     file: TextIO | None = None,
     title: str = 'hyrum run comparison',
@@ -168,14 +177,13 @@ def render_markdown(
         )
 
     rows = sorted((k for k in keys if is_interesting(k)), key=_short)
-    result = diff(baseline, current)
 
     print(f'# {title}', file=out)
     print(file=out)
     print(
-        f'Baseline pass rate: **{result.baseline_pass_rate * 100:.0f}%** '
+        f'Baseline pass rate: **{_fmt_pct(result.baseline_pass_rate)}** '
         f'({result.baseline_passed}/{result.baseline_ran}). '
-        f'Current pass rate: **{result.current_pass_rate * 100:.0f}%** '
+        f'Current pass rate: **{_fmt_pct(result.current_pass_rate)}** '
         f'({result.current_passed}/{result.current_ran}). '
         f'{len(result.new_failures)} new failure(s), '
         f'{len(result.resolved)} resolved, '
@@ -183,6 +191,19 @@ def render_markdown(
         file=out,
     )
     print(file=out)
+
+    for heading, charms in (
+        ('New failures', result.new_failures),
+        ('Resolved', result.resolved),
+        ('New errors', result.new_errors),
+    ):
+        if not charms:
+            continue
+        print(f'## {heading}', file=out)
+        print(file=out)
+        for charm in charms:
+            print(f'- {_md_escape(_short(charm))}', file=out)
+        print(file=out)
 
     if not rows:
         print('_No non-passing charms in either run._', file=out)

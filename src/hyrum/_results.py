@@ -28,13 +28,24 @@ class RunMeta:
     patcher: str = ''
     charms_dir: str = ''
 
+    def summary(self) -> str:
+        """Human-readable ``saved X, target Y, patch Z`` string, empty if unknown."""
+        bits: list[str] = []
+        if self.created_at:
+            bits.append(f'saved {self.created_at}')
+        if self.target:
+            bits.append(f'target {self.target}')
+        if self.patcher:
+            bits.append(f'patch {self.patcher}')
+        return ', '.join(bits)
+
 
 @dataclasses.dataclass(frozen=True)
 class RunResults:
     """One loaded results file: the outcomes plus the run's metadata."""
 
     outcomes: list[pool.Outcome]
-    meta: RunMeta = RunMeta()
+    meta: RunMeta
 
 
 def _identity(repo: pathlib.Path, base: pathlib.Path | None) -> str:
@@ -93,10 +104,10 @@ def save(
     tmp = path.with_name(path.name + '.tmp')
     try:
         tmp.write_text(json.dumps(document, indent=2))
-        tmp.replace(path)
     except OSError:
         tmp.unlink(missing_ok=True)
         raise
+    tmp.replace(path)
 
 
 def _load_outcome(record: object, *, path: pathlib.Path, index: int) -> pool.Outcome:

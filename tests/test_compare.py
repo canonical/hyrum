@@ -71,10 +71,10 @@ def test_pass_rate_calc_ignores_skipped_and_errored():
     assert result.current_pass_rate == pytest.approx(1 / 3)
 
 
-def test_pass_rate_zero_when_no_runs():
+def test_pass_rate_none_when_no_runs():
     result = _compare.diff([], [])
-    assert result.baseline_pass_rate == pytest.approx(0.0)
-    assert result.current_pass_rate == pytest.approx(0.0)
+    assert result.baseline_pass_rate is None
+    assert result.current_pass_rate is None
 
 
 def test_render_quiet_when_no_diffs():
@@ -89,13 +89,15 @@ def test_render_shows_new_failures():
     result = _compare.diff([_o('alpha', 'passed')], [_o('alpha', 'failed')])
     _compare.render(result, file=buf)
     output = buf.getvalue()
-    assert 'New failures' in output
+    assert 'NEW FAILURES' in output
     assert 'alpha' in output
 
 
 def test_markdown_render_omits_all_passing_charms():
     buf = io.StringIO()
-    _compare.render_markdown([_o('alpha', 'passed')], [_o('alpha', 'passed')], file=buf)
+    base = [_o('alpha', 'passed')]
+    cur = [_o('alpha', 'passed')]
+    _compare.render_markdown(base, cur, _compare.diff(base, cur), file=buf)
     output = buf.getvalue()
     assert '_No non-passing charms in either run._' in output
     assert 'alpha' not in output.split('_No')[0].split('Current pass rate')[1]
@@ -113,7 +115,7 @@ def test_markdown_render_includes_summaries_and_collapses_identical():
         _o('gamma', 'patcher_error', summary='patcher: lock failed'),
     ]
     buf = io.StringIO()
-    _compare.render_markdown(base, cur, file=buf)
+    _compare.render_markdown(base, cur, _compare.diff(base, cur), file=buf)
     output = buf.getvalue()
     assert '| Charm | Baseline | Current |' in output
     # alpha: same failure both sides → current cell is "same".
@@ -131,21 +133,47 @@ def test_markdown_render_includes_summaries_and_collapses_identical():
 
 def test_markdown_escapes_pipes_in_summary():
     buf = io.StringIO()
-    _compare.render_markdown(
-        [_o('alpha', 'passed')],
-        [_o('alpha', 'failed', summary='a | b')],
-        file=buf,
-    )
+    base = [_o('alpha', 'passed')]
+    cur = [_o('alpha', 'failed', summary='a | b')]
+    _compare.render_markdown(base, cur, _compare.diff(base, cur), file=buf)
     output = buf.getvalue()
     assert 'a \\| b' in output
 
 
 def test_markdown_render_handles_charms_missing_from_one_side():
     buf = io.StringIO()
-    _compare.render_markdown(
-        [_o('alpha', 'failed', summary='oops')],
-        [],
-        file=buf,
-    )
+    base = [_o('alpha', 'failed', summary='oops')]
+    cur: list[pool.Outcome] = []
+    _compare.render_markdown(base, cur, _compare.diff(base, cur), file=buf)
     output = buf.getvalue()
     assert '| _absent_ |' in output
+
+
+def test_markdown_render_shows_new_failures_resolved_and_errors_sections():
+    base = [
+        _o('alpha', 'passed'),
+        _o('beta', 'failed'),
+        _o('gamma', 'passed'),
+    ]
+    cur = [
+        _o('alpha', 'failed'),
+        _o('beta', 'passed'),
+        _o('gamma', 'patcher_error'),
+    ]
+    buf = io.StringIO()
+    _compare.render_markdown(base, cur, _compare.diff(base, cur), file=buf)
+    output = buf.getvalue()
+    assert '## New failures\n\n- cache/alpha' in output
+    assert '## Resolved\n\n- cache/beta' in output
+    assert '## New errors\n\n- cache/gamma' in output
+
+
+def test_markdown_render_omits_empty_sections():
+    base = [_o('alpha', 'passed')]
+    cur = [_o('alpha', 'failed')]
+    buf = io.StringIO()
+    _compare.render_markdown(base, cur, _compare.diff(base, cur), file=buf)
+    output = buf.getvalue()
+    assert '## New failures' in output
+    assert '## Resolved' not in output
+    assert '## New errors' not in output
