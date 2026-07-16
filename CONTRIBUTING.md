@@ -30,6 +30,18 @@ Note that the commit messages to the PR's branch do not need to follow the conve
 
 To help us review your changes, please rebase your pull request onto the `main` branch before you request a review. If you need to bring in the latest changes from `main` after the review has started, please use a merge commit.
 
+# Install from source
+
+Clone the repository and sync the development dependency groups:
+
+```bash
+git clone https://github.com/canonical/hyrum
+cd hyrum
+uv sync --all-groups
+```
+
+`uv sync` creates a virtual environment in `.venv/` and installs `ruff`, `pyright`, `pytest`, and the other tooling used by `make all`. Run the CLI with `uv run hyrum …`, or activate the environment first with `. .venv/bin/activate`.
+
 # Tests
 
 Changes should include tests. Run them locally with:

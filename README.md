@@ -105,12 +105,16 @@ versions that don't build on the host Python) and is not something
 ## Usage
 
 ```bash
-# Install (editable, with the lint/static/unit dependency groups for
-# ruff, pyright, pytest, …):
-uv sync --all-groups
+# Install the initial pre-release version:
+uv tool install --prerelease=allow hyrum
 
-# Populate the local cache with every charm in charm-list/charms.csv
-# (shallow clones, pulls for repos that already exist):
+# Grab the curated charm list (or bring your own CSV with the same
+# columns and pass it via --source):
+mkdir -p charm-list
+curl -sSfL -o charm-list/charms.csv \
+    https://raw.githubusercontent.com/canonical/hyrum/main/charm-list/charms.csv
+
+# Populate the local cache with every charm in the CSV:
 hyrum get-charms
 
 # Run `tox -e unit` across every charm in the default cache
