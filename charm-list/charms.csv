@@ -224,9 +224,7 @@ Telco,https://github.com/canonical/vault-k8s-operator,,manual
 ,https://opendev.org/openstack/charm-swift-storage,,auto
 ,https://github.com/canonical/tempo-operators,,auto
 ,https://github.com/battlemidget/juju-charm-znc,,auto
-,https://github.com/canonical/charm-anbox-cloud,,auto
 ,https://github.com/canonical/bundle-kubeflow,,auto
-,https://github.com/canonical/chrony-operator,,auto
 ,https://git.launchpad.net/charm-easyrsa,,auto
 ,https://git.launchpad.net/charm-kubernetes-worker,,auto
 ,https://github.com/charmed-kubernetes/charm-coredns/,,auto
@@ -364,7 +362,6 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/charmed-canonical-cla,,auto-discover
 ,https://github.com/canonical/charmed-etcd-benchmark-operator,,auto-discover
 ,https://github.com/canonical/charmed-gh-jira-sync-bot,,auto-discover
-,https://github.com/canonical/chrony-client-operator,,auto-discover
 ,https://github.com/canonical/cluster-api-k8s,,auto-discover
 ,https://github.com/canonical/comsys-libs,,auto-discover
 ,https://github.com/canonical/comsys-openldap-k8s-operator,,auto-discover
