@@ -10,6 +10,9 @@ import logging
 import os
 import pathlib
 import re
+import shlex
+import shutil
+import subprocess  # noqa: S404 — subprocess is core to the git ls-remote preflight
 import sys
 import time
 from collections.abc import Sequence
@@ -418,6 +421,7 @@ def _build_runner(
     tox_executable: str,
     make_executable: str,
     timeout: int,
+    prefer: Sequence[str] = ('tox', 'make'),
 ):
     if choice is runners.RunnerChoice.TOX:
         return tox.ToxRunner(executable=tox_executable, timeout=timeout)
@@ -427,7 +431,115 @@ def _build_runner(
         tox_executable=tox_executable,
         make_executable=make_executable,
         timeout=timeout,
+        prefer=prefer,
     )
+
+
+# Backends each ``--runner`` choice may end up invoking, in preference order.
+_RUNNER_BACKENDS: dict[runners.RunnerChoice, tuple[str, ...]] = {
+    runners.RunnerChoice.TOX: ('tox',),
+    runners.RunnerChoice.MAKE: ('make',),
+    runners.RunnerChoice.AUTO: ('tox', 'make'),
+}
+
+
+def _missing_program(command: str) -> str | None:
+    """Return ``command``'s program name if it is not on PATH, else ``None``."""
+    argv = shlex.split(command)
+    if not argv:
+        return command
+    return None if shutil.which(argv[0]) else argv[0]
+
+
+def _available_backends(
+    choice: runners.RunnerChoice,
+    *,
+    tox_executable: str,
+    make_executable: str,
+) -> tuple[str, ...]:
+    """Return the runner backends whose executable is actually installed.
+
+    A backend that isn't installed would otherwise fail identically in every
+    charm, producing one ``runner_error`` per charm for a single host problem.
+    Under ``--runner auto`` the missing backend is dropped with a warning (a
+    fleet with no make-driven charms shouldn't need make); if nothing is left,
+    that's fatal and we say so once, before any charm runs.
+    """
+    commands = {'tox': tox_executable, 'make': make_executable}
+    available: list[str] = []
+    missing: list[str] = []
+    for name in _RUNNER_BACKENDS[choice]:
+        program = _missing_program(commands[name])
+        if program is None:
+            available.append(name)
+        else:
+            missing.append(program)
+            logger.warning('%s is not installed; %s charms cannot be run', program, name)
+    if not available:
+        sys.exit(f'hyrum: error: no runner available: {", ".join(missing)} not found on PATH.')
+    return tuple(available)
+
+
+# A ref that ``git ls-remote`` cannot see but git can still check out: a full
+# commit SHA. Anything shorter is ambiguous, and uv's shallow fetch cannot
+# resolve an abbreviated hash, so we ask for the full one.
+_FULL_SHA_RE = re.compile(r'^[0-9a-f]{40}$')
+_ABBREVIATED_SHA_RE = re.compile(r'^[0-9a-f]{4,39}$')
+
+# ``git ls-remote --exit-code`` exits 2 when no ref matched; other non-zero
+# exits mean the remote itself could not be queried.
+_LS_REMOTE_NO_MATCH = 2
+
+
+def _unresolvable_ref(url: str, ref: str, *, timeout: int = 30) -> str | None:
+    """Return why ``ref`` cannot be found in ``url``, or ``None`` if it can.
+
+    Network and authentication problems are not the user's ref being wrong, so
+    they warn and pass; only a remote that answered and had no such ref fails.
+    """
+    argv = ['git', 'ls-remote', '--exit-code', url, ref]
+    try:
+        result = subprocess.run(argv, check=False, capture_output=True, timeout=timeout)  # noqa: S603
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning('could not check %s in %s: %s', ref, url, exc)
+        return None
+    if result.returncode == 0:
+        return None
+    if result.returncode != _LS_REMOTE_NO_MATCH:
+        logger.warning(
+            'could not check %s in %s: %s',
+            ref,
+            url,
+            result.stderr.decode(errors='replace').strip(),
+        )
+        return None
+    if _FULL_SHA_RE.match(ref):
+        return None
+    if _ABBREVIATED_SHA_RE.match(ref):
+        return (
+            f'{ref!r} is not a branch or tag in {url}; if it is a commit, give the '
+            f'full 40-character SHA (an abbreviated one cannot be fetched)'
+        )
+    return f'{ref!r} does not resolve to a branch or tag in {url}'
+
+
+def _preflight_patch_refs(patches: Sequence[dict[str, str | None]]) -> None:
+    """Fail fast if a ``--patch`` ref does not exist in its remote.
+
+    An unresolvable ref patches cleanly and only breaks later, when the runner
+    installs the dependency — which records every charm as ``failed``,
+    indistinguishable from a genuine test failure. One ``git ls-remote`` per
+    distinct (url, ref) costs well under a second and names the typo instead.
+    """
+    checked: set[tuple[str, str]] = set()
+    for spec in patches:
+        url, ref = spec.get('url'), spec.get('branch')
+        if url is None or ref is None or (url, ref) in checked:
+            continue
+        checked.add((url, ref))
+        problem = _unresolvable_ref(url, ref)
+        if problem is not None:
+            sys.exit(f'hyrum: error: --patch: {problem}')
 
 
 def _select_repos(
@@ -615,6 +727,17 @@ def _add_check_subparser(
         ),
     )
     parser.add_argument(
+        '--preflight',
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            'Before running any charm, check that each --patch git ref exists in '
+            'its remote and that the runner executables are installed, so a typo '
+            'or a missing tool fails once rather than once per charm. Needs '
+            'network access for the ref check. [default: enabled]'
+        ),
+    )
+    parser.add_argument(
         '--auto-python',
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -753,6 +876,8 @@ def _run_check(args: argparse.Namespace) -> int:
         if name in seen_pkgs:
             raise SystemExit(f'--patch specified more than once for {name!r}')
         seen_pkgs.add(name)
+    if args.preflight and not args.no_patch:
+        _preflight_patch_refs(args.patches or [_DEFAULT_OPS_PATCH])
     patcher = _build_patcher(
         no_patch=args.no_patch,
         patches=args.patches,
@@ -761,11 +886,20 @@ def _run_check(args: argparse.Namespace) -> int:
         lock_timeout=args.lock_timeout,
         auto_python=args.auto_python,
     )
+    choice = runners.RunnerChoice(args.runner_choice)
+    prefer = ('tox', 'make')
+    if args.preflight:
+        prefer = _available_backends(
+            choice,
+            tox_executable=args.tox_executable,
+            make_executable=args.make_executable,
+        )
     runner = _build_runner(
-        choice=runners.RunnerChoice(args.runner_choice),
+        choice=choice,
         tox_executable=args.tox_executable,
         make_executable=args.make_executable,
         timeout=args.timeout,
+        prefer=prefer,
     )
 
     if args.log_dir is not None:
@@ -794,7 +928,11 @@ def _run_check(args: argparse.Namespace) -> int:
             no_headers=args.no_headers,
         )
     elif not pool.passed(results):
-        failed = sum(1 for o in results if o.status in ('failed', 'timeout', 'patcher_error'))
+        failed = sum(
+            1
+            for o in results
+            if o.status in ('failed', 'timeout', 'runner_error', 'patcher_error')
+        )
         print(f'hyrum: {failed} charm(s) did not pass.', file=sys.stderr)
 
     if not args.no_fail and not pool.passed(results):

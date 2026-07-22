@@ -41,12 +41,16 @@ class ToxRunner:
         argv = [*self._executable, '-e', target]
         logger.info('tox %s in %s', target, repo)
         started = time.monotonic()
-        proc = await asyncio.create_subprocess_exec(
-            *argv,
-            cwd=repo.resolve(),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *argv,
+                cwd=repo.resolve(),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except OSError as exc:
+            logger.error('could not launch %s in %s: %s', argv[0], repo, exc)
+            return base.launch_failure(repo, runner=self.name, target=target, argv=argv, exc=exc)
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
         except TimeoutError:

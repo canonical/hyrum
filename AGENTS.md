@@ -63,9 +63,11 @@ above.
 - `runners/` — `ToxRunner`, `MakeRunner`, `auto()` per-charm with fallback.
   GNU make's missing-target ambiguity is handled by probing with
   `make -nq` and falling back to stderr inspection.
-- `pool` — async worker pool, `Outcome` dataclass with `patcher_error` as a
-  status distinct from `failed` (so infrastructure problems don't get
-  mis-attributed to the charm).
+- `pool` — async worker pool, `Outcome` dataclass with `patcher_error` and
+  `runner_error` as statuses distinct from `failed` (so infrastructure
+  problems don't get mis-attributed to the charm). The `check` subcommand
+  preflights `--patch` git refs and the runner executables before the pool
+  starts, so a typo or a missing tool fails once, not once per charm.
 - `report` — Rich tally + verbose offender lists.
 - `tools/` — stdlib-only maintenance scripts that are **not** shipped in the
   hyrum wheel. `tools/update_charm_list.py` refreshes

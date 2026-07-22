@@ -65,12 +65,16 @@ class MakeRunner:
         argv = [*self._executable, target]
         logger.info('make %s in %s', target, repo)
         started = time.monotonic()
-        proc = await asyncio.create_subprocess_exec(
-            *argv,
-            cwd=repo.resolve(),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *argv,
+                cwd=repo.resolve(),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except OSError as exc:
+            logger.error('could not launch %s in %s: %s', argv[0], repo, exc)
+            return base.launch_failure(repo, runner=self.name, target=target, argv=argv, exc=exc)
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
         except TimeoutError:
@@ -115,8 +119,9 @@ class MakeRunner:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-        except FileNotFoundError:
-            # No make installed; let the real invocation report it.
+        except OSError:
+            # make can't be launched; let the real invocation report it as a
+            # runner_error rather than swallowing the cause here.
             return False
         try:
             _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
