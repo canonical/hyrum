@@ -237,7 +237,7 @@ def test_pyproject_uv_adds_tool_uv_sources(tmp_path: pathlib.Path, ops_branch: p
         patched = _read(py)
         assert '[tool.uv.sources]' in patched
         assert 'ops = { git = "https://github.com/canonical/operator"' in patched
-        assert 'branch = "fix/X"' in patched
+        assert 'rev = "fix/X"' in patched
         # The version-pinned ops dep is rewritten in-place to the git URL so
         # hard pins (``ops==X.Y``) don't conflict with HEAD ops.
         assert 'ops>=2.10' not in patched
@@ -271,9 +271,9 @@ def test_pyproject_uv_is_unchanged_under_existing_sources(
         dev-dependencies = []
 
         [tool.uv.sources]
-        ops = {{ git = "{op_url}", branch = "fix/X" }}
-        ops-scenario = {{ git = "{op_url}", branch = "fix/X", subdirectory = "testing" }}
-        ops-tracing = {{ git = "{op_url}", branch = "fix/X", subdirectory = "tracing" }}
+        ops = {{ git = "{op_url}", rev = "fix/X" }}
+        ops-scenario = {{ git = "{op_url}", rev = "fix/X", subdirectory = "testing" }}
+        ops-tracing = {{ git = "{op_url}", rev = "fix/X", subdirectory = "tracing" }}
     """)
     )
     with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
@@ -472,7 +472,7 @@ def test_pyproject_poetry_injects_git_under_dependencies(
     )
     with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
         patched = _read(py)
-        assert 'ops = {git = "https://github.com/canonical/operator", branch = "fix/X"}' in patched
+        assert 'ops = {git = "https://github.com/canonical/operator", rev = "fix/X"}' in patched
         # Old poetry-style entry gone.
         assert 'ops = "^2.10"' not in patched
 
@@ -593,6 +593,75 @@ def test_ops_source_kind_property():
     assert patchers.OpsSource(path='/x').kind == 'path'
 
 
+# ---- OpsSource rendering: git refs -------------------------------------------
+
+# Any ref git understands must survive into the emitted TOML. uv and Poetry
+# both restrict ``branch`` to refs/heads/, so a tag or SHA sent there fails
+# with "couldn't find remote ref"; ``rev`` takes all three.
+_REFS = ['main', 'fix/X', '2.10.0', '3dd462122463bb0f5290e45167185c1e4a54c829']
+
+
+@pytest.mark.parametrize('ref', _REFS)
+def test_ops_source_git_inline_forms_emit_rev(ref: str):
+    url = 'https://github.com/canonical/operator'
+    ops = patchers.OpsSource(url=url, branch=ref)
+    assert ops.uv_source_inline() == f'{{ git = "{url}", rev = "{ref}" }}'
+    assert ops.poetry_dep_inline() == f'{{git = "{url}", rev = "{ref}"}}'
+
+
+@pytest.mark.parametrize('ref', _REFS)
+def test_ops_source_pep508_still_interpolates_the_ref(ref: str):
+    # The PEP 508 form was always correct; guard against "fixing" it too.
+    ops = patchers.OpsSource(branch=ref)
+    assert ops.pep508_dep('ops') == f'ops @ git+https://github.com/canonical/operator@{ref}'
+
+
+def test_ops_source_git_inline_forms_keep_subdirectory():
+    ops = patchers.OpsSource(branch='main')
+    assert 'subdirectory = "testing"' in ops.uv_source_inline(subdir='testing')
+    assert 'subdirectory = "testing"' in ops.poetry_dep_inline(subdir='testing')
+    assert '#subdirectory=testing' in ops.pep508_dep('ops-scenario', subdir='testing')
+
+
+# ---- OpsSource rendering: local paths ----------------------------------------
+
+# uv ignores ``subdirectory`` when the source is a local directory: it builds
+# whatever is at the root of the path (``ops``) and then rejects it for having
+# the wrong metadata name. The companion's subdirectory has to be part of the
+# path itself.
+
+
+def test_ops_source_path_joins_subdir_into_the_path():
+    ops = patchers.OpsSource(path='/x/operator')
+    assert ops.uv_source_inline(subdir='tracing') == (
+        '{ path = "/x/operator/tracing", editable = true }'
+    )
+    assert ops.poetry_dep_inline(subdir='tracing') == '{path = "/x/operator/tracing"}'
+    assert ops.pep508_dep('ops-scenario', subdir='testing') == (
+        'ops-scenario @ file:///x/operator/testing'
+    )
+
+
+def test_ops_source_uv_path_source_is_editable():
+    # The operator repo declares its companions as uv workspace members, which
+    # are editable; a non-editable hoist here collides with that.
+    ops = patchers.OpsSource(path='/x/operator')
+    assert ops.uv_source_inline() == '{ path = "/x/operator", editable = true }'
+
+
+def test_ops_source_path_emits_no_subdirectory_key():
+    ops = patchers.OpsSource(path='/x/operator')
+    assert 'subdirectory' not in ops.uv_source_inline(subdir='testing')
+    assert 'subdirectory' not in ops.poetry_dep_inline(subdir='testing')
+    assert '#subdirectory=' not in ops.pep508_dep('ops-scenario', subdir='testing')
+
+
+def test_ops_source_path_without_subdir_is_the_bare_path():
+    ops = patchers.OpsSource(path='/x/operator')
+    assert ops.uv_source_inline() == '{ path = "/x/operator", editable = true }'
+    assert ops.pep508_dep('ops') == 'ops @ file:///x/operator'
+
+
 def test_requirements_pypi_pins_version_and_leaves_companions(
     tmp_path: pathlib.Path, ops_pypi: patchers.OpsSource
 ):
@@ -692,9 +761,12 @@ def test_pyproject_uv_path_emits_path_source(tmp_path: pathlib.Path, ops_path: p
     )
     with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
         patched = _read(py)
-        assert f'ops = {{ path = "{tmp_path / "operator"}" }}' in patched
-        # Companions still hoisted with the same path + subdirectory.
-        assert 'subdirectory = "testing"' in patched
+        assert f'ops = {{ path = "{tmp_path / "operator"}", editable = true }}' in patched
+        # Companions are hoisted too, but as paths into the checkout: uv
+        # ignores ``subdirectory`` on a path source and would build ``ops``.
+        companion = tmp_path / 'operator' / 'testing'
+        assert f'ops-scenario = {{ path = "{companion}", editable = true }}' in patched
+        assert 'subdirectory' not in patched
 
 
 # ---- error paths -------------------------------------------------------------
@@ -1228,7 +1300,7 @@ def test_charmlib_patcher_uv_extras_reapplied(tmp_path: pathlib.Path, monkeypatc
         patched = (charm_dir / 'pyproject.toml').read_text()
         assert '[tool.uv.sources]' in patched
         assert 'charmlibs-nginx-k8s = { git = "https://github.com/canonical/charmlibs"' in patched
-        assert 'branch = "mybranch"' in patched
+        assert 'rev = "mybranch"' in patched
         assert 'subdirectory = "nginx_k8s"' in patched
 
 
@@ -1268,7 +1340,7 @@ def test_charmlib_patcher_poetry_injects_git_dep(tmp_path: pathlib.Path, monkeyp
     with patchers.CharmlibPatcher(src).apply(charm_dir):
         patched = (charm_dir / 'pyproject.toml').read_text()
         assert 'charmlibs-apt = {git = "https://github.com/canonical/charmlibs"' in patched
-        assert 'branch = "fix/apt"' in patched
+        assert 'rev = "fix/apt"' in patched
         assert 'subdirectory = "apt"' in patched
         assert 'charmlibs-apt = "^1.0"' not in patched
 

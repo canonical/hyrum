@@ -33,7 +33,7 @@ from typing import Any
 
 import packaging.requirements
 
-from hyrum._patchers import base
+from hyrum._patchers import _common, base
 from hyrum._patchers._common import (
     detect_pyproject_flavour,
     restore,
@@ -61,11 +61,13 @@ class OpsSource:
 
     - **git** (default): ``url`` plus optional ``branch`` — pulled via
       PEP 508 ``git+<url>[@branch]`` URLs. Companions come from the
-      same ref via ``#subdirectory=<sub>``. ``branch`` is interpolated
-      raw into the git URL, so any ref git understands (tag, commit
-      SHA) works in the same field.
+      same ref via ``#subdirectory=<sub>``. Despite the name, ``branch``
+      accepts any ref git understands: it is interpolated raw into the
+      PEP 508 URL, and rendered as uv/Poetry's ``rev`` key, which takes
+      branches, tags and commit SHAs alike.
     - **path**: ``path`` — local operator checkout, expressed as a
-      ``file://`` URL. Companions resolved by ``#subdirectory=<sub>``.
+      ``file://`` URL. Companions live in subdirectories of that
+      checkout, so their subdirectory is joined onto the path.
     - **pypi**: ``version`` — pin ops to a PyPI version. Companion
       packages are left untouched, since their versioning is independent
       of ``ops``.
@@ -103,15 +105,24 @@ class OpsSource:
 
     def _source_url(self, *, subdir: str | None = None) -> str:
         if self.kind == 'path':
-            assert self.path is not None
-            url = f'file://{self.path}'
-        else:
-            url = f'git+{self.url}'
-            if self.branch:
-                url = f'{url}@{self.branch}'
+            # uv ignores ``#subdirectory=`` on a ``file://`` directory URL and
+            # builds whatever sits at the root of the path — which is ``ops``,
+            # so a companion is rejected for having the wrong metadata name.
+            # Point straight at the companion's directory instead.
+            return f'file://{self._companion_path(subdir)}'
+        url = f'git+{self.url}'
+        if self.branch:
+            url = f'{url}@{self.branch}'
         if subdir:
             url = f'{url}#subdirectory={subdir}'
         return url
+
+    def _companion_path(self, subdir: str | None) -> str:
+        """Absolute path to ``subdir`` within the local operator checkout."""
+        assert self.path is not None
+        if not subdir:
+            return self.path
+        return str(pathlib.PurePosixPath(self.path) / subdir)
 
     def pep508_dep(
         self, name: str, *, extras: Sequence[str] = (), subdir: str | None = None
@@ -134,11 +145,15 @@ class OpsSource:
     def uv_source_inline(self, *, subdir: str | None = None) -> str:
         """Right-hand side for ``pkg = ...`` in ``[tool.uv.sources]``."""
         if self.kind == 'path':
-            parts = [f'path = "{self.path}"']
-        else:
-            parts = [f'git = "{self.url}"']
-            if self.branch:
-                parts.append(f'branch = "{self.branch}"')
+            # As in _source_url: uv ignores ``subdirectory`` for a path source.
+            # ``editable`` matches how the operator repo declares its own
+            # companions — as uv workspace members, which are editable — so the
+            # hoisted top-level source doesn't conflict with ops's declaration
+            # ("conflicting URLs for package `ops-scenario`").
+            return f'{{ path = "{self._companion_path(subdir)}", editable = true }}'
+        parts = [f'git = "{self.url}"']
+        if self.branch:
+            parts.append(f'{_common.GIT_REF_KEY} = "{self.branch}"')
         if subdir:
             parts.append(f'subdirectory = "{subdir}"')
         return '{ ' + ', '.join(parts) + ' }'
@@ -151,13 +166,13 @@ class OpsSource:
             extras_repr = ', '.join(repr(e) for e in sorted(extras))
             return f'{{ version = "=={self.version}", extras = [{extras_repr}] }}'
         if self.kind == 'path':
-            parts = [f'path = "{self.path}"']
+            parts = [f'path = "{self._companion_path(subdir)}"']
         else:
             parts = [f'git = "{self.url}"']
             if self.branch:
-                parts.append(f'branch = "{self.branch}"')
-        if subdir:
-            parts.append(f'subdirectory = "{subdir}"')
+                parts.append(f'{_common.GIT_REF_KEY} = "{self.branch}"')
+            if subdir:
+                parts.append(f'subdirectory = "{subdir}"')
         if extras:
             extras_repr = ', '.join(repr(e) for e in sorted(extras))
             parts.append(f'extras = [{extras_repr}]')
