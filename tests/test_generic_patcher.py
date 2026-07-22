@@ -6,6 +6,7 @@ import textwrap
 import pytest
 
 from hyrum import _patchers as patchers
+from hyrum._patchers import _common
 
 
 def _read(path: pathlib.Path) -> str:
@@ -133,7 +134,7 @@ def test_uv_git_adds_source_block(tmp_path: pathlib.Path, monkeypatch):
     with patchers.GenericDepPatcher(source).apply(tmp_path):
         patched = _read(py)
         assert '[tool.uv.sources]' in patched
-        assert 'requests = { git = "https://github.com/psf/requests", branch = "main" }' in patched
+        assert 'requests = { git = "https://github.com/psf/requests", rev = "main" }' in patched
 
 
 # ---- poetry path -------------------------------------------------------------
@@ -171,7 +172,27 @@ def test_poetry_git_swap(tmp_path: pathlib.Path, monkeypatch):
     )
     with patchers.GenericDepPatcher(source).apply(tmp_path):
         patched = _read(py)
-        assert 'requests = {git = "https://github.com/psf/requests", branch = "main"}' in patched
+        assert 'requests = {git = "https://github.com/psf/requests", rev = "main"}' in patched
+
+
+# ---- git refs ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize('flavour', ['uv', 'poetry', 'pep621'])
+@pytest.mark.parametrize('ref', ['main', 'v2.32.0', 'a' * 40])
+def test_git_ref_survives_into_every_flavour(flavour: str, ref: str):
+    """Tags and SHAs must not be emitted as ``branch``, which only takes heads."""
+    out = _common.patch_git_dep(
+        'dependencies = [\n]\n[tool.poetry.dependencies]\n',
+        'requests',
+        'https://github.com/psf/requests',
+        ref,
+        None,
+        set(),
+        flavour,
+    )
+    assert ref in out
+    assert 'branch = ' not in out
 
 
 # ---- extras preserved --------------------------------------------------------

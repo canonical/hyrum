@@ -24,6 +24,7 @@ _STATUS_COLOURS: dict[str, str] = {
     'failed': '\033[31m',  # red
     'no_target': '\033[33m',  # yellow
     'timeout': '\033[35m',  # magenta
+    'runner_error': '\033[91m',  # bright red
     'patcher_error': '\033[91m',  # bright red
     'skipped': '\033[2m',  # dim
 }
@@ -129,7 +130,7 @@ def render(
         not_run = total - ran
         breakdown_parts = [
             f'{counts.get(s, 0)} {s}'
-            for s in ('skipped', 'no_target', 'patcher_error')
+            for s in ('skipped', 'no_target', 'runner_error', 'patcher_error')
             if counts.get(s, 0)
         ]
         breakdown = f' ({", ".join(breakdown_parts)})' if breakdown_parts else ''
@@ -142,7 +143,7 @@ def render(
         print('No runs executed.', file=stream)
 
     if verbose:
-        for status in ('failed', 'patcher_error', 'timeout'):
+        for status in ('failed', 'runner_error', 'patcher_error', 'timeout'):
             offenders = [o for o in outcomes if o.status == status]
             if not offenders:
                 continue

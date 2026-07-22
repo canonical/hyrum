@@ -94,6 +94,19 @@ async def test_run_pool_handles_runner_exception_as_patcher_error(tmp_path: path
     assert len(results) == 1
     assert results[0].status == 'patcher_error'
     assert 'kaboom' in results[0].error
+    # The catch-all can't know where the exception came from, so it must not
+    # claim the patcher was at fault.
+    assert not results[0].summary.startswith('patcher:')
+
+
+async def test_run_one_runner_error_is_not_a_test_failure(tmp_path: pathlib.Path):
+    runner = StubRunner(runners.RunStatus.RUNNER_ERROR, returncode=None)
+    runner.stderr = b"could not run 'make': [Errno 2] No such file or directory: 'make'"
+    outcome = await pool.run_one(tmp_path, 'unit', patcher=patchers.NullPatcher(), runner=runner)
+    assert outcome.status == 'runner_error'
+    # Not attributed to the patcher, and the cause survives into the report.
+    assert not outcome.summary.startswith('patcher:')
+    assert "could not run 'make'" in outcome.error
 
 
 async def test_log_dir_dumps_runner_output(tmp_path: pathlib.Path):
@@ -170,6 +183,7 @@ def test_add_skipped_appends():
         ([pool.Outcome(repo=pathlib.Path('/x'), status='failed')], False),
         ([pool.Outcome(repo=pathlib.Path('/x'), status='timeout')], False),
         ([pool.Outcome(repo=pathlib.Path('/x'), status='patcher_error')], False),
+        ([pool.Outcome(repo=pathlib.Path('/x'), status='runner_error')], False),
     ],
 )
 def test_passed(outcomes, expected):

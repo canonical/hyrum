@@ -1,9 +1,10 @@
 """Drive many ``run_one`` calls concurrently across charm repos.
 
-One :class:`Outcome` per repo is produced. ``patcher_error`` is a
-distinct status from ``failed`` so callers can tell infrastructure-style
-problems apart from genuine tox/make failures. The research doc calls this out
-as a precondition for sensible run-to-run comparison later.
+One :class:`Outcome` per repo is produced. ``patcher_error`` and
+``runner_error`` are distinct statuses from ``failed`` so callers can tell
+infrastructure-style problems — a patch that would not apply, a runner that
+would not launch — apart from genuine tox/make failures. The research doc
+calls this out as a precondition for sensible run-to-run comparison later.
 
 Patchers remain synchronous context managers (the ``Patcher`` protocol
 is dirt-simple and we want third-party patchers to stay that way), but
@@ -34,6 +35,7 @@ OUTCOME_STATUSES: Final[tuple[str, ...]] = (
     'failed',
     'no_target',
     'timeout',
+    'runner_error',
     'patcher_error',
     'skipped',
 )
@@ -57,7 +59,13 @@ class Outcome:
 
     @classmethod
     def from_run_result(cls, result: runners.RunResult) -> Outcome:
-        """Build an Outcome from a successful runner invocation."""
+        """Build an Outcome from a completed runner invocation."""
+        summary = _summary.from_run_output(
+            result.stdout,
+            result.stderr,
+            status=result.status.value,
+            returncode=result.returncode,
+        )
         return cls(
             repo=result.repo,
             status=result.status.value,
@@ -65,12 +73,10 @@ class Outcome:
             target=result.target,
             duration_s=result.duration_s,
             returncode=result.returncode,
-            summary=_summary.from_run_output(
-                result.stdout,
-                result.stderr,
-                status=result.status.value,
-                returncode=result.returncode,
-            ),
+            # A runner that never launched has no output to point at, so carry
+            # the launch error itself for the verbose offender list.
+            error=summary if result.status is runners.RunStatus.RUNNER_ERROR else '',
+            summary=summary,
         )
 
     @classmethod
@@ -236,13 +242,16 @@ async def run_pool(
                     log_base=log_base,
                 )
             except Exception as exc:
+                # Neither the patcher nor the runner claimed this: both signal
+                # their own failures through Outcome statuses. Don't attribute
+                # it to either — say only that it was unexpected.
                 logger.exception('unexpected error in %s', repo)
                 outcome = Outcome(
                     repo=repo,
                     status='patcher_error',
                     target=target,
                     error=f'{type(exc).__name__}: {exc}',
-                    summary=_summary.truncate(f'patcher: {type(exc).__name__}: {exc}'),
+                    summary=_summary.truncate(f'unexpected error: {type(exc).__name__}: {exc}'),
                 )
                 if log_dir is not None:
                     _dump_patcher_error_log(

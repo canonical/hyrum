@@ -36,6 +36,7 @@ class RunStatus(enum.StrEnum):
     FAILED = 'failed'
     NO_TARGET = 'no_target'  # tox env or make target does not exist
     TIMEOUT = 'timeout'
+    RUNNER_ERROR = 'runner_error'  # the runner itself could not be launched
 
 
 @dataclasses.dataclass(frozen=True)
@@ -71,6 +72,32 @@ class Runner(Protocol):
     async def run(self, repo: pathlib.Path, target: str) -> RunResult:
         """Run ``target`` in ``repo`` and return the structured result."""
         ...
+
+
+def launch_failure(
+    repo: pathlib.Path,
+    *,
+    runner: str,
+    target: str,
+    argv: Sequence[str],
+    exc: OSError,
+) -> RunResult:
+    """Build a ``runner_error`` result for a runner that could not be launched.
+
+    A missing or unexecutable backend is a problem with the host, not with the
+    charm, so it gets its own status rather than being folded into ``failed``
+    (which reads as a genuine test failure) or into the pool's
+    ``patcher_error`` catch-all (which reads as a patching problem).
+    """
+    return RunResult(
+        repo=repo,
+        runner=runner,
+        target=target,
+        status=RunStatus.RUNNER_ERROR,
+        returncode=None,
+        duration_s=0.0,
+        stderr=f'could not run {argv[0]!r}: {exc}'.encode(),
+    )
 
 
 def split_executable(executable: str | Sequence[str]) -> list[str]:

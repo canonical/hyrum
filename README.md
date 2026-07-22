@@ -66,6 +66,8 @@ their tox env or Makefile. Those aren't installed up-front since they
 only affect a few charms in the curated list; they show up as `failed`
 (not `patcher_error`) with a `command not found` line in the per-charm
 log. Install the missing tool to surface the underlying charm result.
+A missing `tox` or `make` itself is caught up front by `--preflight`
+(on by default) rather than once per charm.
 
 Some charms also pull C/Rust extensions whose latest releases pre-date
 the host's Python version. PyO3 < 0.23 can't build against Python 3.14
@@ -164,6 +166,7 @@ Output statuses:
 | `failed`        | the runner exited non-zero                                             |
 | `no_target`     | tox env / make target not present in this charm (skipped, not failed)  |
 | `timeout`       | killed after `--timeout` seconds                                       |
+| `runner_error`  | tox / make itself could not be launched (a host problem, not a charm)  |
 | `patcher_error` | the dependency swap could not be applied (distinct from a tox failure) |
 | `skipped`       | filtered out before the run (regex, ignore-list, no runnable target, …)|
 

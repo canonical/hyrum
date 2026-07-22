@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import pathlib
+import shutil
+import subprocess  # noqa: S404 — the git ls-remote preflight is what's under test
 
 import pytest
 
@@ -18,6 +20,16 @@ def _run(argv: list[str]) -> int:
     except SystemExit as exc:
         return int(exc.code) if exc.code is not None else 0
     return 0
+
+
+@pytest.fixture(autouse=True)
+def runners_installed(monkeypatch):
+    """Let the runner preflight find tox and make, whatever the host has.
+
+    Without this the suite's result would depend on what happens to be on the
+    developer's PATH. Tests that exercise the preflight itself override it.
+    """
+    monkeypatch.setattr(shutil, 'which', lambda program: f'/usr/bin/{program}')
 
 
 @pytest.mark.parametrize(
@@ -456,3 +468,164 @@ def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathli
     assert rc == 0
     assert 'PYO3_USE_ABI3_FORWARD_COMPATIBILITY' not in os.environ
     assert 'TOX_OVERRIDE' not in os.environ
+
+
+# ---- preflight: runner executables -------------------------------------------
+
+
+def _installed(*programs: str):
+    return lambda program: f'/usr/bin/{program}' if program in programs else None
+
+
+def test_available_backends_drops_uninstalled_backend_under_auto(monkeypatch):
+    # A fleet with no make-driven charms shouldn't need make installed, so the
+    # missing backend is dropped rather than being fatal.
+    monkeypatch.setattr(shutil, 'which', _installed('tox'))
+    backends = cli._available_backends(
+        runners.RunnerChoice.AUTO, tox_executable='tox', make_executable='make'
+    )
+    assert backends == ('tox',)
+
+
+def test_available_backends_exits_when_explicit_choice_is_missing(monkeypatch):
+    monkeypatch.setattr(shutil, 'which', _installed('tox'))
+    with pytest.raises(SystemExit, match='make'):
+        cli._available_backends(
+            runners.RunnerChoice.MAKE, tox_executable='tox', make_executable='make'
+        )
+
+
+def test_available_backends_exits_when_nothing_is_installed(monkeypatch):
+    monkeypatch.setattr(shutil, 'which', _installed())
+    with pytest.raises(SystemExit, match='no runner available'):
+        cli._available_backends(
+            runners.RunnerChoice.AUTO, tox_executable='tox', make_executable='make'
+        )
+
+
+def test_available_backends_checks_the_program_not_the_whole_command(monkeypatch):
+    monkeypatch.setattr(shutil, 'which', _installed('uvx'))
+    backends = cli._available_backends(
+        runners.RunnerChoice.TOX, tox_executable='uvx tox', make_executable='make'
+    )
+    assert backends == ('tox',)
+
+
+# ---- preflight: --patch git refs ---------------------------------------------
+
+_URL = 'https://github.com/canonical/operator'
+
+
+def _ls_remote(returncode: int, stderr: bytes = b''):
+    """Stand in for ``git ls-remote --exit-code``; no network in the unit suite."""
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, returncode, stdout=b'', stderr=stderr)
+
+    fake_run.calls = calls
+    return fake_run
+
+
+def test_unresolvable_ref_accepts_a_ref_the_remote_has(monkeypatch):
+    fake = _ls_remote(0)
+    monkeypatch.setattr(subprocess, 'run', fake)
+    assert cli._unresolvable_ref(_URL, 'main') is None
+    assert fake.calls == [['git', 'ls-remote', '--exit-code', _URL, 'main']]
+
+
+def test_unresolvable_ref_rejects_a_typo(monkeypatch):
+    monkeypatch.setattr(subprocess, 'run', _ls_remote(2))
+    problem = cli._unresolvable_ref(_URL, 'this-branch-does-not-exist')
+    assert problem is not None
+    assert 'this-branch-does-not-exist' in problem
+
+
+def test_unresolvable_ref_accepts_a_full_commit_sha(monkeypatch):
+    # ls-remote can't see a bare commit, but git can still fetch it.
+    monkeypatch.setattr(subprocess, 'run', _ls_remote(2))
+    assert cli._unresolvable_ref(_URL, '75525780ea49e8db64d6716c94d02282d7b6ee81') is None
+
+
+def test_unresolvable_ref_asks_for_the_full_sha_when_abbreviated(monkeypatch):
+    monkeypatch.setattr(subprocess, 'run', _ls_remote(2))
+    problem = cli._unresolvable_ref(_URL, '7552578')
+    assert problem is not None
+    assert '40-character' in problem
+
+
+def test_unresolvable_ref_does_not_block_on_a_remote_it_cannot_reach(monkeypatch):
+    # A network or auth failure says nothing about whether the ref exists.
+    monkeypatch.setattr(subprocess, 'run', _ls_remote(128, stderr=b'could not read from remote'))
+    assert cli._unresolvable_ref(_URL, 'main') is None
+
+
+def test_unresolvable_ref_does_not_block_when_git_is_missing(monkeypatch):
+    def boom(argv, **kwargs):
+        raise FileNotFoundError(2, 'No such file or directory', 'git')
+
+    monkeypatch.setattr(subprocess, 'run', boom)
+    assert cli._unresolvable_ref(_URL, 'main') is None
+
+
+def test_preflight_patch_refs_checks_each_pair_once(monkeypatch):
+    fake = _ls_remote(0)
+    monkeypatch.setattr(subprocess, 'run', fake)
+    cli._preflight_patch_refs([
+        {'pkg_name': 'ops', 'url': _URL, 'branch': 'main'},
+        {'pkg_name': 'other', 'url': _URL, 'branch': 'main'},
+        {'pkg_name': 'local', 'path': '/x'},
+        {'pkg_name': 'pinned', 'version': '==1.0'},
+    ])
+    assert len(fake.calls) == 1
+
+
+def test_cli_preflight_rejects_an_unresolvable_ref(monkeypatch, tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    monkeypatch.setattr(subprocess, 'run', _ls_remote(2))
+
+    # The whole point is that this happens before any charm is touched, so no
+    # runner is stubbed here: reaching one would fail the test loudly.
+    with pytest.raises(SystemExit, match='this-branch-does-not-exist'):
+        cli.main([
+            'check',
+            'unit',
+            '--charms-dir',
+            str(cache),
+            '--patch',
+            'ops @ canonical:this-branch-does-not-exist',
+        ])
+
+
+def test_cli_no_preflight_skips_the_ref_check(monkeypatch, tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    fake = _ls_remote(2)
+    monkeypatch.setattr(subprocess, 'run', fake)
+
+    async def fake_run(self, repo, target):  # noqa: RUF029
+        return runners.RunResult(
+            repo=repo,
+            runner=self.name,
+            target=target,
+            status=runners.RunStatus.PASSED,
+            returncode=0,
+            duration_s=0.01,
+        )
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--no-preflight',
+    ])
+    assert rc == 0
+    assert fake.calls == []
