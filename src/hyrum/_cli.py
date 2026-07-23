@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import dataclasses
 import itertools
 import logging
 import os
@@ -16,8 +17,8 @@ from collections.abc import Sequence
 
 import packaging.requirements
 
+from hyrum import _compare, _enumerate, _results, _version
 from hyrum import _config as config_loader
-from hyrum import _enumerate as enum_mod
 from hyrum import _filters as filt
 from hyrum import _frameworks as frameworks
 from hyrum import _get_charms as get_charms
@@ -25,7 +26,6 @@ from hyrum import _patchers as patchers
 from hyrum import _pool as pool
 from hyrum import _report as report
 from hyrum import _runners as runners
-from hyrum import _version
 from hyrum._runners import make_runner, tox
 
 logger = logging.getLogger('hyrum')
@@ -119,6 +119,41 @@ def _resolve_path(raw: str) -> str:
     return str(pathlib.Path(raw).expanduser().resolve())
 
 
+@dataclasses.dataclass(frozen=True)
+class PatchSpec:
+    """A parsed ``--patch`` value.
+
+    Non-vendored patches carry ``pkg_name`` plus one of {``version``,
+    ``path``, or (``url`` [+ ``branch`` [+ ``subdir``])}. Vendored-library
+    swaps additionally set the four ``vendored_*`` fields; ``pkg_name`` is
+    then the dotted LHS (``charms.<author>.v<n>.<lib>``) and
+    ``vendored_pkg`` is the replacement package name.
+    """
+
+    pkg_name: str
+    version: str | None = None
+    url: str | None = None
+    branch: str | None = None
+    subdir: str | None = None
+    path: str | None = None
+    vendored_author: str | None = None
+    vendored_version: str | None = None
+    vendored_lib: str | None = None
+    vendored_pkg: str | None = None
+
+    def __str__(self) -> str:
+        if self.version:
+            return f'{self.pkg_name}{self.version}'
+        if self.path:
+            return f'{self.pkg_name} @ {self.path}'
+        source = self.url or ''
+        if self.branch:
+            source += f'@{self.branch}'
+        if self.subdir:
+            source += f'#subdirectory={self.subdir}'
+        return f'{self.pkg_name} @ {source}'
+
+
 def _parse_patch_source(rhs: str, *, pkg_name: str) -> dict[str, str | None]:
     """Parse the source half of ``name @ <source>``.
 
@@ -159,7 +194,7 @@ def _parse_patch_source(rhs: str, *, pkg_name: str) -> dict[str, str | None]:
     raise argparse.ArgumentTypeError(f'--patch: cannot parse source {rhs!r} for {pkg_name!r}')
 
 
-def _parse_patch(arg: str) -> dict[str, str | None]:
+def _parse_patch(arg: str) -> PatchSpec:
     """Parse a ``--patch`` value.
 
     Forms:
@@ -205,16 +240,14 @@ def _parse_patch(arg: str) -> dict[str, str | None]:
                 f'--patch: empty replacement spec after "->" in {arg!r}'
             )
         new_spec = _parse_patch(rhs_spec)
-        new_pkg = new_spec['pkg_name']
-        assert new_pkg is not None
-        return {
-            **new_spec,
-            'pkg_name': lhs,
-            'vendored_author': m.group(1),
-            'vendored_version': m.group(2),
-            'vendored_lib': m.group(3),
-            'vendored_pkg': new_pkg,
-        }
+        return dataclasses.replace(
+            new_spec,
+            pkg_name=lhs,
+            vendored_author=m.group(1),
+            vendored_version=m.group(2),
+            vendored_lib=m.group(3),
+            vendored_pkg=new_spec.pkg_name,
+        )
 
     name, sep, rhs = text.partition(' @ ')
     if sep:
@@ -223,7 +256,7 @@ def _parse_patch(arg: str) -> dict[str, str | None]:
             raise argparse.ArgumentTypeError(f'--patch: empty package name in {arg!r}')
         if not _PEP503_NAME_RE.match(pkg_name):
             raise argparse.ArgumentTypeError(f'--patch: invalid package name {pkg_name!r}')
-        return {'pkg_name': pkg_name, **_parse_patch_source(rhs.strip(), pkg_name=pkg_name)}
+        return PatchSpec(pkg_name=pkg_name, **_parse_patch_source(rhs.strip(), pkg_name=pkg_name))
 
     try:
         req = packaging.requirements.Requirement(text)
@@ -235,18 +268,18 @@ def _parse_patch(arg: str) -> dict[str, str | None]:
             f'a ``@`` source (git+URL, file:// path, owner:branch shorthand), '
             f'or a bare path'
         )
-    return {'pkg_name': req.name, 'version': str(req.specifier)}
+    return PatchSpec(pkg_name=req.name, version=str(req.specifier))
 
 
-_DEFAULT_OPS_PATCH: dict[str, str | None] = {
-    'pkg_name': 'ops',
-    'url': 'https://github.com/canonical/operator',
-    'branch': 'main',
-}
+_DEFAULT_OPS_PATCH = PatchSpec(
+    pkg_name='ops',
+    url='https://github.com/canonical/operator',
+    branch='main',
+)
 
 
 def _build_ops_patcher(
-    parsed: dict[str, str | None],
+    spec: PatchSpec,
     *,
     poetry_executable: str,
     uv_executable: str,
@@ -254,10 +287,10 @@ def _build_ops_patcher(
     auto_python: bool,
 ) -> patchers.OpsSourcePatcher:
     ops = patchers.OpsSource(
-        url=parsed.get('url') or 'https://github.com/canonical/operator',
-        branch=parsed.get('branch'),
-        version=parsed.get('version'),
-        path=parsed.get('path'),
+        url=spec.url or 'https://github.com/canonical/operator',
+        branch=spec.branch,
+        version=spec.version,
+        path=spec.path,
         poetry_executable=tuple(poetry_executable.split()),
         uv_executable=tuple(uv_executable.split()),
         lock_timeout=lock_timeout,
@@ -267,21 +300,19 @@ def _build_ops_patcher(
 
 
 def _build_dep_patcher(
-    parsed: dict[str, str | None],
+    spec: PatchSpec,
     *,
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
 ) -> patchers.GenericDepPatcher:
-    name = parsed['pkg_name']
-    assert name is not None
     source = patchers.DepSource(
-        pkg_name=name,
-        version=parsed.get('version'),
-        url=parsed.get('url'),
-        branch=parsed.get('branch'),
-        subdir=parsed.get('subdir'),
-        path=parsed.get('path'),
+        pkg_name=spec.pkg_name,
+        version=spec.version,
+        url=spec.url,
+        branch=spec.branch,
+        subdir=spec.subdir,
+        path=spec.path,
         poetry_executable=tuple(poetry_executable.split()),
         uv_executable=tuple(uv_executable.split()),
         lock_timeout=lock_timeout,
@@ -290,28 +321,26 @@ def _build_dep_patcher(
 
 
 def _build_charmlib_patcher(
-    parsed: dict[str, str | None],
+    spec: PatchSpec,
     *,
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
 ) -> patchers.CharmlibPatcher:
-    name = parsed['pkg_name']
-    assert name is not None
-    if parsed.get('path') is not None:
+    if spec.path is not None:
         raise argparse.ArgumentTypeError(
             f'--patch: charmlibs deps must be patched from a git source, '
-            f'not a local path: {name!r}'
+            f'not a local path: {spec.pkg_name!r}'
         )
-    if parsed.get('version') is not None:
+    if spec.version is not None:
         raise argparse.ArgumentTypeError(
             f'--patch: charmlibs deps must be patched from a git source, '
-            f'not a version pin: {name!r}'
+            f'not a version pin: {spec.pkg_name!r}'
         )
     source = patchers.CharmlibSource(
-        pkg_name=name,
-        url=parsed.get('url') or 'https://github.com/canonical/charmlibs',
-        branch=parsed.get('branch'),
+        pkg_name=spec.pkg_name,
+        url=spec.url or 'https://github.com/canonical/charmlibs',
+        branch=spec.branch,
         poetry_executable=tuple(poetry_executable.split()),
         uv_executable=tuple(uv_executable.split()),
         lock_timeout=lock_timeout,
@@ -320,35 +349,31 @@ def _build_charmlib_patcher(
 
 
 def _build_vendored_patcher(
-    parsed: dict[str, str | None],
+    spec: PatchSpec,
     *,
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
 ) -> patchers.VendoredLibPatcher:
-    new_pkg = parsed['vendored_pkg']
-    host_charm = parsed['vendored_author']
-    version = parsed['vendored_version']
-    lib_name = parsed['vendored_lib']
-    assert new_pkg is not None
-    assert host_charm is not None
-    assert version is not None
-    assert lib_name is not None
+    assert spec.vendored_pkg is not None
+    assert spec.vendored_author is not None
+    assert spec.vendored_version is not None
+    assert spec.vendored_lib is not None
     source = patchers.DepSource(
-        pkg_name=new_pkg,
-        version=parsed.get('version'),
-        url=parsed.get('url'),
-        branch=parsed.get('branch'),
-        subdir=parsed.get('subdir'),
-        path=parsed.get('path'),
+        pkg_name=spec.vendored_pkg,
+        version=spec.version,
+        url=spec.url,
+        branch=spec.branch,
+        subdir=spec.subdir,
+        path=spec.path,
         poetry_executable=tuple(poetry_executable.split()),
         uv_executable=tuple(uv_executable.split()),
         lock_timeout=lock_timeout,
     )
     swap = patchers.VendoredLibSwap(
-        host_charm=host_charm,
-        version=int(version),
-        lib_name=lib_name,
+        host_charm=spec.vendored_author,
+        version=int(spec.vendored_version),
+        lib_name=spec.vendored_lib,
         source=source,
     )
     return patchers.VendoredLibPatcher(swap)
@@ -356,21 +381,18 @@ def _build_vendored_patcher(
 
 def _build_patcher(
     *,
-    no_patch: bool,
-    patches: Sequence[dict[str, str | None]],
+    patches: Sequence[PatchSpec],
     poetry_executable: str,
     uv_executable: str,
     lock_timeout: int,
     auto_python: bool,
 ) -> patchers.Patcher:
-    if no_patch:
+    if not patches:
         return patchers.NullPatcher()
-    specs = list(patches) if patches else [_DEFAULT_OPS_PATCH]
     stack: list[patchers.Patcher] = []
-    for spec in specs:
-        pkg_name = spec['pkg_name']
-        assert pkg_name is not None
-        if spec.get('vendored_author') is not None:
+    for spec in patches:
+        pkg_name = spec.pkg_name
+        if spec.vendored_author is not None:
             stack.append(
                 _build_vendored_patcher(
                     spec,
@@ -410,6 +432,13 @@ def _build_patcher(
     if len(stack) == 1:
         return stack[0]
     return patchers.PatcherStack(stack)
+
+
+def _describe_patches(patches: Sequence[PatchSpec]) -> str:
+    """One-line human-readable summary of the run's dependency swap, for run metadata."""
+    if not patches:
+        return 'none'
+    return '; '.join(str(spec) for spec in patches)
 
 
 def _build_runner(
@@ -457,7 +486,7 @@ def _select_repos(
 
     repos: list[pathlib.Path] = []
     skipped: list[tuple[pathlib.Path, str]] = []
-    raw = enum_mod.iter_charm_repos(cache)
+    raw = _enumerate.iter_charm_repos(cache)
     if limit > 0:
         raw = itertools.islice(raw, limit)
     for repo in raw:
@@ -496,6 +525,132 @@ def _default_charms_dir() -> pathlib.Path:
     if env:
         return pathlib.Path(env)
     return pathlib.Path('~/.cache/hyrum/charms').expanduser()
+
+
+def _default_auto_save_dir() -> pathlib.Path:
+    return pathlib.Path('~/.cache/hyrum/results').expanduser()
+
+
+# Distinct-object sentinel: `--auto-save` given without an argument becomes
+# this, so `_resolve_save_plan` can tell "not given at all" (None) from
+# "given, use the default dir" (the sentinel) from "given with a path".
+_SENTINEL_DEFAULT_AUTO_SAVE = pathlib.Path('__hyrum_auto_save_default__')
+
+
+@dataclasses.dataclass(frozen=True)
+class _SavePlan:
+    """Resolved save mode after merging CLI flags and config file.
+
+    ``mode`` is one of ``'file'`` (explicit path in ``path``),
+    ``'timestamped'`` (write ``hyrum-<ts>-<target>.json`` under
+    ``directory``), ``'rolling'`` (rolling ``.auto.json`` pair in
+    ``directory``), or ``'off'``.
+    """
+
+    mode: str
+    path: pathlib.Path | None = None
+    directory: pathlib.Path | None = None
+
+
+def _resolve_save_plan(
+    *,
+    save: pathlib.Path | None,
+    auto_save: pathlib.Path | None,
+    auto_save_given: bool,
+    no_save: bool,
+    config_save: str | None,
+) -> _SavePlan:
+    """Fold the CLI flags and config default into a single :class:`_SavePlan`.
+
+    Precedence: explicit CLI flag > config file > built-in default (auto-save
+    to ``~/.cache/hyrum/results/``).
+    """
+    if no_save:
+        return _SavePlan(mode='off')
+    if save is not None:
+        if save.is_dir():
+            return _SavePlan(mode='timestamped', directory=save)
+        return _SavePlan(mode='file', path=save)
+    if auto_save_given:
+        return _SavePlan(mode='rolling', directory=auto_save or _default_auto_save_dir())
+    # No CLI save flag: consult the config file, else fall back to auto-save.
+    if config_save is not None:
+        setting = config_save.strip()
+        if setting.lower() == 'off':
+            return _SavePlan(mode='off')
+        if setting.lower() == 'auto':
+            return _SavePlan(mode='rolling', directory=_default_auto_save_dir())
+        path = pathlib.Path(setting).expanduser()
+        if path.is_dir():
+            return _SavePlan(mode='timestamped', directory=path)
+        return _SavePlan(mode='file', path=path)
+    return _SavePlan(mode='rolling', directory=_default_auto_save_dir())
+
+
+def _validate_save_plan(plan: _SavePlan) -> bool:
+    """Reject an unusable save target up front. Returns False on failure."""
+    if plan.mode == 'off':
+        return True
+    if plan.mode == 'file':
+        assert plan.path is not None
+        parent = plan.path.parent
+        if not parent.is_dir():
+            print(f'hyrum: error: --save directory {parent} does not exist.', file=sys.stderr)
+            return False
+        if not os.access(parent, os.W_OK):
+            print(f'hyrum: error: --save directory {parent} is not writable.', file=sys.stderr)
+            return False
+        if plan.path.is_dir():
+            print(f'hyrum: error: --save path {plan.path} is a directory.', file=sys.stderr)
+            return False
+        return True
+    # 'timestamped' or 'rolling' — both write into a directory.
+    assert plan.directory is not None
+    directory = plan.directory
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(f'hyrum: error: cannot create save directory {directory}: {exc}', file=sys.stderr)
+        return False
+    if not os.access(directory, os.W_OK):
+        print(f'hyrum: error: save directory {directory} is not writable.', file=sys.stderr)
+        return False
+    return True
+
+
+def _apply_save_plan(
+    plan: _SavePlan,
+    *,
+    outcomes: list[pool.Outcome],
+    base: pathlib.Path,
+    target: str,
+    patcher: str,
+) -> bool:
+    """Persist *outcomes* per *plan*. Returns False on I/O failure."""
+    try:
+        if plan.mode == 'file':
+            assert plan.path is not None
+            path = plan.path
+            _results.save(outcomes, path, base=base, target=target, patcher=patcher)
+        elif plan.mode == 'timestamped':
+            assert plan.directory is not None
+            path = plan.directory / _results.timestamped_name(target)
+            _results.save(outcomes, path, base=base, target=target, patcher=patcher)
+        elif plan.mode == 'rolling':
+            assert plan.directory is not None
+            path = _results.save_auto(
+                outcomes, plan.directory, target=target, base=base, patcher=patcher
+            )
+        else:
+            raise AssertionError(f'unknown save mode {plan.mode!r}')
+    except OSError as exc:
+        # Still render the report — the run itself succeeded, and the
+        # printed output is all the user has left if the save was lost.
+        logger.error('Cannot write results: %s', exc)
+        return False
+    noun = 'outcome' if len(outcomes) == 1 else 'outcomes'
+    logger.info('Wrote %d %s to %s', len(outcomes), noun, path)
+    return True
 
 
 def _add_check_subparser(
@@ -676,7 +831,75 @@ def _add_check_subparser(
             'do not get mis-attributed to the charm. [default: enabled]'
         ),
     )
+    save_group = parser.add_mutually_exclusive_group()
+    save_group.add_argument(
+        '--save',
+        dest='save_path',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'After the run, write the outcomes as JSON. If PATH is an existing '
+            'directory, write a timestamped `hyrum-<UTC>-<target>.json` inside '
+            'it; otherwise treat PATH as the exact output file. The file can '
+            'later be fed to `hyrum compare`.'
+        ),
+    )
+    save_group.add_argument(
+        '--auto-save',
+        dest='auto_save_dir',
+        type=pathlib.Path,
+        nargs='?',
+        const=_SENTINEL_DEFAULT_AUTO_SAVE,
+        default=None,
+        help=(
+            'Write a rolling pair `<target>.auto.json` / `<target>.auto.prev.json` '
+            'into DIR (default: ~/.cache/hyrum/results). Keyed on target so '
+            'different runs do not clobber each other. This is the default '
+            'when no --save/--auto-save/--no-save is given.'
+        ),
+    )
+    save_group.add_argument(
+        '--no-save',
+        dest='no_save',
+        action='store_true',
+        help='Do not persist results after the run.',
+    )
     parser.set_defaults(func=_run_check)
+    return parser
+
+
+def _add_compare_subparser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    parser = subparsers.add_parser(
+        'compare',
+        help='Diff two saved hyrum runs.',
+        description=(
+            'Diff two saved hyrum runs (status level): show new failures, resolved, new errors.'
+        ),
+    )
+    parser.add_argument('baseline', type=pathlib.Path, help='Path to the baseline results JSON.')
+    parser.add_argument('current', type=pathlib.Path, help='Path to the current results JSON.')
+    parser.add_argument(
+        '--fail-on-regression',
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            'Exit non-zero if there are any new failures or new errors versus '
+            'the baseline. [default: disabled]'
+        ),
+    )
+    parser.add_argument(
+        '--format',
+        dest='output_format',
+        choices=['text', 'markdown'],
+        default='text',
+        help=(
+            'text: the colourised status-level summary. markdown: a table with one row '
+            'per non-passing charm and a per-run failure summary. [default: text]'
+        ),
+    )
+    parser.set_defaults(func=_run_compare)
     return parser
 
 
@@ -722,6 +945,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--version', action='version', version=f'hyrum {_version.__version__}')
     subparsers = parser.add_subparsers(dest='command', metavar='COMMAND', required=True)
     _add_check_subparser(subparsers)
+    _add_compare_subparser(subparsers)
     _add_get_charms_subparser(subparsers)
     return parser
 
@@ -731,11 +955,26 @@ def _run_check(args: argparse.Namespace) -> int:
     if not charms_dir.is_dir():
         sys.exit(f'hyrum: error: --charms-dir: {charms_dir} is not a directory.')
 
+    cfg = config_loader.load(args.config_path)
+    auto_save_dir = args.auto_save_dir
+    auto_save_given = auto_save_dir is not None
+    if auto_save_dir is _SENTINEL_DEFAULT_AUTO_SAVE:
+        auto_save_dir = None
+    save_plan = _resolve_save_plan(
+        save=args.save_path,
+        auto_save=auto_save_dir,
+        auto_save_given=auto_save_given,
+        no_save=args.no_save,
+        config_save=cfg.save,
+    )
+    # Reject an unusable save target now, not after a multi-hour run.
+    if not _validate_save_plan(save_plan):
+        return 2
+
     _configure_logging(_resolve_log_level(quiet=args.quiet, verbosity=args.verbosity))
     if args.host_env_defaults:
         _apply_host_env_defaults(args.target)
 
-    cfg = config_loader.load(args.config_path)
     repos, skipped = _select_repos(
         charms_dir,
         config=cfg,
@@ -749,18 +988,23 @@ def _run_check(args: argparse.Namespace) -> int:
         raise SystemExit('--no-patch is mutually exclusive with --patch')
     seen_pkgs: set[str] = set()
     for spec in args.patches:
-        name = spec['pkg_name']
-        if name in seen_pkgs:
-            raise SystemExit(f'--patch specified more than once for {name!r}')
-        seen_pkgs.add(name)
+        if spec.pkg_name in seen_pkgs:
+            raise SystemExit(f'--patch specified more than once for {spec.pkg_name!r}')
+        seen_pkgs.add(spec.pkg_name)
+    if args.no_patch:
+        patch_specs: list[PatchSpec] = []
+    elif args.patches:
+        patch_specs = list(args.patches)
+    else:
+        patch_specs = [_DEFAULT_OPS_PATCH]
     patcher = _build_patcher(
-        no_patch=args.no_patch,
-        patches=args.patches,
+        patches=patch_specs,
         poetry_executable=args.poetry_executable,
         uv_executable=args.uv_executable,
         lock_timeout=args.lock_timeout,
         auto_python=args.auto_python,
     )
+    patcher_desc = _describe_patches(patch_specs)
     runner = _build_runner(
         choice=runners.RunnerChoice(args.runner_choice),
         tox_executable=args.tox_executable,
@@ -785,6 +1029,16 @@ def _run_check(args: argparse.Namespace) -> int:
     pool.add_skipped(results, skipped)
     results.sort(key=lambda o: str(o.repo))
 
+    save_failed = False
+    if save_plan.mode != 'off':
+        save_failed = not _apply_save_plan(
+            save_plan,
+            outcomes=results,
+            base=charms_dir,
+            target=args.target,
+            patcher=patcher_desc,
+        )
+
     if not args.quiet:
         report.render(
             results,
@@ -797,6 +1051,8 @@ def _run_check(args: argparse.Namespace) -> int:
         failed = sum(1 for o in results if o.status in ('failed', 'timeout', 'patcher_error'))
         print(f'hyrum: {failed} charm(s) did not pass.', file=sys.stderr)
 
+    if save_failed:
+        return 1
     if not args.no_fail and not pool.passed(results):
         return 1
     return 0
@@ -821,6 +1077,47 @@ def _run_get_charms(args: argparse.Namespace) -> int:
     with source.open(newline='', encoding='utf-8') as f:
         rows: list[get_charms.CharmRow] = list(csv.DictReader(f))  # type: ignore[arg-type]
     asyncio.run(get_charms.process_rows(rows, dest, workers=args.workers))
+    return 0
+
+
+def _describe_run(label: str, path: pathlib.Path, meta: _results.RunMeta) -> str:
+    prefix = f'{label}: {path}'
+    summary = meta.summary()
+    return f'{prefix} — {summary}' if summary else prefix
+
+
+def _run_compare(args: argparse.Namespace) -> int:
+    try:
+        baseline = _results.load(args.baseline)
+        current = _results.load(args.current)
+    except ValueError as exc:
+        print(f'hyrum: error: {exc}', file=sys.stderr)
+        return 1
+
+    if (
+        baseline.meta.target
+        and current.meta.target
+        and baseline.meta.target != current.meta.target
+    ):
+        print(
+            f'hyrum: warning: comparing different targets: baseline ran '
+            f'{baseline.meta.target!r}, current ran {current.meta.target!r}',
+            file=sys.stderr,
+        )
+
+    result = _compare.diff(baseline.outcomes, current.outcomes)
+    if args.output_format == 'markdown':
+        target = current.meta.target or baseline.meta.target
+        title = f'hyrum run comparison ({target})' if target else 'hyrum run comparison'
+        _compare.render_markdown(baseline.outcomes, current.outcomes, result, title=title)
+    else:
+        print(_describe_run('Baseline', args.baseline, baseline.meta))
+        print(_describe_run('Current', args.current, current.meta))
+        print()
+        _compare.render(result)
+
+    if args.fail_on_regression and (result.new_failures or result.new_errors):
+        return 1
     return 0
 
 
