@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import os
 import pathlib
 
@@ -209,6 +210,54 @@ def test_save_includes_schema_version(tmp_path: pathlib.Path):
     raw = json.loads(path.read_text())
     assert raw['version'] == results.SCHEMA_VERSION
     assert raw['outcomes'] == []
+
+
+def test_timestamped_name_shape():
+    when = datetime.datetime(2026, 7, 24, 14, 30, 12, tzinfo=datetime.UTC)
+    assert results.timestamped_name('unit', now=when) == 'hyrum-20260724T143012Z-unit.json'
+
+
+def test_timestamped_name_sanitises_target():
+    when = datetime.datetime(2026, 7, 24, 14, 30, 12, tzinfo=datetime.UTC)
+    # `/` and other unsafe characters get folded to `-`; nothing escapes the dir.
+    got = results.timestamped_name('lint/quick', now=when)
+    assert got == 'hyrum-20260724T143012Z-lint-quick.json'
+    assert '/' not in got
+
+
+def test_timestamped_name_empty_target():
+    when = datetime.datetime(2026, 7, 24, 14, 30, 12, tzinfo=datetime.UTC)
+    assert results.timestamped_name('', now=when) == 'hyrum-20260724T143012Z-run.json'
+
+
+def test_save_auto_writes_current(tmp_path: pathlib.Path):
+    written = results.save_auto(_outcomes(), tmp_path, target='unit')
+    assert written == tmp_path / 'unit.auto.json'
+    assert written.exists()
+    # No previous yet; only the current file.
+    assert not (tmp_path / 'unit.auto.prev.json').exists()
+
+
+def test_save_auto_rotates_prior_to_prev(tmp_path: pathlib.Path):
+    first = [pool.Outcome(repo=pathlib.Path('/cache/alpha'), status='passed')]
+    second = [pool.Outcome(repo=pathlib.Path('/cache/alpha'), status='failed')]
+    results.save_auto(first, tmp_path, target='unit')
+    results.save_auto(second, tmp_path, target='unit')
+    current = results.load(tmp_path / 'unit.auto.json')
+    previous = results.load(tmp_path / 'unit.auto.prev.json')
+    assert current.outcomes[0].status == 'failed'
+    assert previous.outcomes[0].status == 'passed'
+
+
+def test_save_auto_keyed_by_target_does_not_clobber(tmp_path: pathlib.Path):
+    # Two consecutive `unit` runs must not touch the `lint` baseline.
+    results.save_auto(_outcomes(), tmp_path, target='lint')
+    results.save_auto(_outcomes(), tmp_path, target='unit')
+    results.save_auto(_outcomes(), tmp_path, target='unit')
+    assert (tmp_path / 'lint.auto.json').exists()
+    assert not (tmp_path / 'lint.auto.prev.json').exists()
+    assert (tmp_path / 'unit.auto.json').exists()
+    assert (tmp_path / 'unit.auto.prev.json').exists()
 
 
 def test_round_trip_preserves_summary(tmp_path: pathlib.Path):

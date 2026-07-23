@@ -454,7 +454,7 @@ def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathli
     assert 'TOX_OVERRIDE' not in os.environ
 
 
-def test_cli_save_results_writes_json(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_save_writes_json(monkeypatch, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
@@ -478,7 +478,7 @@ def test_cli_save_results_writes_json(monkeypatch, tmp_path: pathlib.Path):
         '--charms-dir',
         str(cache),
         '--no-patch',
-        '--save-results',
+        '--save',
         str(out),
     ])
     assert rc == 0
@@ -491,7 +491,7 @@ def test_cli_save_results_writes_json(monkeypatch, tmp_path: pathlib.Path):
     assert loaded.meta.target == 'unit'
 
 
-def test_cli_save_results_bad_directory_fails_before_running(
+def test_cli_save_bad_directory_fails_before_running(
     monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):
     cache = tmp_path / 'cache'
@@ -518,7 +518,7 @@ def test_cli_save_results_bad_directory_fails_before_running(
         '--charms-dir',
         str(cache),
         '--no-patch',
-        '--save-results',
+        '--save',
         str(tmp_path / 'missing-dir' / 'out.json'),
     ])
     captured = capsys.readouterr()
@@ -557,12 +557,129 @@ def test_cli_save_failure_still_renders_report(
         '--charms-dir',
         str(cache),
         '--no-patch',
-        '--save-results',
+        '--save',
         str(tmp_path / 'out.json'),
     ])
     captured = capsys.readouterr()
     assert rc == 1
     assert 'hyrum: unit' in captured.out  # the report still rendered
+
+
+def _fake_pass_runner(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_run(self, repo, target):  # noqa: RUF029
+        return runners.RunResult(
+            repo=repo,
+            runner=self.name,
+            target=target,
+            status=runners.RunStatus.PASSED,
+            returncode=0,
+            duration_s=0.01,
+        )
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
+
+
+def test_cli_save_to_existing_directory_writes_timestamped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+    out_dir = tmp_path / 'runs'
+    out_dir.mkdir()
+
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--save', str(out_dir)])
+    assert rc == 0
+    written = list(out_dir.glob('hyrum-*-unit.json'))
+    assert len(written) == 1
+
+
+def test_cli_auto_save_rotates_pair(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+    save_dir = tmp_path / 'auto'
+
+    for _ in range(2):
+        rc = _run([
+            'check',
+            'unit',
+            '--charms-dir',
+            str(cache),
+            '--no-patch',
+            '--auto-save',
+            str(save_dir),
+        ])
+        assert rc == 0
+    assert (save_dir / 'unit.auto.json').exists()
+    assert (save_dir / 'unit.auto.prev.json').exists()
+
+
+def test_cli_no_save_writes_nothing(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+    default_dir = tmp_path / 'default-auto'
+    monkeypatch.setattr(cli, '_default_auto_save_dir', lambda: default_dir)
+
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--no-save'])
+    assert rc == 0
+    assert not default_dir.exists() or list(default_dir.iterdir()) == []
+
+
+def test_cli_default_is_auto_save(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+    default_dir = tmp_path / 'default-auto'
+    monkeypatch.setattr(cli, '_default_auto_save_dir', lambda: default_dir)
+
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch'])
+    assert rc == 0
+    assert (default_dir / 'unit.auto.json').exists()
+
+
+def test_cli_save_flags_mutually_exclusive(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--save',
+        str(tmp_path / 'a.json'),
+        '--no-save',
+    ])
+    assert rc != 0
+    assert 'not allowed with' in capsys.readouterr().err
+
+
+def test_cli_config_save_off_overrides_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+    default_dir = tmp_path / 'default-auto'
+    monkeypatch.setattr(cli, '_default_auto_save_dir', lambda: default_dir)
+    config = tmp_path / 'hyrum.toml'
+    config.write_text('save = "off"\n')
+
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--config', str(config)])
+    assert rc == 0
+    assert not default_dir.exists()
 
 
 def test_cli_compare_subcommand_clean(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):

@@ -7,6 +7,17 @@ import pathlib
 
 import pytest
 
+from hyrum import _cli
+
+
+@pytest.fixture(autouse=True)
+def _redirect_default_auto_save(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+):
+    """Keep the default auto-save directory out of the developer's real ~/.cache."""
+    root = tmp_path_factory.mktemp('hyrum-auto-save')
+    monkeypatch.setattr(_cli, '_default_auto_save_dir', lambda: root)
+
 
 @pytest.fixture(autouse=True)
 def _reset_root_logging():

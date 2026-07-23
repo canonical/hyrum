@@ -527,6 +527,132 @@ def _default_charms_dir() -> pathlib.Path:
     return pathlib.Path('~/.cache/hyrum/charms').expanduser()
 
 
+def _default_auto_save_dir() -> pathlib.Path:
+    return pathlib.Path('~/.cache/hyrum/results').expanduser()
+
+
+# Distinct-object sentinel: `--auto-save` given without an argument becomes
+# this, so `_resolve_save_plan` can tell "not given at all" (None) from
+# "given, use the default dir" (the sentinel) from "given with a path".
+_SENTINEL_DEFAULT_AUTO_SAVE = pathlib.Path('__hyrum_auto_save_default__')
+
+
+@dataclasses.dataclass(frozen=True)
+class _SavePlan:
+    """Resolved save mode after merging CLI flags and config file.
+
+    ``mode`` is one of ``'file'`` (explicit path in ``path``),
+    ``'timestamped'`` (write ``hyrum-<ts>-<target>.json`` under
+    ``directory``), ``'rolling'`` (rolling ``.auto.json`` pair in
+    ``directory``), or ``'off'``.
+    """
+
+    mode: str
+    path: pathlib.Path | None = None
+    directory: pathlib.Path | None = None
+
+
+def _resolve_save_plan(
+    *,
+    save: pathlib.Path | None,
+    auto_save: pathlib.Path | None,
+    auto_save_given: bool,
+    no_save: bool,
+    config_save: str | None,
+) -> _SavePlan:
+    """Fold the CLI flags and config default into a single :class:`_SavePlan`.
+
+    Precedence: explicit CLI flag > config file > built-in default (auto-save
+    to ``~/.cache/hyrum/results/``).
+    """
+    if no_save:
+        return _SavePlan(mode='off')
+    if save is not None:
+        if save.is_dir():
+            return _SavePlan(mode='timestamped', directory=save)
+        return _SavePlan(mode='file', path=save)
+    if auto_save_given:
+        return _SavePlan(mode='rolling', directory=auto_save or _default_auto_save_dir())
+    # No CLI save flag: consult the config file, else fall back to auto-save.
+    if config_save is not None:
+        setting = config_save.strip()
+        if setting.lower() == 'off':
+            return _SavePlan(mode='off')
+        if setting.lower() == 'auto':
+            return _SavePlan(mode='rolling', directory=_default_auto_save_dir())
+        path = pathlib.Path(setting).expanduser()
+        if path.is_dir():
+            return _SavePlan(mode='timestamped', directory=path)
+        return _SavePlan(mode='file', path=path)
+    return _SavePlan(mode='rolling', directory=_default_auto_save_dir())
+
+
+def _validate_save_plan(plan: _SavePlan) -> bool:
+    """Reject an unusable save target up front. Returns False on failure."""
+    if plan.mode == 'off':
+        return True
+    if plan.mode == 'file':
+        assert plan.path is not None
+        parent = plan.path.parent
+        if not parent.is_dir():
+            print(f'hyrum: error: --save directory {parent} does not exist.', file=sys.stderr)
+            return False
+        if not os.access(parent, os.W_OK):
+            print(f'hyrum: error: --save directory {parent} is not writable.', file=sys.stderr)
+            return False
+        if plan.path.is_dir():
+            print(f'hyrum: error: --save path {plan.path} is a directory.', file=sys.stderr)
+            return False
+        return True
+    # 'timestamped' or 'rolling' — both write into a directory.
+    assert plan.directory is not None
+    directory = plan.directory
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(f'hyrum: error: cannot create save directory {directory}: {exc}', file=sys.stderr)
+        return False
+    if not os.access(directory, os.W_OK):
+        print(f'hyrum: error: save directory {directory} is not writable.', file=sys.stderr)
+        return False
+    return True
+
+
+def _apply_save_plan(
+    plan: _SavePlan,
+    *,
+    outcomes: list[pool.Outcome],
+    base: pathlib.Path,
+    target: str,
+    patcher: str,
+) -> bool:
+    """Persist *outcomes* per *plan*. Returns False on I/O failure."""
+    try:
+        if plan.mode == 'file':
+            assert plan.path is not None
+            path = plan.path
+            _results.save(outcomes, path, base=base, target=target, patcher=patcher)
+        elif plan.mode == 'timestamped':
+            assert plan.directory is not None
+            path = plan.directory / _results.timestamped_name(target)
+            _results.save(outcomes, path, base=base, target=target, patcher=patcher)
+        elif plan.mode == 'rolling':
+            assert plan.directory is not None
+            path = _results.save_auto(
+                outcomes, plan.directory, target=target, base=base, patcher=patcher
+            )
+        else:
+            raise AssertionError(f'unknown save mode {plan.mode!r}')
+    except OSError as exc:
+        # Still render the report — the run itself succeeded, and the
+        # printed output is all the user has left if the save was lost.
+        logger.error('Cannot write results: %s', exc)
+        return False
+    noun = 'outcome' if len(outcomes) == 1 else 'outcomes'
+    logger.info('Wrote %d %s to %s', len(outcomes), noun, path)
+    return True
+
+
 def _add_check_subparser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> argparse.ArgumentParser:
@@ -705,15 +831,38 @@ def _add_check_subparser(
             'do not get mis-attributed to the charm. [default: enabled]'
         ),
     )
-    parser.add_argument(
-        '--save-results',
-        dest='save_results_path',
+    save_group = parser.add_mutually_exclusive_group()
+    save_group.add_argument(
+        '--save',
+        dest='save_path',
         type=pathlib.Path,
         default=None,
         help=(
-            'After the run, write the outcomes as JSON to this path. The file can '
-            'later be fed to `hyrum compare` to diff against a subsequent run.'
+            'After the run, write the outcomes as JSON. If PATH is an existing '
+            'directory, write a timestamped `hyrum-<UTC>-<target>.json` inside '
+            'it; otherwise treat PATH as the exact output file. The file can '
+            'later be fed to `hyrum compare`.'
         ),
+    )
+    save_group.add_argument(
+        '--auto-save',
+        dest='auto_save_dir',
+        type=pathlib.Path,
+        nargs='?',
+        const=_SENTINEL_DEFAULT_AUTO_SAVE,
+        default=None,
+        help=(
+            'Write a rolling pair `<target>.auto.json` / `<target>.auto.prev.json` '
+            'into DIR (default: ~/.cache/hyrum/results). Keyed on target so '
+            'different runs do not clobber each other. This is the default '
+            'when no --save/--auto-save/--no-save is given.'
+        ),
+    )
+    save_group.add_argument(
+        '--no-save',
+        dest='no_save',
+        action='store_true',
+        help='Do not persist results after the run.',
     )
     parser.set_defaults(func=_run_check)
     return parser
@@ -806,21 +955,26 @@ def _run_check(args: argparse.Namespace) -> int:
     if not charms_dir.is_dir():
         sys.exit(f'hyrum: error: --charms-dir: {charms_dir} is not a directory.')
 
-    # Reject an unusable --save-results path now, not after a multi-hour run.
-    if args.save_results_path is not None:
-        save_parent = args.save_results_path.parent
-        if not save_parent.is_dir():
-            sys.exit(f'hyrum: error: --save-results directory {save_parent} does not exist.')
-        if not os.access(save_parent, os.W_OK):
-            sys.exit(f'hyrum: error: --save-results directory {save_parent} is not writable.')
-        if args.save_results_path.is_dir():
-            sys.exit(f'hyrum: error: --save-results path {args.save_results_path} is a directory.')
+    cfg = config_loader.load(args.config_path)
+    auto_save_dir = args.auto_save_dir
+    auto_save_given = auto_save_dir is not None
+    if auto_save_dir is _SENTINEL_DEFAULT_AUTO_SAVE:
+        auto_save_dir = None
+    save_plan = _resolve_save_plan(
+        save=args.save_path,
+        auto_save=auto_save_dir,
+        auto_save_given=auto_save_given,
+        no_save=args.no_save,
+        config_save=cfg.save,
+    )
+    # Reject an unusable save target now, not after a multi-hour run.
+    if not _validate_save_plan(save_plan):
+        return 2
 
     _configure_logging(_resolve_log_level(quiet=args.quiet, verbosity=args.verbosity))
     if args.host_env_defaults:
         _apply_host_env_defaults(args.target)
 
-    cfg = config_loader.load(args.config_path)
     repos, skipped = _select_repos(
         charms_dir,
         config=cfg,
@@ -876,23 +1030,14 @@ def _run_check(args: argparse.Namespace) -> int:
     results.sort(key=lambda o: str(o.repo))
 
     save_failed = False
-    if args.save_results_path is not None:
-        try:
-            _results.save(
-                results,
-                args.save_results_path,
-                base=charms_dir,
-                target=args.target,
-                patcher=patcher_desc,
-            )
-        except OSError as exc:
-            # Still render the report below — the run itself succeeded, and
-            # its output is all the user has left if the save was lost.
-            logger.error('Cannot write results to %s: %s', args.save_results_path, exc)
-            save_failed = True
-        else:
-            noun = 'outcome' if len(results) == 1 else 'outcomes'
-            logger.info('Wrote %d %s to %s', len(results), noun, args.save_results_path)
+    if save_plan.mode != 'off':
+        save_failed = not _apply_save_plan(
+            save_plan,
+            outcomes=results,
+            base=charms_dir,
+            target=args.target,
+            patcher=patcher_desc,
+        )
 
     if not args.quiet:
         report.render(

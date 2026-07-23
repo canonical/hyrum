@@ -6,12 +6,37 @@ import dataclasses
 import datetime
 import json
 import pathlib
+import re
 
 from hyrum import _pool as pool
 from hyrum import _version
 
 SCHEMA_VERSION = 3
 _SUPPORTED_VERSIONS = frozenset({1, 2, 3})
+
+# Characters permitted in a target as part of a filename. Anything else is
+# folded to '-' so odd targets (`py3.12-unit`, `lint/quick`) can't spawn
+# subdirectories or hidden files under the auto-save directory.
+_TARGET_SAFE_RE = re.compile(r'[^A-Za-z0-9._+-]')
+
+
+def _slug(target: str) -> str:
+    """Return a filename-safe slug of *target*, or ``run`` if empty."""
+    slug = _TARGET_SAFE_RE.sub('-', target).strip('-.') or 'run'
+    return slug
+
+
+def timestamped_name(target: str, *, now: datetime.datetime | None = None) -> str:
+    """Return ``hyrum-<UTC-timestamp>-<target>.json`` for auto-generated saves."""
+    when = now or datetime.datetime.now(datetime.UTC)
+    stamp = when.strftime('%Y%m%dT%H%M%SZ')
+    return f'hyrum-{stamp}-{_slug(target)}.json'
+
+
+def auto_paths(directory: pathlib.Path, target: str) -> tuple[pathlib.Path, pathlib.Path]:
+    """Return ``(current, previous)`` rolling-save paths for *target* in *directory*."""
+    slug = _slug(target)
+    return directory / f'{slug}.auto.json', directory / f'{slug}.auto.prev.json'
 
 
 @dataclasses.dataclass(frozen=True)
@@ -108,6 +133,27 @@ def save(
         tmp.unlink(missing_ok=True)
         raise
     tmp.replace(path)
+
+
+def save_auto(
+    outcomes: list[pool.Outcome],
+    directory: pathlib.Path,
+    *,
+    target: str,
+    base: pathlib.Path | None = None,
+    patcher: str = '',
+) -> pathlib.Path:
+    """Write a rolling save into *directory* keyed on *target*.
+
+    The prior current file (if any) is rotated to ``<target>.auto.prev.json``
+    before the new one is written, so two consecutive runs of the same target
+    stay comparable via ``hyrum compare`` without accumulating files.
+    """
+    current, previous = auto_paths(directory, target)
+    if current.exists():
+        current.replace(previous)
+    save(outcomes, current, base=base, target=target, patcher=patcher)
+    return current
 
 
 def _load_outcome(record: object, *, path: pathlib.Path, index: int) -> pool.Outcome:
