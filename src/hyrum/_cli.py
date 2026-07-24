@@ -711,6 +711,15 @@ def _add_get_charms_subparser(
         default=get_charms.DEFAULT_WORKERS,
         help=(f'Maximum concurrent git subprocesses. [default: {get_charms.DEFAULT_WORKERS}]'),
     )
+    parser.add_argument(
+        '--timeout',
+        type=float,
+        default=get_charms.DEFAULT_TIMEOUT,
+        help=(
+            'Seconds before a single git clone or pull is abandoned; 0 waits forever. '
+            f'[default: {get_charms.DEFAULT_TIMEOUT:g}]'
+        ),
+    )
     parser.add_argument('--quiet', action='store_true', help='Suppress non-error output.')
     parser.set_defaults(func=_run_get_charms)
     return parser
@@ -820,7 +829,7 @@ def _run_get_charms(args: argparse.Namespace) -> int:
 
     with source.open(newline='', encoding='utf-8') as f:
         rows: list[get_charms.CharmRow] = list(csv.DictReader(f))  # type: ignore[arg-type]
-    asyncio.run(get_charms.process_rows(rows, dest, workers=args.workers))
+    asyncio.run(get_charms.process_rows(rows, dest, workers=args.workers, timeout=args.timeout))
     return 0
 
 
