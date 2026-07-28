@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from hyrum import _cli as cli
+from hyrum import _compare as compare
 from hyrum import _pool as pool
 from hyrum import _results as results
 from hyrum import _runners as runners
@@ -827,6 +828,7 @@ def test_cli_compare_json_format(tmp_path: pathlib.Path, capsys: pytest.CaptureF
     assert payload['baseline']['path'] == str(base_path)
     assert payload['current']['meta']['target'] == 'unit'
     assert payload['diff']['new_failures'] == ['canonical/foo']
+    assert payload['version'] == compare.JSON_FORMAT_VERSION
     assert payload['diff']['disjoint'] is False
 
 
