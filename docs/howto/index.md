@@ -9,6 +9,7 @@ run-charm-list
 swap-ops-branch
 swap-other-dependency
 interpret-results
+compare-runs
 suppress-results
 ```
 
@@ -38,14 +39,17 @@ User journey context: initial setup, run configuration, execution
 
 ## Reading and curating results
 <!--
-Themes: outcome statuses, summary table interpretation, exclusion lists, baseline curation
-Justification: shared concern — turning a run's output into a decision, including suppressing known offenders so future runs surface only new breakage
+Themes: outcome statuses, summary table interpretation, run-to-run comparison, exclusion lists, baseline curation
+Justification: shared concern — turning a run's output into a decision, including diffing against a baseline and suppressing known offenders so future runs surface only new breakage
 User journey context: post-run triage, baseline maintenance
-Strategic notes: interpret-results explains status semantics; suppress-results acts on that interpretation by codifying expected failures in hyrum.toml. Sequence matters — interpret first, then curate.
+Strategic notes: interpret-results explains status semantics; compare-runs turns two runs into a delta; suppress-results acts on that interpretation by codifying expected failures in hyrum.toml. Sequence matters — interpret first, then compare, then curate.
 -->
 
 **[Interpret results](interpret-results)**
 : Understand each outcome status and decide what action, if any, to take.
+
+**[Compare two runs](compare-runs)**
+: Save a baseline and use `hyrum compare` to see which charms your change broke.
 
 **[Suppress known results](suppress-results)**
 : Use `hyrum.toml` to exclude repositories from a run.

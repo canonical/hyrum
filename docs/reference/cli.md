@@ -12,9 +12,10 @@ myst:
 hyrum [--version] COMMAND ...
 ```
 
-Hyrum exposes two subcommands:
+Hyrum exposes three subcommands:
 
 - `hyrum check TARGET [OPTIONS]` — run `TARGET` (a tox environment name or make target, for example `unit`, `lint`) across many charm repos.
+- `hyrum compare BASELINE CURRENT [OPTIONS]` — diff two saved runs.
 - `hyrum get-charms [OPTIONS]` — clone or update every charm listed in a CSV into the charms directory.
 
 ## `hyrum check`
@@ -33,7 +34,7 @@ hyrum check [OPTIONS] TARGET
 : Environment variable: `HYRUM_CHARMS`
 
 `--config PATH`
-: Path to the TOML configuration file.
+: Path to the TOML configuration file. The `[ignore]` table and the `save` setting are read.
 : Default: `hyrum.toml` (in the current directory; silently ignored if absent)
 
 `--repo REGEX`
@@ -85,8 +86,12 @@ hyrum check [OPTIONS] TARGET
 : - `<name> @ git+<url>[@<ref>][#subdirectory=<sub>]` — explicit PEP 508 git source. `<ref>` is any git ref (branch, tag, commit SHA).
 : - `<name> @ <url>[@<ref>]` — bare `https://…` URL with optional `@ref`.
 : - `<name> @ file://<path>`, or a bare path (`/abs`, `./rel`, `~/checkout`) — a local checkout.
-: - `ops @ <owner>:<branch>` — GitHub shorthand for `ops` only; expands to `https://github.com/<owner>/operator` at that branch.
+: - `ops @ <owner>:<branch>` — GitHub shorthand for `ops`; expands to `https://github.com/<owner>/operator` at that branch.
+: - `charmlibs-<name> @ <owner>:<branch>` — GitHub shorthand for a charm library; expands to `https://github.com/<owner>/charmlibs` at that branch, with the subdirectory taken from the package name verbatim. Type the separators the way the directory exists in the monorepo (for example, `charmlibs-nginx_k8s`, `charmlibs-interfaces-k8s-service`). Charmlibs packages must be patched from a git source: a version pin or a local path is rejected.
+: - `charms.<author>.v<n>.<lib> -> <spec>` — swap a vendored charm library for a package. The left side is the dotted import path of the vendored `lib/charms/<author>/v<n>/<lib>.py` file; `<spec>` is any of the forms above for the replacement package, for example `charms.operator_libs_linux.v0.apt -> charmlibs-apt==1.0.0`.
+: The `owner:branch` shorthand is only accepted for `ops` and `charmlibs-*` packages. Any other package needs an explicit `git+<url>` or bare `https://…` URL.
 : When the patched package is `ops`, hyrum also rewrites the `ops[testing]` and `ops[tracing]` companion packages from matching subdirectories of the operator monorepo.
+: Extras written into `SPEC` are not honoured: the patcher preserves whatever extras the charm itself declares.
 : Default: `ops @ canonical:main`
 
 `--poetry-executable CMD`
@@ -141,6 +146,43 @@ hyrum check [OPTIONS] TARGET
 : Always exit with code 0, even if some charms failed. The summary is still printed.
 : Default: off (exit non-zero on any failure)
 
+### Saving results
+
+The three save options are mutually exclusive. When none of them is given, hyrum reads the `save` setting from `hyrum.toml`; if that is absent too, it falls back to `--auto-save` with the default directory. An unusable save target is rejected before the run starts, rather than after it.
+
+`--save PATH`
+: Write the run's outcomes as JSON. If `PATH` is an existing directory, hyrum writes a timestamped `hyrum-<UTC>-<target>.json` file inside it; otherwise `PATH` is the exact output file.
+: Default: (not set)
+
+`--auto-save [DIR]`
+: Write a rolling pair of files into `DIR`: `<target>.auto.json` for this run, with the previous run's file rotated to `<target>.auto.prev.json`. Keyed on the target, so runs of different targets do not clobber each other.
+: Default: `~/.cache/hyrum/results` (also the default when no save option is given at all)
+
+`--no-save`
+: Do not persist results.
+: Default: off
+
+## `hyrum compare`
+
+```text
+hyrum compare [OPTIONS] BASELINE CURRENT
+```
+
+Diff two saved results files at the status level: which charms newly fail, which are resolved, and which newly error. `BASELINE` and `CURRENT` are paths to JSON files written by `hyrum check` (see [Output reference](output)).
+
+Charms are matched by their path relative to the charms directory, so two runs from different hosts or checkouts still compare charm-for-charm. A charm present in only one of the runs is reported as absent rather than as a change. If the two files record different targets, hyrum prints a warning to stderr and compares them anyway.
+
+### Options
+
+`--fail-on-regression / --no-fail-on-regression`
+: Exit non-zero if there are any new failures or new errors relative to the baseline.
+: Default: `--no-fail-on-regression`
+
+`--format {text,markdown}`
+: `text`: the colourised status-level summary, preceded by a line of metadata for each run.
+: `markdown`: a document with a pass-rate paragraph, a list per change category, and a table with one row per non-passing charm, including each run's failure summary. Suitable for pasting into an issue or pull request.
+: Default: `text`
+
 ## `hyrum get-charms`
 
 ```text
@@ -149,16 +191,22 @@ hyrum get-charms [OPTIONS]
 
 Clone every repository listed in a CSV file into the charms directory, or `git pull` it if the directory already exists. Each row in the CSV is one repository; repositories that host multiple charms in subdirectories are cloned once.
 
+Each repository is cloned to `<dest>/<owner>/<name>`, where `<owner>` and `<name>` are the last two components of the repository URL. A row that names a branch is cloned to `<dest>/<owner>/<name>-<branch>`, so the same repository can be present at more than one branch.
+
 ### Options
 
 `--source PATH`
-: Path to the charm-list CSV. The expected columns are `Team,Charm Name,Repository,Branch,Source` (additional columns are ignored).
+: Path to the charm-list CSV. Only the `Repository` column (required) and `Branch (if not the default)` column (optional) are read; any other column, such as those in the bundled `charm-list/charms.csv`, is ignored.
 : Default: `charms.csv` or `charm-list/charms.csv` in the current directory.
 
 `--dest PATH`
 : Directory to clone into.
 : Default: `~/.cache/hyrum/charms`
 : Environment variable: `HYRUM_CHARMS`
+
+`--workers N`
+: Maximum number of concurrent `git` subprocesses. The cap keeps a large charm list from exhausting the process file-descriptor limit.
+: Default: `16`
 
 `--quiet`
 : Suppress non-error output.
@@ -175,8 +223,9 @@ Clone every repository listed in a CSV file into the charms directory, or `git p
 
 | Code | Meaning |
 |------|---------|
-| `0`  | All non-skipped charms passed (or `--no-fail` was set, or `hyrum get-charms` succeeded) |
-| `1`  | At least one charm resulted in `failed`, `timeout`, or `patcher_error` |
+| `0`  | All non-skipped charms passed (or `--no-fail` was set, or `hyrum get-charms` succeeded, or `hyrum compare` found no regressions) |
+| `1`  | At least one charm resulted in `failed`, `timeout`, or `patcher_error`; or the results file could not be written; or `hyrum compare` could not read a results file, or found a regression under `--fail-on-regression` |
+| `2`  | The save target given to `hyrum check` is unusable (a missing or unwritable directory, or a path that is a directory when a file is expected). Checked before the run starts. |
 
 ## Environment variables
 
@@ -204,6 +253,12 @@ hyrum check unit --patch 'ops==2.17.0'
 # Swap a non-ops dependency from a git fork:
 hyrum check unit --patch 'requests @ git+https://github.com/psf/requests@main'
 
+# Point a charm library at a branch of canonical/charmlibs:
+hyrum check unit --patch 'charmlibs-nginx_k8s @ canonical:main'
+
+# Replace a vendored charm library with its PyPI package:
+hyrum check unit --patch 'charms.operator_libs_linux.v0.apt -> charmlibs-apt==1.0.0'
+
 # Patch ops *and* another dependency in the same run:
 hyrum check unit \
     --patch 'ops @ canonical:fix/my-change' \
@@ -226,4 +281,13 @@ hyrum check unit --no-patch --no-fail
 
 # Show failed charms inline:
 hyrum check unit --no-patch --verbose
+
+# Save a baseline, then diff a patched run against it:
+hyrum check unit --no-patch --save baseline.json
+hyrum check unit --patch 'ops @ canonical:fix/my-change' --save current.json
+hyrum compare baseline.json current.json
+
+# Gate on regressions, and produce a table to paste into a pull request:
+hyrum compare baseline.json current.json --fail-on-regression
+hyrum compare baseline.json current.json --format markdown > report.md
 ```

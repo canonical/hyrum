@@ -20,7 +20,7 @@ hyrum check unit --patch 'ops @ canonical:fix/my-change' --workers 8
 
 `--patch` is a PEP 508 requirement. For `ops`, the accepted forms are:
 
-- `ops @ canonical:fix/my-change` — `owner:branch` shorthand (ops-only); expands to `https://github.com/canonical/operator` at that branch.
+- `ops @ canonical:fix/my-change` — `owner:branch` shorthand; expands to `https://github.com/canonical/operator` at that branch.
 - `ops @ https://github.com/canonical/operator@fix/my-change` — bare git URL with optional `@ref` (branch, tag, or commit SHA).
 - `ops @ git+https://github.com/canonical/operator@fix/my-change` — explicit PEP 508 form (the one `pip` and `uv` print).
 - `ops==2.17.0` (or any PEP 440 specifier) — a PyPI version; companion packages still resolve from PyPI.

@@ -42,10 +42,13 @@ Because some charms have pre-existing test failures unrelated to any change, a b
 
 ```text
 # Baseline: how many charms fail on their own pinned deps:
-hyrum check unit --no-patch --log-dir baseline/
+hyrum check unit --no-patch --save baseline.json
 
 # Patched: how many fail with the proposed change:
-hyrum check unit --patch 'ops @ canonical:fix/my-change' --log-dir patched/
+hyrum check unit --patch 'ops @ canonical:fix/my-change' --save patched.json
+
+# The delta:
+hyrum compare baseline.json patched.json
 ```
 
-Charms that appear as `failed` in the patched run but not in the baseline are the set of regressions introduced by the change.
+Charms that appear as `failed` in the patched run but not in the baseline are the set of regressions introduced by the change. `hyrum compare` reports exactly that set, alongside the charms the change fixed.

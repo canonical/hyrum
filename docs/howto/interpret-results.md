@@ -12,17 +12,21 @@ After a run, hyrum prints a summary table and an optional verbose offender list.
 
 ```text
 hyrum: unit
-STATUS         COUNT     %
-passed            42   70%
-failed             5    8%
-no_target          3    5%
-timeout            1    2%
-patcher_error      2    3%
-skipped            7   12%
-42 of 48 runs passed (88%); 12 skipped or errored.
+STATUS              COUNT     %
+passed                 42   70%
+failed                  5    8%
+no_target               3    5%
+timeout                 1    2%
+patcher_error           2    3%
+skipped                 7   12%
+  dep_not_declared      4    7%
+  no_pyproject          2    3%
+42 of 48 runs passed (88%); 12 not run (7 skipped, 3 no_target, 2 patcher_error).
 ```
 
-The percentage column uses the total number of charms (including skipped) as the denominator. The summary line below the table reports the pass rate over charms that were actually run (excluding `skipped` and `no_target`).
+The percentage column uses the total number of charms (including skipped) as the denominator. The summary line below the table reports the pass rate over the charms that actually ran — `passed`, `failed`, and `timeout` — and breaks the rest down by status.
+
+Indented rows under `skipped` show why a patcher skipped a charm, when it was a patcher rather than an up-front filter that did the skipping.
 
 ## Status meanings
 
@@ -49,6 +53,7 @@ The percentage column uses the total number of charms (including skipped) as the
 : - Is a reactive or classic hooks-based charm (has `src/reactive/` with `src/layer.yaml`, or a `hooks/` directory).
 : - Has neither `tox.ini` nor `Makefile`.
 : - Did not match the `--framework` filter.
+: A charm is also skipped when the patcher has nothing to do — it does not declare the package you are patching (`dep_not_declared`), has no `pyproject.toml` at all (`no_pyproject`), or does not vendor the library you asked to swap (`vendored_lib_absent`). These are expected, not errors: patching `charmlibs-apt` across the fleet will skip most of it. The exception is `malformed_pyproject`, which means the charm's `pyproject.toml` has a dependency section of the wrong shape.
 
 ## Get more detail
 
@@ -83,10 +88,11 @@ Not every `failed` result is caused by the change you are testing. Common source
 Compare a patched run against a `--no-patch` baseline to distinguish failures introduced by your change from pre-existing failures:
 
 ```text
-hyrum check unit --no-patch --log-dir ./baseline
-hyrum check unit --patch 'ops @ canonical:fix/my-change' --log-dir ./patched
+hyrum check unit --no-patch --save baseline.json
+hyrum check unit --patch 'ops @ canonical:fix/my-change' --save patched.json
+hyrum compare baseline.json patched.json
 ```
 
-Any charm that appears in the `failed` column for the patched run but not the baseline is a genuine regression introduced by your change.
+The charms listed under `NEW FAILURES` are the ones your change broke. See [How to compare two runs](compare-runs) for the full workflow, including the rolling files hyrum saves by default.
 
 See [Explanation: How to interpret signal vs noise](../explanation/design) for more background.
