@@ -12,17 +12,17 @@ Bulk-run a check (typically lint or unit tests) across many charm repositories, 
 ## Install
 
 ```text
-uv tool install hyrum
+uv tool install --prerelease=allow hyrum
 ```
 
 ## Quick start
 
 ```text
 # Run tox -e unit with ops swapped to a development branch:
-hyrum unit --ops-source canonical:fix/my-change --workers 8
+hyrum check unit --patch 'ops @ canonical:fix/my-change' --workers 8
 
 # Run without any dependency swap:
-hyrum unit --no-patch
+hyrum check unit --no-patch
 ```
 
 ## Documentation
