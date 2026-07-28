@@ -12,6 +12,10 @@ from hyrum import _pool as pool
 
 _ERROR_STATUSES: frozenset[str] = frozenset({'patcher_error', 'timeout'})
 _RAN_STATUSES: frozenset[str] = frozenset({'passed', 'failed', 'timeout'})
+# Statuses that mean the charm was actually broken, as opposed to never
+# reaching the runner at all (`skipped`, `no_target`). Recovering from any of
+# these counts as resolved; starting to run again after being skipped does not.
+_NON_PASSING: frozenset[str] = frozenset({'failed', 'timeout', 'patcher_error'})
 
 
 @dataclasses.dataclass
@@ -59,7 +63,11 @@ def diff(baseline: list[pool.Outcome], current: list[pool.Outcome]) -> CompareRe
 
         if base_status == 'passed' and cur_status == 'failed':
             new_failures.append(key)
-        elif base_status == 'failed' and cur_status == 'passed':
+        elif base_status in _NON_PASSING and cur_status == 'passed':
+            # Any broken -> passing transition, not just failed -> passed:
+            # new_errors counts entering an error state, so leaving one has to
+            # be reported too, or fixing a patcher bug across the fleet renders
+            # as "No changes between runs".
             resolved.append(key)
         elif cur_status in _ERROR_STATUSES and base_status not in _ERROR_STATUSES:
             new_errors.append(key)
@@ -156,9 +164,6 @@ def render(result: CompareResult, *, file: TextIO | None = None) -> None:
             f'pass rate.',
             file=out,
         )
-
-
-_NON_PASSING = frozenset({'failed', 'timeout', 'patcher_error'})
 
 
 def _short(repo: str) -> str:

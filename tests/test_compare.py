@@ -248,3 +248,18 @@ def test_render_delta_is_n_a_when_a_run_had_nothing_to_measure():
     buf = io.StringIO()
     _compare.render(_compare.diff([], [_o('alpha', 'passed')]), file=buf)
     assert 'delta n/a' in buf.getvalue()
+
+
+def test_diff_recovery_from_infrastructure_error_is_resolved():
+    # new_errors counts entering an error state, so leaving one must be
+    # reported too — otherwise fixing a patcher bug reads as "no changes".
+    for broken in ('failed', 'timeout', 'patcher_error'):
+        result = _compare.diff([_o('alpha', broken)], [_o('alpha', 'passed')])
+        assert result.resolved == ['/cache/alpha'], broken
+        assert result.new_errors == []
+
+
+def test_diff_charm_that_started_running_is_not_resolved():
+    # Never-ran -> passed is charm-set drift, not a fix.
+    for absent in ('skipped', 'no_target'):
+        assert _compare.diff([_o('alpha', absent)], [_o('alpha', 'passed')]).resolved == []
