@@ -16,6 +16,18 @@ The ops-source patcher (the component that rewrites each charm's dependency decl
 
 A generic dependency patcher applies the same rewriting logic to any other package via `--patch`, so the same flow can swap a transitive library to a candidate release or a fork without rewriting the runner.
 
+## Charm libraries
+
+Charm libraries are the reusable pieces of charm code that sit between `ops` and an individual charm: interface implementations, workload helpers, and similar. They exist in two forms, and hyrum can swap either.
+
+Traditionally a charm library is *vendored*: charmcraft fetches a single-file copy into `lib/charms/<author>/v<n>/<lib>.py`, and the charm imports it as `charms.<author>.v<n>.<lib>`. Every consumer holds its own copy, at whatever version it last fetched, which is precisely the situation in which a behaviour change is hard to assess.
+
+The newer form is a published package from the [charmlibs](https://github.com/canonical/charmlibs) monorepo, installed from PyPI as `charmlibs-<name>` and imported as `charmlibs.<name>`. General libraries live in top-level directories of the monorepo; interface libraries live under `interfaces/`.
+
+Hyrum has a patcher for each. The charmlibs patcher repoints an existing `charmlibs-*` dependency at a branch of the monorepo, answering the same question for a charm library that the ops-source patcher answers for `ops`. The vendored-library patcher goes further: it deletes the vendored file, adds the package, and rewrites the charm's imports, which answers a migration question rather than a compatibility one — would this charm still work if it stopped vendoring and depended on the published library instead?
+
+Because most charms use neither any given charm library nor its vendored ancestor, these runs skip the bulk of the fleet. That is expected, and hyrum reports it as `skipped` rather than as an error.
+
 ## Testing frameworks
 
 ### Scenario (ops[testing])

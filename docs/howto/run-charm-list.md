@@ -14,10 +14,18 @@ A fleet run executes the unit tests of every charm in the list on your machine. 
 
 ## Populate the charms directory
 
-Run `hyrum get-charms` from a checkout of the hyrum repository (so it can find `charm-list/charms.csv`), or pass the CSV explicitly:
+The charm list is not shipped in the hyrum package. Run `hyrum get-charms` from a checkout of the hyrum repository, where it finds `charm-list/charms.csv` automatically, or fetch that file (or supply your own CSV with a `Repository` column) and point at it:
 
 ```text
-# From a hyrum checkout: picks up charm-list/charms.csv automatically.
+mkdir -p charm-list
+curl -sSfL -o charm-list/charms.csv \
+    https://raw.githubusercontent.com/canonical/hyrum/main/charm-list/charms.csv
+```
+
+Then:
+
+```text
+# Picks up charms.csv or charm-list/charms.csv from the current directory.
 hyrum get-charms
 
 # From anywhere: point at the CSV explicitly.
@@ -25,9 +33,14 @@ hyrum get-charms --source /path/to/charms.csv
 
 # Clone into a non-default directory:
 hyrum get-charms --dest /srv/hyrum-charms
+
+# Clone with fewer concurrent git processes (the default is 16):
+hyrum get-charms --workers 4
 ```
 
-For each row in the CSV, hyrum clones the repository (shallow) into `<dest>/<repo-name>`, or runs `git pull --ff-only` if the directory is already present. Repositories that host multiple charms in subdirectories are cloned once.
+For each row in the CSV, hyrum clones the repository (shallow) into `<dest>/<owner>/<name>`, or pulls it if the directory is already present. A row that names a branch is cloned into `<dest>/<owner>/<name>-<branch>`. Repositories that host multiple charms in subdirectories are cloned once.
+
+Clones run concurrently, capped at `--workers` git processes, so that a list of several hundred repositories cannot exhaust the process file-descriptor limit. Only the `Repository` column is required in the CSV; `Branch (if not the default)` is honoured if present, and every other column is ignored.
 
 The default destination is `~/.cache/hyrum/charms`, overridable by `HYRUM_CHARMS` or `--dest`. The same default and override apply to `hyrum check --charms-dir`.
 
@@ -70,6 +83,17 @@ hyrum check unit --no-patch --workers 8 --log-dir ~/hyrum-logs/$(date +%Y%m%d)
 ```
 
 Each file is named using the charm's path relative to the charms directory, with `/` replaced by `__`. For example, a monorepo charm at `kfp-operators/charms/kfp-ui` produces `kfp-operators__charms__kfp-ui.log`.
+
+## Compare against an earlier fleet run
+
+Every run saves its outcomes to `~/.cache/hyrum/results` unless you turn that off, so a fleet run can be diffed against the one before it:
+
+```text
+hyrum compare ~/.cache/hyrum/results/unit.auto.prev.json \
+              ~/.cache/hyrum/results/unit.auto.json
+```
+
+See [How to compare two runs](compare-runs) for keeping a longer-lived baseline.
 
 ## Keep the exit code clean
 

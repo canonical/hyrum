@@ -23,13 +23,13 @@ Hyrum executes third-party code on your machine. Unit tests — and, in principl
 ## Install
 
 ```text
-uv tool install hyrum
+uv tool install --prerelease=allow hyrum
 ```
 
 ## Quick start
 
 ```text
-# Populate ~/.cache/hyrum/charms from the bundled charm list:
+# Populate ~/.cache/hyrum/charms from a charm-list CSV:
 hyrum get-charms
 
 # Run tox -e unit across every charm, with ops swapped to a development branch:
@@ -37,6 +37,10 @@ hyrum check unit --patch 'ops @ canonical:fix/my-change' --workers 8
 
 # Run without any dependency swap (test charms as they are pinned):
 hyrum check unit --no-patch
+
+# Diff the last two runs to see what the swap changed:
+hyrum compare ~/.cache/hyrum/results/unit.auto.prev.json \
+              ~/.cache/hyrum/results/unit.auto.json
 ```
 
 ## In this documentation

@@ -24,10 +24,10 @@ Hyrum executes third-party code on your machine. Unit tests — and, in principl
 
 ## Install hyrum
 
-Install hyrum with [uv](https://docs.astral.sh/uv/):
+Install hyrum with [uv](https://docs.astral.sh/uv/). Only pre-release versions have been published so far, so `--prerelease=allow` is needed:
 
 ```text
-uv tool install hyrum
+uv tool install --prerelease=allow hyrum
 ```
 
 Verify the install:
@@ -55,7 +55,7 @@ Your charms directory now contains one charm:
     ├── ...
 ```
 
-For a fleet-scale run, use `hyrum get-charms` to clone every entry in the bundled charm list instead. That is covered in [How to run against the charm list](../howto/run-charm-list).
+For a fleet-scale run, use `hyrum get-charms` to clone every entry in a charm-list CSV instead. That is covered in [How to run against the charm list](../howto/run-charm-list).
 
 ## Run the check
 
@@ -78,7 +78,7 @@ no_target          0    0%
 timeout            0    0%
 patcher_error      0    0%
 skipped            0    0%
-1 of 1 runs passed (100%); 0 skipped or errored.
+1 of 1 runs passed (100%); 0 not run.
 ```
 
 ## Try with multiple workers
@@ -106,6 +106,24 @@ hyrum check unit --no-patch --repo apt
 hyrum check unit --no-patch --limit 1
 ```
 
+## Compare two runs
+
+Hyrum saved that run's outcomes without being asked. Look in the results directory:
+
+```text
+ls ~/.cache/hyrum/results
+```
+
+The file is named after the target: `unit.auto.json`. Run the check again, and the file you just saw is rotated to `unit.auto.prev.json`, leaving the two most recent runs on disk:
+
+```text
+hyrum check unit --no-patch --workers 2
+hyrum compare ~/.cache/hyrum/results/unit.auto.prev.json \
+              ~/.cache/hyrum/results/unit.auto.json
+```
+
+Nothing changed between the two runs, so hyrum reports the pass rate and `No changes between runs.` When you start swapping dependencies, the same comparison is what tells you which charms your change broke.
+
 ## Save per-charm logs
 
 Use `--log-dir` to write each charm's runner output to a file for offline triage:
@@ -121,4 +139,5 @@ After the run you will find files like `~/hyrum-logs/charm-apt-mirror.log` conta
 - [How to run hyrum against the full charm list](../howto/run-charm-list)
 - [How to swap ops to a development branch](../howto/swap-ops-branch)
 - [How to interpret the results](../howto/interpret-results)
+- [How to compare two runs](../howto/compare-runs)
 - [CLI reference](../reference/cli)

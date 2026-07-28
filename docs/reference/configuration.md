@@ -8,14 +8,52 @@ myst:
 
 Hyrum reads an optional TOML file, defaulting to `hyrum.toml` in the current working directory. Use `--config PATH` to specify a different location.
 
-If the file is absent, hyrum runs with no configured exclusions.
+If the file is absent, hyrum runs with no configured exclusions and saves results as if `save = "auto"` were set.
 
 ## File format
 
 ```text
+save = "<mode-or-path>"
+
+[save]
+mode = "<mode>"
+path = "<path>"
+
 [ignore]
 <category> = ["<charm-path>", ...]
 ```
+
+## `save`
+
+The `save` setting controls where `hyrum check` writes the run's outcomes. It takes either a bare string or a table.
+
+**Type:** `str | dict[str, str]`
+
+The bare-string form takes one of:
+
+- `"auto"`: write the rolling `<target>.auto.json` and `<target>.auto.prev.json` pair into `~/.cache/hyrum/results`.
+- `"off"`: do not persist results.
+- Any other string: a path. If it names an existing directory, hyrum writes a timestamped file into it; otherwise it is the exact output file.
+
+```toml
+save = "~/hyrum-runs"
+```
+
+The table form is the only one that pins down both the layout and the location:
+
+```toml
+[save]
+mode = "timestamped"
+path = "~/hyrum-runs"
+```
+
+`mode`
+: One of `auto`, `off`, `file`, or `timestamped`. Omit it to get the same "pick by what is on disk" behaviour as the bare-string path form.
+
+`path`
+: Optional for `auto` (defaults to `~/.cache/hyrum/results`), required for `file` and `timestamped`, and rejected for `off`. `~` is expanded.
+
+The `--save`, `--auto-save`, and `--no-save` command-line options take precedence over this setting. If neither a command-line option nor a `save` setting is present, hyrum saves as if `save = "auto"`.
 
 ## `[ignore]`
 
@@ -51,6 +89,11 @@ manual       = ["my-internal-charm"]
 ```toml
 # hyrum.toml
 # Charm exclusions for the ops 4.x pre-release compatibility check.
+
+# Keep every run's results, named by timestamp, for later comparison:
+[save]
+mode = "timestamped"
+path = "~/hyrum-runs"
 
 [ignore]
 # Takes > 30 min to run; not worth including in routine checks:

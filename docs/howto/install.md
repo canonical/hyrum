@@ -14,10 +14,10 @@ Hyrum executes third-party code on your machine. Unit tests — and, in principl
 
 ## Install from PyPI
 
-Install hyrum with [uv](https://docs.astral.sh/uv/):
+Install hyrum with [uv](https://docs.astral.sh/uv/). Only pre-release versions have been published so far, so `--prerelease=allow` is needed:
 
 ```text
-uv tool install hyrum
+uv tool install --prerelease=allow hyrum
 ```
 
 After installation, `hyrum --version` should print the installed version.
