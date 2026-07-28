@@ -80,7 +80,7 @@ hyrum check unit --patch 'charmlibs-nginx_k8s @ canonical:main'
 hyrum check unit --patch 'charmlibs-interfaces-k8s-service @ canonical:main'
 ```
 
-The name used to match the charm's own dependency declaration is canonicalised separately, so the match works whichever separators you type.
+The name used to match the charm's own dependency declaration is reduced to a single form separately, so the match works whichever separators you type.
 
 A charmlib must be patched from a git source. A version pin (`charmlibs-apt==1.0.0`) or a local path is rejected; use the generic form above if you need those.
 
