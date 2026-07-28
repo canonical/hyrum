@@ -189,3 +189,74 @@ def test_markdown_render_omits_empty_sections():
     assert '## New failures' in output
     assert '## Resolved' not in output
     assert '## New errors' not in output
+
+
+def test_diff_tracks_charms_present_in_only_one_run():
+    base = [_o('alpha', 'passed'), _o('beta', 'passed')]
+    cur = [_o('alpha', 'passed'), _o('gamma', 'passed')]
+    result = _compare.diff(base, cur)
+    assert result.only_in_baseline == ['/cache/beta']
+    assert result.only_in_current == ['/cache/gamma']
+    assert result.common == 1
+    assert not result.disjoint
+
+
+def test_diff_disjoint_when_no_charms_shared():
+    result = _compare.diff([_o('alpha', 'passed')], [_o('beta', 'passed')])
+    assert result.disjoint
+
+
+def test_diff_not_disjoint_when_one_run_is_empty():
+    # An empty run is a degenerate comparison, not a mismatched charm set:
+    # there is nothing to warn the user about re-keying.
+    assert not _compare.diff([], [_o('alpha', 'passed')]).disjoint
+    assert not _compare.diff([_o('alpha', 'passed')], []).disjoint
+
+
+def test_diff_new_charm_erroring_is_not_a_new_error():
+    # A charm the baseline never ran cannot have regressed against it.
+    base = [_o('alpha', 'passed')]
+    cur = [_o('alpha', 'passed'), _o('beta', 'timeout')]
+    result = _compare.diff(base, cur)
+    assert result.new_errors == []
+    assert result.only_in_current == ['/cache/beta']
+
+
+def test_render_warns_when_runs_are_disjoint():
+    buf = io.StringIO()
+    _compare.render(_compare.diff([_o('alpha', 'passed')], [_o('beta', 'passed')]), file=buf)
+    output = buf.getvalue()
+    assert 'no charms in common' in output
+    assert 'No changes between runs.' not in output
+
+
+def test_render_notes_charm_set_drift():
+    base = [_o('alpha', 'passed'), _o('beta', 'passed')]
+    cur = [_o('alpha', 'passed'), _o('gamma', 'passed')]
+    buf = io.StringIO()
+    _compare.render(_compare.diff(base, cur), file=buf)
+    assert '1 charm(s) only in baseline, 1 only in current' in buf.getvalue()
+
+
+def test_render_omits_drift_note_when_charm_sets_match():
+    buf = io.StringIO()
+    _compare.render(_compare.diff([_o('alpha', 'passed')], [_o('alpha', 'passed')]), file=buf)
+    assert 'only in baseline' not in buf.getvalue()
+
+
+def test_render_delta_is_in_percentage_points_with_one_decimal():
+    base = [_o(f'c{i}', 'passed') for i in range(1000)]
+    cur = [
+        *(_o(f'c{i}', 'passed') for i in range(996)),
+        *(_o(f'c{i}', 'failed') for i in range(996, 1000)),
+    ]
+    buf = io.StringIO()
+    _compare.render(_compare.diff(base, cur), file=buf)
+    # A 0.4-point drop must not round away to '+0%'.
+    assert 'delta -0.4 pts' in buf.getvalue()
+
+
+def test_render_delta_is_n_a_when_a_run_had_nothing_to_measure():
+    buf = io.StringIO()
+    _compare.render(_compare.diff([], [_o('alpha', 'passed')]), file=buf)
+    assert 'delta n/a' in buf.getvalue()
