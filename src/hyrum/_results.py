@@ -8,6 +8,7 @@ import json
 import pathlib
 import re
 
+from hyrum import _patchers as patchers
 from hyrum import _pool as pool
 from hyrum import _version
 
@@ -111,6 +112,10 @@ def save(
     for outcome in outcomes:
         record = dataclasses.asdict(outcome)
         record['repo'] = _identity(outcome.repo, base)
+        # asdict leaves enum members as-is and json can't encode them, so
+        # store the skip category as its string value.
+        kind = outcome.skip_reason_kind
+        record['skip_reason_kind'] = kind.value if kind is not None else None
         records.append(record)
     meta = RunMeta(
         created_at=datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
@@ -156,6 +161,21 @@ def save_auto(
     return current
 
 
+def _load_skip_kind(
+    raw: object, *, path: pathlib.Path, index: int
+) -> patchers.PatcherSkipReason | None:
+    """Build the skip category from a raw record value, rejecting unknown ones."""
+    if raw is None:
+        return None
+    try:
+        return patchers.PatcherSkipReason(str(raw))
+    except ValueError:
+        raise ValueError(
+            f'{path}: unknown skip reason {raw!r} in outcome {index} '
+            f'(file written by a newer hyrum, or hand-edited?)'
+        ) from None
+
+
 def _load_outcome(record: object, *, path: pathlib.Path, index: int) -> pool.Outcome:
     """Build one Outcome from a raw JSON record, rejecting malformed shapes."""
     if not isinstance(record, dict):
@@ -171,6 +191,9 @@ def _load_outcome(record: object, *, path: pathlib.Path, index: int) -> pool.Out
             f'{path}: unknown status {status!r} in outcome {index} '
             f'(file written by a newer hyrum, or hand-edited?)'
         )
+    # Parsed outside the try below so its own message survives, rather than
+    # being folded into the generic "bad value" one.
+    skip_kind = _load_skip_kind(record.get('skip_reason_kind'), path=path, index=index)
     try:
         return pool.Outcome(
             repo=pathlib.Path(str(record['repo'])),
@@ -180,6 +203,7 @@ def _load_outcome(record: object, *, path: pathlib.Path, index: int) -> pool.Out
             duration_s=float(record.get('duration_s', 0.0)),
             returncode=int(record['returncode']) if record.get('returncode') is not None else None,
             skip_reason=str(record.get('skip_reason', '')),
+            skip_reason_kind=skip_kind,
             error=str(record.get('error', '')),
             summary=str(record.get('summary', '')),
         )
