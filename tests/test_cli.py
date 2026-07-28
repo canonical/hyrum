@@ -682,6 +682,25 @@ def test_cli_config_save_off_overrides_default(
     assert not default_dir.exists()
 
 
+def test_cli_config_save_table_sets_auto_save_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+    default_dir = tmp_path / 'default-auto'
+    monkeypatch.setattr(cli, '_default_auto_save_dir', lambda: default_dir)
+    save_dir = tmp_path / 'configured'
+    config = tmp_path / 'hyrum.toml'
+    config.write_text(f'[save]\nmode = "auto"\npath = "{save_dir}"\n')
+
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--config', str(config)])
+    assert rc == 0
+    assert (save_dir / 'unit.auto.json').exists()
+    assert not default_dir.exists()
+
+
 def test_cli_compare_subcommand_clean(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
     a = [pool.Outcome(repo=pathlib.Path('/cache/alpha'), status='passed')]
     b = [pool.Outcome(repo=pathlib.Path('/cache/alpha'), status='passed')]

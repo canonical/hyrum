@@ -531,34 +531,129 @@ def _default_auto_save_dir() -> pathlib.Path:
     return pathlib.Path('~/.cache/hyrum/results').expanduser()
 
 
-# Distinct-object sentinel: `--auto-save` given without an argument becomes
-# this, so `_resolve_save_plan` can tell "not given at all" (None) from
-# "given, use the default dir" (the sentinel) from "given with a path".
-_SENTINEL_DEFAULT_AUTO_SAVE = pathlib.Path('__hyrum_auto_save_default__')
+def _log_written(path: pathlib.Path, count: int) -> None:
+    """Note the file a save plan just produced."""
+    noun = 'outcome' if count == 1 else 'outcomes'
+    logger.info('Wrote %d %s to %s', count, noun, path)
 
 
 @dataclasses.dataclass(frozen=True)
-class _SavePlan:
-    """Resolved save mode after merging CLI flags and config file.
+class _NoSavePlan:
+    """Do not persist results."""
 
-    ``mode`` is one of ``'file'`` (explicit path in ``path``),
-    ``'timestamped'`` (write ``hyrum-<ts>-<target>.json`` under
-    ``directory``), ``'rolling'`` (rolling ``.auto.json`` pair in
-    ``directory``), or ``'off'``.
-    """
+    def validate(self) -> bool:
+        return True
 
-    mode: str
-    path: pathlib.Path | None = None
-    directory: pathlib.Path | None = None
+    def save(
+        self,
+        outcomes: list[pool.Outcome],
+        *,
+        base: pathlib.Path,
+        target: str,
+        patcher: str,
+    ) -> None:
+        pass
+
+
+@dataclasses.dataclass(frozen=True)
+class _PathSavePlan:
+    """Write the outcomes to one exact file."""
+
+    path: pathlib.Path
+
+    def validate(self) -> bool:
+        parent = self.path.parent
+        if not parent.is_dir():
+            print(f'hyrum: error: save directory {parent} does not exist.', file=sys.stderr)
+            return False
+        if not os.access(parent, os.W_OK):
+            print(f'hyrum: error: save directory {parent} is not writable.', file=sys.stderr)
+            return False
+        if self.path.is_dir():
+            print(f'hyrum: error: save path {self.path} is a directory.', file=sys.stderr)
+            return False
+        return True
+
+    def save(
+        self,
+        outcomes: list[pool.Outcome],
+        *,
+        base: pathlib.Path,
+        target: str,
+        patcher: str,
+    ) -> None:
+        _results.save(outcomes, self.path, base=base, target=target, patcher=patcher)
+        _log_written(self.path, len(outcomes))
+
+
+@dataclasses.dataclass(frozen=True)
+class _DirectorySavePlan:
+    """Base for the plans that write into a directory."""
+
+    directory: pathlib.Path
+
+    def validate(self) -> bool:
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            print(
+                f'hyrum: error: cannot create save directory {self.directory}: {exc}',
+                file=sys.stderr,
+            )
+            return False
+        if not os.access(self.directory, os.W_OK):
+            print(
+                f'hyrum: error: save directory {self.directory} is not writable.',
+                file=sys.stderr,
+            )
+            return False
+        return True
+
+
+@dataclasses.dataclass(frozen=True)
+class _TimestampedSavePlan(_DirectorySavePlan):
+    """Write a ``hyrum-<UTC>-<target>.json`` file into the directory."""
+
+    def save(
+        self,
+        outcomes: list[pool.Outcome],
+        *,
+        base: pathlib.Path,
+        target: str,
+        patcher: str,
+    ) -> None:
+        path = self.directory / _results.timestamped_name(target)
+        _results.save(outcomes, path, base=base, target=target, patcher=patcher)
+        _log_written(path, len(outcomes))
+
+
+@dataclasses.dataclass(frozen=True)
+class _RollingSavePlan(_DirectorySavePlan):
+    """Write the rolling ``<target>.auto.json`` pair into the directory."""
+
+    def save(
+        self,
+        outcomes: list[pool.Outcome],
+        *,
+        base: pathlib.Path,
+        target: str,
+        patcher: str,
+    ) -> None:
+        path = _results.save_auto(
+            outcomes, self.directory, target=target, base=base, patcher=patcher
+        )
+        _log_written(path, len(outcomes))
+
+
+_SavePlan = _NoSavePlan | _PathSavePlan | _TimestampedSavePlan | _RollingSavePlan
 
 
 def _resolve_save_plan(
     *,
+    no_save: bool,
     save: pathlib.Path | None,
     auto_save: pathlib.Path | None,
-    auto_save_given: bool,
-    no_save: bool,
-    config_save: str | None,
+    save_config: config_loader.SaveConfig | None,
 ) -> _SavePlan:
     """Fold the CLI flags and config default into a single :class:`_SavePlan`.
 
@@ -566,91 +661,35 @@ def _resolve_save_plan(
     to ``~/.cache/hyrum/results/``).
     """
     if no_save:
-        return _SavePlan(mode='off')
+        return _NoSavePlan()
     if save is not None:
         if save.is_dir():
-            return _SavePlan(mode='timestamped', directory=save)
-        return _SavePlan(mode='file', path=save)
-    if auto_save_given:
-        return _SavePlan(mode='rolling', directory=auto_save or _default_auto_save_dir())
+            return _TimestampedSavePlan(save)
+        return _PathSavePlan(save)
+    if auto_save is not None:
+        return _RollingSavePlan(auto_save)
     # No CLI save flag: consult the config file, else fall back to auto-save.
-    if config_save is not None:
-        setting = config_save.strip()
-        if setting.lower() == 'off':
-            return _SavePlan(mode='off')
-        if setting.lower() == 'auto':
-            return _SavePlan(mode='rolling', directory=_default_auto_save_dir())
-        path = pathlib.Path(setting).expanduser()
-        if path.is_dir():
-            return _SavePlan(mode='timestamped', directory=path)
-        return _SavePlan(mode='file', path=path)
-    return _SavePlan(mode='rolling', directory=_default_auto_save_dir())
+    if save_config is not None:
+        return _plan_from_config(save_config)
+    return _RollingSavePlan(_default_auto_save_dir())
 
 
-def _validate_save_plan(plan: _SavePlan) -> bool:
-    """Reject an unusable save target up front. Returns False on failure."""
-    if plan.mode == 'off':
-        return True
-    if plan.mode == 'file':
-        assert plan.path is not None
-        parent = plan.path.parent
-        if not parent.is_dir():
-            print(f'hyrum: error: --save directory {parent} does not exist.', file=sys.stderr)
-            return False
-        if not os.access(parent, os.W_OK):
-            print(f'hyrum: error: --save directory {parent} is not writable.', file=sys.stderr)
-            return False
-        if plan.path.is_dir():
-            print(f'hyrum: error: --save path {plan.path} is a directory.', file=sys.stderr)
-            return False
-        return True
-    # 'timestamped' or 'rolling' — both write into a directory.
-    assert plan.directory is not None
-    directory = plan.directory
-    try:
-        directory.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        print(f'hyrum: error: cannot create save directory {directory}: {exc}', file=sys.stderr)
-        return False
-    if not os.access(directory, os.W_OK):
-        print(f'hyrum: error: save directory {directory} is not writable.', file=sys.stderr)
-        return False
-    return True
-
-
-def _apply_save_plan(
-    plan: _SavePlan,
-    *,
-    outcomes: list[pool.Outcome],
-    base: pathlib.Path,
-    target: str,
-    patcher: str,
-) -> bool:
-    """Persist *outcomes* per *plan*. Returns False on I/O failure."""
-    try:
-        if plan.mode == 'file':
-            assert plan.path is not None
-            path = plan.path
-            _results.save(outcomes, path, base=base, target=target, patcher=patcher)
-        elif plan.mode == 'timestamped':
-            assert plan.directory is not None
-            path = plan.directory / _results.timestamped_name(target)
-            _results.save(outcomes, path, base=base, target=target, patcher=patcher)
-        elif plan.mode == 'rolling':
-            assert plan.directory is not None
-            path = _results.save_auto(
-                outcomes, plan.directory, target=target, base=base, patcher=patcher
-            )
-        else:
-            raise AssertionError(f'unknown save mode {plan.mode!r}')
-    except OSError as exc:
-        # Still render the report — the run itself succeeded, and the
-        # printed output is all the user has left if the save was lost.
-        logger.error('Cannot write results: %s', exc)
-        return False
-    noun = 'outcome' if len(outcomes) == 1 else 'outcomes'
-    logger.info('Wrote %d %s to %s', len(outcomes), noun, path)
-    return True
+def _plan_from_config(save_config: config_loader.SaveConfig) -> _SavePlan:
+    """Turn a validated ``save`` config setting into a plan."""
+    if save_config.mode == 'off':
+        return _NoSavePlan()
+    if save_config.mode == 'auto':
+        return _RollingSavePlan(save_config.path or _default_auto_save_dir())
+    # The remaining modes all name a location; `_config` guarantees the path.
+    assert save_config.path is not None
+    if save_config.mode == 'timestamped':
+        return _TimestampedSavePlan(save_config.path)
+    if save_config.mode == 'file':
+        return _PathSavePlan(save_config.path)
+    # 'path': a location with no layout named, so pick by what's on disk.
+    if save_config.path.is_dir():
+        return _TimestampedSavePlan(save_config.path)
+    return _PathSavePlan(save_config.path)
 
 
 def _add_check_subparser(
@@ -683,7 +722,10 @@ def _add_check_subparser(
         dest='config_path',
         type=pathlib.Path,
         default=pathlib.Path('hyrum.toml'),
-        help='TOML config file (only the [ignore] table is read today). [default: hyrum.toml]',
+        help=(
+            'TOML config file (the [ignore] table and the save setting are '
+            'read today). [default: hyrum.toml]'
+        ),
     )
     parser.add_argument('--repo', default='.*', help='Regex on the repo name. [default: .*]')
     parser.add_argument(
@@ -849,7 +891,9 @@ def _add_check_subparser(
         dest='auto_save_dir',
         type=pathlib.Path,
         nargs='?',
-        const=_SENTINEL_DEFAULT_AUTO_SAVE,
+        # `const` is not run through `type`, so a bare `--auto-save` becomes
+        # True — unreachable for anything the user can type as a path.
+        const=True,
         default=None,
         help=(
             'Write a rolling pair `<target>.auto.json` / `<target>.auto.prev.json` '
@@ -957,18 +1001,17 @@ def _run_check(args: argparse.Namespace) -> int:
 
     cfg = config_loader.load(args.config_path)
     auto_save_dir = args.auto_save_dir
-    auto_save_given = auto_save_dir is not None
-    if auto_save_dir is _SENTINEL_DEFAULT_AUTO_SAVE:
-        auto_save_dir = None
+    if auto_save_dir is True:
+        auto_save_dir = _default_auto_save_dir()
+    # Now either a path (flag given) or None (not given).
     save_plan = _resolve_save_plan(
+        no_save=args.no_save,
         save=args.save_path,
         auto_save=auto_save_dir,
-        auto_save_given=auto_save_given,
-        no_save=args.no_save,
-        config_save=cfg.save,
+        save_config=cfg.save,
     )
     # Reject an unusable save target now, not after a multi-hour run.
-    if not _validate_save_plan(save_plan):
+    if not save_plan.validate():
         return 2
 
     _configure_logging(_resolve_log_level(quiet=args.quiet, verbosity=args.verbosity))
@@ -1029,15 +1072,20 @@ def _run_check(args: argparse.Namespace) -> int:
     pool.add_skipped(results, skipped)
     results.sort(key=lambda o: str(o.repo))
 
-    save_failed = False
-    if save_plan.mode != 'off':
-        save_failed = not _apply_save_plan(
-            save_plan,
-            outcomes=results,
+    try:
+        save_plan.save(
+            results,
             base=charms_dir,
             target=args.target,
             patcher=patcher_desc,
         )
+    except OSError as exc:
+        # Still render the report — the run itself succeeded, and the
+        # printed output is all the user has left if the save was lost.
+        logger.error('Cannot write results: %s', exc)
+        save_failed = True
+    else:
+        save_failed = False
 
     if not args.quiet:
         report.render(
