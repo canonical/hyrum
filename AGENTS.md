@@ -84,3 +84,15 @@ integration-test support.
   the unit suite.
 - The ops-source patcher's lockfile regeneration is monkeypatched out (the
   `_run_lock` helper) so unit tests don't spawn `poetry` / `uv`.
+
+## Documentation
+
+`docs/` is the Canonical Sphinx stack with its own pip venv (`docs/.venv`), not
+`uv`; `make -C docs help` lists the targets. `html` (`--fail-on-warning`),
+`linkcheck`, `spelling`, `vale` and `woke` all run in CI.
+
+- `docs/_dev/` is vendored stack tooling: never edit or reformat it.
+  `make -C docs update` diffs it against upstream.
+- Add unknown words to `docs/.custom_wordlist.txt` (keep the trailing newline).
+- Prefer wording that avoids UK/US spelling splits; where there is no
+  alternative, use UK spelling and add the word to the wordlist.

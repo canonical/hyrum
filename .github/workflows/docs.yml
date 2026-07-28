@@ -6,8 +6,7 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -17,20 +16,55 @@ jobs:
   build:
     name: Build documentation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0  # needed for sphinx-last-updated-by-git
           persist-credentials: false
 
       - name: Build HTML
-        run: cd docs && make html
+        run: make -C docs html
 
       - name: Upload pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/_build
+
+  checks:
+    name: Prose checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Run every check even if an earlier one fails, so a single run reports
+      # all the prose problems rather than only the first.
+      - name: Check links
+        if: success() || failure()
+        run: make -C docs linkcheck
+
+      - name: Check spelling
+        if: success() || failure()
+        run: make -C docs spelling
+
+      - name: Check style guide compliance
+        if: success() || failure()
+        run: make -C docs vale
+
+      - name: Check inclusive language
+        if: success() || failure()
+        run: make -C docs woke
 
   deploy:
     name: Deploy to GitHub Pages
