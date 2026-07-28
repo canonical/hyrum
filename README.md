@@ -12,7 +12,7 @@ Bulk-run a check (typically lint or unit tests) across many charm repositories, 
 ## Install
 
 ```text
-uv tool install hyrum
+uv tool install --prerelease=allow hyrum
 ```
 
 ## Quick start
