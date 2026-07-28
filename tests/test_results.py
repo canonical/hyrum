@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import datetime
+import json
 import os
 import pathlib
 
 import pytest
 
+from hyrum import _patchers as patchers
 from hyrum import _pool as pool
 from hyrum import _results as results
 
@@ -275,3 +277,51 @@ def test_round_trip_preserves_summary(tmp_path: pathlib.Path):
     ]
     results.save(original, path)
     assert results.load(path).outcomes == original
+
+
+def test_round_trip_preserves_skip_reason_kind(tmp_path: pathlib.Path):
+    # The category is an enum, which json can't encode as-is: saving a run
+    # that contains a patcher skip used to raise TypeError.
+    path = tmp_path / 'out.json'
+    original = [
+        pool.Outcome(
+            repo=pathlib.Path('/cache/gamma'),
+            status='skipped',
+            skip_reason='ops is not a dependency',
+            skip_reason_kind=patchers.PatcherSkipReason.DEP_NOT_DECLARED,
+        ),
+    ]
+    results.save(original, path)
+    assert json.loads(path.read_text())['outcomes'][0]['skip_reason_kind'] == 'dep_not_declared'
+    assert results.load(path).outcomes == original
+
+
+def test_load_rejects_unknown_skip_reason_kind(tmp_path: pathlib.Path):
+    path = tmp_path / 'r.json'
+    path.write_text(
+        json.dumps({
+            'version': 3,
+            'outcomes': [
+                {'repo': 'canonical/foo', 'status': 'skipped', 'skip_reason_kind': 'invented'},
+            ],
+        })
+    )
+    with pytest.raises(ValueError, match='unknown skip reason'):
+        results.load(path)
+
+
+def test_load_rejects_duplicate_outcomes(tmp_path: pathlib.Path):
+    # compare keys charms by repo, so duplicates would silently discard every
+    # outcome for that repo but the last.
+    path = tmp_path / 'r.json'
+    path.write_text(
+        json.dumps({
+            'version': 3,
+            'outcomes': [
+                {'repo': 'canonical/foo', 'status': 'passed'},
+                {'repo': 'canonical/foo', 'status': 'failed'},
+            ],
+        })
+    )
+    with pytest.raises(ValueError, match='duplicate outcome'):
+        results.load(path)

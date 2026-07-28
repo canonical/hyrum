@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import sys
@@ -7,6 +8,7 @@ import sys
 import pytest
 
 from hyrum import _cli as cli
+from hyrum import _compare as compare
 from hyrum import _pool as pool
 from hyrum import _results as results
 from hyrum import _runners as runners
@@ -806,5 +808,57 @@ def test_cli_compare_rejects_bad_schema(
 
     rc = _run(['compare', str(base_path), str(cur_path)])
     captured = capsys.readouterr()
-    assert rc != 0
+    # 2 = bad input, distinct from 1 = the regression gate tripping.
+    assert rc == 2
     assert 'schema version' in captured.err
+
+
+def test_cli_compare_json_format(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
+    base = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    cur = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='failed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results.save(base, base_path, target='unit')
+    results.save(cur, cur_path, target='unit')
+
+    rc = _run(['compare', str(base_path), str(cur_path), '--format', 'json'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    payload = json.loads(captured.out)
+    assert payload['baseline']['path'] == str(base_path)
+    assert payload['current']['meta']['target'] == 'unit'
+    assert payload['diff']['new_failures'] == ['canonical/foo']
+    assert payload['version'] == compare.JSON_FORMAT_VERSION
+    assert payload['diff']['disjoint'] is False
+
+
+def test_cli_compare_disjoint_runs_warn_and_fail_the_gate(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    base = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    cur = [pool.Outcome(repo=pathlib.Path('canonical/bar'), status='passed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results.save(base, base_path)
+    results.save(cur, cur_path)
+
+    rc = _run(['compare', str(base_path), str(cur_path), '--fail-on-regression'])
+    captured = capsys.readouterr()
+    # Exiting 0 here would green-light a comparison that compared nothing.
+    assert rc == 2
+    assert 'no charms in common' in captured.err
+
+
+def test_cli_compare_new_charm_does_not_trip_the_gate(tmp_path: pathlib.Path):
+    base = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    cur = [
+        pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed'),
+        pool.Outcome(repo=pathlib.Path('canonical/bar'), status='timeout'),
+    ]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results.save(base, base_path)
+    results.save(cur, cur_path)
+
+    rc = _run(['compare', str(base_path), str(cur_path), '--fail-on-regression'])
+    assert rc == 0
