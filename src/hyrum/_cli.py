@@ -1318,6 +1318,9 @@ def _run_compare(args: argparse.Namespace) -> int:
 
     if args.output_format == 'json':
         payload = {
+            # Bump when the shape below changes incompatibly, so scripts
+            # consuming this can tell which contract they are looking at.
+            'version': _compare.JSON_FORMAT_VERSION,
             'baseline': {
                 'path': str(args.baseline),
                 'meta': dataclasses.asdict(baseline.meta),
@@ -1326,7 +1329,7 @@ def _run_compare(args: argparse.Namespace) -> int:
                 'path': str(args.current),
                 'meta': dataclasses.asdict(current.meta),
             },
-            'diff': dataclasses.asdict(result) | {'disjoint': result.disjoint},
+            'diff': result.as_dict(),
         }
         print(json.dumps(payload, indent=2))
     elif args.output_format == 'markdown':

@@ -10,6 +10,10 @@ from typing import TextIO
 from hyrum import _ansi
 from hyrum import _pool as pool
 
+# Version of the `hyrum compare --format json` payload, independent of the
+# results-file schema version.
+JSON_FORMAT_VERSION = 1
+
 # ``runner_error`` and ``patcher_error`` are host problems rather than charm
 # results, so they count as errors but are not "ran": leaving them out of the
 # denominator keeps a run that couldn't launch tox from inflating the pass rate.
@@ -24,6 +28,11 @@ _NON_PASSING: frozenset[str] = frozenset({
     'patcher_error',
     'runner_error',
 })
+
+
+def _plural(n: int, singular: str, plural: str = '') -> str:
+    """Return ``"<n> <word>"`` with *word* agreeing with *n*."""
+    return f'{n} {singular}' if n == 1 else f'{n} {plural or singular + "s"}'
 
 
 @dataclasses.dataclass
@@ -47,6 +56,16 @@ class CompareResult:
     def disjoint(self) -> bool:
         """Both runs have charms, but none in common — the comparison is meaningless."""
         return self.common == 0 and bool(self.only_in_baseline) and bool(self.only_in_current)
+
+    def as_dict(self) -> dict[str, object]:
+        """Return a JSON-ready mapping, including the computed properties.
+
+        ``dataclasses.asdict`` silently omits properties, so serialising
+        through it would quietly drop ``disjoint`` and anything added later.
+        """
+        payload: dict[str, object] = dataclasses.asdict(self)
+        payload['disjoint'] = self.disjoint
+        return payload
 
 
 def diff(baseline: list[pool.Outcome], current: list[pool.Outcome]) -> CompareResult:
@@ -111,7 +130,22 @@ def _section(file: TextIO, title: str, charms: list[str], tint_code: str, use_co
     print(f'{bold}{title.upper()}{reset}', file=file)
     print(file=file)
     for charm in charms:
-        print(f'  {tint}{charm}{reset}', file=file)
+        print(f'  {tint}{_short(charm)}{reset}', file=file)
+
+
+# Both renderers share these, so a warning added to one cannot go missing from
+# the other — `--format markdown` is redirected into PR comments, where a lost
+# warning reads as "nothing changed".
+_DISJOINT_WARNING = 'the two runs have no charms in common — this comparison is meaningless.'
+
+
+def _drift_sentence(result: CompareResult) -> str:
+    """Describe the charms that appear in only one of the two runs."""
+    return (
+        f'{_plural(len(result.only_in_baseline), "charm")} only in baseline, '
+        f'{len(result.only_in_current)} only in current — these cannot regress '
+        f'or resolve, but they do affect each pass rate.'
+    )
 
 
 def _fmt_pct(rate: float | None) -> str:
@@ -128,9 +162,6 @@ def render(result: CompareResult, *, file: TextIO | None = None) -> None:
     green = _ansi.GREEN if use_color else ''
     reset = _ansi.RESET if use_color else ''
 
-    n_new = len(result.new_failures)
-    n_resolved = len(result.resolved)
-    failure_word = 'failure' if n_new == 1 else 'failures'
     current_pct = _fmt_pct(result.current_pass_rate)
     baseline_pct = _fmt_pct(result.baseline_pass_rate)
     if result.current_pass_rate is None or result.baseline_pass_rate is None:
@@ -145,7 +176,8 @@ def render(result: CompareResult, *, file: TextIO | None = None) -> None:
         f'Pass rate: {bold}{current_pct}{reset} '
         f'(was {baseline_pct}) '
         f'delta {bold}{delta_str}{reset} '
-        f'({n_new} new {failure_word}, {n_resolved} resolved)',
+        f'({_plural(len(result.new_failures), "new failure")}, '
+        f'{len(result.resolved)} resolved)',
         file=out,
     )
 
@@ -155,23 +187,13 @@ def render(result: CompareResult, *, file: TextIO | None = None) -> None:
 
     if result.disjoint:
         red = _ansi.BRIGHT_RED if use_color else ''
-        print(
-            f'{red}Warning: the two runs have no charms in common — '
-            f'this comparison is meaningless.{reset}',
-            file=out,
-        )
+        print(f'{red}Warning: {_DISJOINT_WARNING}{reset}', file=out)
     elif not result.new_failures and not result.resolved and not result.new_errors:
         print(f'{green}No changes between runs.{reset}', file=out)
 
     if result.only_in_baseline or result.only_in_current:
         print(file=out)
-        print(
-            f'Note: {len(result.only_in_baseline)} charm(s) only in baseline, '
-            f'{len(result.only_in_current)} only in current — '
-            f'these cannot regress or resolve, but they do affect each '
-            f'pass rate.',
-            file=out,
-        )
+        print(f'Note: {_drift_sentence(result)}', file=out)
 
 
 def _short(repo: str) -> str:
@@ -235,12 +257,19 @@ def render_markdown(
         f'({result.baseline_passed}/{result.baseline_ran}). '
         f'Current pass rate: **{_fmt_pct(result.current_pass_rate)}** '
         f'({result.current_passed}/{result.current_ran}). '
-        f'{len(result.new_failures)} new failure(s), '
+        f'{_plural(len(result.new_failures), "new failure")}, '
         f'{len(result.resolved)} resolved, '
-        f'{len(result.new_errors)} new error(s).',
+        f'{_plural(len(result.new_errors), "new error")}.',
         file=out,
     )
     print(file=out)
+
+    if result.disjoint:
+        print(f'> **Warning:** {_DISJOINT_WARNING}', file=out)
+        print(file=out)
+    if result.only_in_baseline or result.only_in_current:
+        print(f'> **Note:** {_drift_sentence(result)}', file=out)
+        print(file=out)
 
     for heading, charms in (
         ('New failures', result.new_failures),

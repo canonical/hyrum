@@ -235,7 +235,7 @@ def test_render_notes_charm_set_drift():
     cur = [_o('alpha', 'passed'), _o('gamma', 'passed')]
     buf = io.StringIO()
     _compare.render(_compare.diff(base, cur), file=buf)
-    assert '1 charm(s) only in baseline, 1 only in current' in buf.getvalue()
+    assert '1 charm only in baseline, 1 only in current' in buf.getvalue()
 
 
 def test_render_omits_drift_note_when_charm_sets_match():
@@ -275,3 +275,51 @@ def test_diff_charm_that_started_running_is_not_resolved():
     # Never-ran -> passed is charm-set drift, not a fix.
     for absent in ('skipped', 'no_target'):
         assert _compare.diff([_o('alpha', absent)], [_o('alpha', 'passed')]).resolved == []
+
+
+def test_render_shortens_absolute_keys_from_older_results_files():
+    base = [_o('alpha', 'passed')]
+    cur = [_o('alpha', 'failed')]
+    buf = io.StringIO()
+    _compare.render(_compare.diff(base, cur), file=buf)
+    assert '  cache/alpha' in buf.getvalue()
+    assert '/cache/alpha' not in buf.getvalue()
+
+
+def test_render_pluralises_a_single_new_failure():
+    buf = io.StringIO()
+    _compare.render(_compare.diff([_o('a', 'passed')], [_o('a', 'failed')]), file=buf)
+    assert '(1 new failure,' in buf.getvalue()
+
+
+def test_markdown_render_warns_when_runs_are_disjoint():
+    # The stderr warning is lost when stdout is redirected into a PR comment,
+    # so the markdown body has to carry it too.
+    base = [_o('alpha', 'failed')]
+    cur = [_o('beta', 'failed')]
+    buf = io.StringIO()
+    _compare.render_markdown(base, cur, _compare.diff(base, cur), file=buf)
+    assert '> **Warning:** the two runs have no charms in common' in buf.getvalue()
+
+
+def test_markdown_render_notes_charm_set_drift():
+    base = [_o('alpha', 'failed'), _o('beta', 'passed')]
+    cur = [_o('alpha', 'failed'), _o('gamma', 'passed')]
+    buf = io.StringIO()
+    _compare.render_markdown(base, cur, _compare.diff(base, cur), file=buf)
+    assert '> **Note:** 1 charm only in baseline, 1 only in current' in buf.getvalue()
+
+
+def test_markdown_render_omits_drift_note_when_charm_sets_match():
+    base = [_o('alpha', 'failed')]
+    cur = [_o('alpha', 'failed')]
+    buf = io.StringIO()
+    _compare.render_markdown(base, cur, _compare.diff(base, cur), file=buf)
+    output = buf.getvalue()
+    assert '**Note:**' not in output
+    assert '**Warning:**' not in output
+
+
+def test_as_dict_includes_computed_properties():
+    result = _compare.diff([_o('alpha', 'passed')], [_o('beta', 'passed')])
+    assert result.as_dict()['disjoint'] is True
