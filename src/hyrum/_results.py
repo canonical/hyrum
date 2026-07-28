@@ -228,9 +228,16 @@ def load(path: pathlib.Path) -> RunResults:
     outcomes = raw.get('outcomes')
     if not isinstance(outcomes, list):
         raise ValueError(f'{path}: not a hyrum results file (no outcomes list)')
-    return RunResults(
-        outcomes=[
-            _load_outcome(record, path=path, index=index) for index, record in enumerate(outcomes)
-        ],
-        meta=_load_meta(raw, path=path),
-    )
+    loaded = [
+        _load_outcome(record, path=path, index=index) for index, record in enumerate(outcomes)
+    ]
+    # `hyrum compare` keys charms by repo, so duplicates would silently
+    # discard every outcome but the last. A run covers each repo once, so a
+    # repeated key means a corrupt or hand-edited file.
+    seen: set[str] = set()
+    for outcome in loaded:
+        key = str(outcome.repo)
+        if key in seen:
+            raise ValueError(f'{path}: duplicate outcome for {key!r}')
+        seen.add(key)
+    return RunResults(outcomes=loaded, meta=_load_meta(raw, path=path))

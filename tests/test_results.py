@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import os
 import pathlib
 
@@ -275,3 +276,20 @@ def test_round_trip_preserves_summary(tmp_path: pathlib.Path):
     ]
     results.save(original, path)
     assert results.load(path).outcomes == original
+
+
+def test_load_rejects_duplicate_outcomes(tmp_path: pathlib.Path):
+    # compare keys charms by repo, so duplicates would silently discard every
+    # outcome for that repo but the last.
+    path = tmp_path / 'r.json'
+    path.write_text(
+        json.dumps({
+            'version': 3,
+            'outcomes': [
+                {'repo': 'canonical/foo', 'status': 'passed'},
+                {'repo': 'canonical/foo', 'status': 'failed'},
+            ],
+        })
+    )
+    with pytest.raises(ValueError, match='duplicate outcome'):
+        results.load(path)
