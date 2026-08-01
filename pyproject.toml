@@ -36,15 +36,15 @@ packages = ["src/hyrum"]
 # ---------------------------------------------------------------------------
 [dependency-groups]
 lint = [
-    "ruff>=0.15.20",
-    "codespell>=2.2",
-    "zizmor>=1.26",
+    "ruff>=0.16.0",
+    "codespell>=2.4.3",
+    "zizmor>=1.28.0",
     "pyright>=1.1.411",
 ]
 unit = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "coverage>=7.14.3",
+    "coverage>=7.15.2",
 ]
 
 [tool.uv]
