@@ -62,7 +62,7 @@ branch = true
 show_missing = true
 
 [tool.codespell]
-skip = ".git,.tox,.venv,venv,build,dist,docs/_build,*.lock"
+skip = ".git,.tox,.venv,venv,build,dist,docs/_build,*/_build/**,docs/_build/**,*/_dev,*/_dev/*,*.lock"
 quiet-level = 3
 check-hidden = true
 
@@ -90,6 +90,9 @@ reportUnknownParameterType = false
 [tool.ruff]
 line-length = 99
 target-version = "py311"
+# docs/_dev holds the Canonical Sphinx stack's own tooling, vendored verbatim so
+# that `make -C docs update` can diff it against upstream. Don't reformat it.
+extend-exclude = ["docs/_dev"]
 
 [tool.ruff.format]
 quote-style = "single"
@@ -129,6 +132,7 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D", "S101", "S105", "S106"]
+"docs/conf.py" = ["A001", "D"]  # copyright is a standard Sphinx variable name
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
