@@ -271,7 +271,7 @@ def test_cli_end_to_end_with_stubbed_runner(
     make_charm(cache / 'alpha', requirements=True)
     make_charm(cache / 'beta', requirements=True)
 
-    async def fake_run(self, repo, target):  # noqa: RUF029
+    async def fake_run(self, repo, target):  # ruff: ignore[unused-async]
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -297,7 +297,7 @@ def test_cli_end_to_end_with_stubbed_runner(
     assert 'passed' in captured.out
 
 
-async def _fail_run(self, repo, target):  # noqa: RUF029
+async def _fail_run(self, repo, target):  # ruff: ignore[unused-async]
     return runners.RunResult(
         repo=repo,
         runner=self.name,
@@ -337,7 +337,7 @@ def test_cli_quiet_suppresses_report(
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
 
-    async def pass_run(self, repo, target):  # noqa: RUF029
+    async def pass_run(self, repo, target):  # ruff: ignore[unused-async]
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -429,7 +429,7 @@ def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathli
     monkeypatch.delenv('PYO3_USE_ABI3_FORWARD_COMPATIBILITY', raising=False)
     monkeypatch.delenv('TOX_OVERRIDE', raising=False)
 
-    async def fake_run(self, repo, target):  # noqa: RUF029
+    async def fake_run(self, repo, target):  # ruff: ignore[unused-async]
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -459,7 +459,7 @@ def test_cli_save_writes_json(monkeypatch, tmp_path: pathlib.Path):
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
 
-    async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
+    async def fake_run(self, repo, target):  # ruff: ignore[unused-async] — async to satisfy Runner protocol
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -499,7 +499,7 @@ def test_cli_save_bad_directory_fails_before_running(
     make_charm(cache / 'alpha', requirements=True)
     calls: list[str] = []
 
-    async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
+    async def fake_run(self, repo, target):  # ruff: ignore[unused-async] — async to satisfy Runner protocol
         calls.append(str(repo))
         return runners.RunResult(
             repo=repo,
@@ -534,7 +534,7 @@ def test_cli_save_failure_still_renders_report(
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
 
-    async def fake_run(self, repo, target):  # noqa: RUF029 — async to satisfy Runner protocol
+    async def fake_run(self, repo, target):  # ruff: ignore[unused-async] — async to satisfy Runner protocol
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -566,7 +566,7 @@ def test_cli_save_failure_still_renders_report(
 
 
 def _fake_pass_runner(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_run(self, repo, target):  # noqa: RUF029
+    async def fake_run(self, repo, target):  # ruff: ignore[unused-async]
         return runners.RunResult(
             repo=repo,
             runner=self.name,

@@ -26,7 +26,7 @@ class PatcherSkipReason(enum.Enum):
     VENDORED_LIB_ABSENT = 'vendored_lib_absent'
 
 
-class PatcherSkip(Exception):  # noqa: N818 — not an error; signals a no-op skip
+class PatcherSkip(Exception):  # ruff: ignore[error-suffix-on-exception-name] — not an error; signals a no-op skip
     """Raised when a patcher has nothing to do for this repo.
 
     Distinct from :class:`PatcherError`: this is not a failure, it just

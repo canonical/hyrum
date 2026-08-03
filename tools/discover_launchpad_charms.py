@@ -138,9 +138,9 @@ def first_marker(unique_name: str, branch: str) -> str | None:
     """Return the first ``CHARM_MARKERS`` filename present at branch root."""
     for name in CHARM_MARKERS:
         url = f'{LP_GIT_RAW}/{unique_name}/plain/{name}?h={urllib.parse.quote(branch)}'
-        request = urllib.request.Request(url, method='HEAD')  # noqa: S310
+        request = urllib.request.Request(url, method='HEAD')  # ruff: ignore[suspicious-url-open-usage]
         try:
-            with urllib.request.urlopen(request, timeout=15) as response:  # noqa: S310
+            with urllib.request.urlopen(request, timeout=15) as response:  # ruff: ignore[suspicious-url-open-usage]
                 if 200 <= response.status < 300:
                     return name
         except urllib.error.HTTPError as exc:
@@ -180,10 +180,10 @@ class LaunchpadClient:
             url = data.get('next_collection_link')
 
     def _get(self, url: str) -> dict[str, typing.Any]:
-        request = urllib.request.Request(  # noqa: S310
+        request = urllib.request.Request(  # ruff: ignore[suspicious-url-open-usage]
             url, headers={'Accept': 'application/json'}
         )
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:  # ruff: ignore[suspicious-url-open-usage]
             return json.loads(response.read().decode())
 
 
