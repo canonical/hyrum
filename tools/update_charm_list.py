@@ -386,7 +386,7 @@ class CharmhubClient:
         """Return the source URL recorded for ``charm`` on Charmhub, if any."""
         url = f'{CHARMHUB_INFO_URL}/{charm}?fields=result.links'
         try:
-            with urllib.request.urlopen(url, timeout=self.timeout) as response:  # noqa: S310
+            with urllib.request.urlopen(url, timeout=self.timeout) as response:  # ruff: ignore[suspicious-url-open-usage]
                 data = json.loads(response.read().decode())
             return data['result']['links']['source'][0]
         except (urllib.error.HTTPError, KeyError, IndexError):
@@ -412,11 +412,11 @@ class GitHubClient:
         GitHub API run should never cause us to drop a row.
         """
         url = f'{GITHUB_REPO_URL}/{owner}/{repo}'
-        request = urllib.request.Request(url, headers={'Accept': 'application/vnd.github+json'})  # noqa: S310
+        request = urllib.request.Request(url, headers={'Accept': 'application/vnd.github+json'})  # ruff: ignore[suspicious-url-open-usage]
         if self.token:
             request.add_header('Authorization', f'Bearer {self.token}')
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:  # ruff: ignore[suspicious-url-open-usage]
                 data = json.loads(response.read().decode())
         except urllib.error.HTTPError as exc:
             if exc.code == 404:

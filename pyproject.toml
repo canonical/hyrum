@@ -36,15 +36,15 @@ packages = ["src/hyrum"]
 # ---------------------------------------------------------------------------
 [dependency-groups]
 lint = [
-    "ruff>=0.15.20",
-    "codespell>=2.2",
-    "zizmor>=1.26",
+    "ruff>=0.16.0",
+    "codespell>=2.4.3",
+    "zizmor>=1.28.0",
     "pyright>=1.1.411",
 ]
 unit = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "coverage>=7.14.3",
+    "coverage>=7.15.2",
 ]
 
 [tool.uv]
@@ -99,7 +99,7 @@ select = [
     "F",     # Pyflakes
     "E",     # Pycodestyle errors
     "W",     # Pycodestyle warnings
-    "I001",  # isort
+    "unsorted-imports",  # the isort rule
     "N",     # pep8-naming
     "A",     # flake8-builtins
     "CPY",   # flake8-copyright
@@ -115,20 +115,20 @@ select = [
     "TC",    # flake8-type-checking
 ]
 ignore = [
-    "TC001",  # Move application import into a type-checking block
-    "TC002",  # Move third-party import into a type-checking block
-    "TC003",  # Move standard library import into a type-checking block
-    "S101",   # Use of `assert` detected
-    "D105",   # Missing docstring in magic method
-    "D107",   # Missing docstring in `__init__`
-    "CPY001", # Missing copyright notice at top of file
+    "typing-only-first-party-import",
+    "typing-only-third-party-import",
+    "typing-only-standard-library-import",
+    "assert",
+    "undocumented-magic-method",
+    "undocumented-public-init",
+    "missing-copyright-notice",
 ]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["D", "S101", "S105", "S106"]
+"tests/*" = ["D", "assert", "hardcoded-password-string", "hardcoded-password-func-arg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -10,7 +10,7 @@ import logging
 import os
 import pathlib
 import re
-import subprocess  # noqa: S404 — subprocess is core to running poetry/uv lock
+import subprocess  # ruff: ignore[suspicious-subprocess-import] — subprocess is core to running poetry/uv lock
 from collections.abc import Sequence
 from typing import Any
 
@@ -421,7 +421,7 @@ def run_lock(
     # project's requires-python — even when we wrap with ``uv run --python``.
     env = {k: v for k, v in os.environ.items() if k != 'VIRTUAL_ENV'}
     try:
-        result = subprocess.run(  # noqa: S603 — cmd built from project config
+        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] — cmd built from project config
             list(cmd),
             cwd=repo,
             check=False,
