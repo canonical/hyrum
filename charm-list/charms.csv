@@ -349,9 +349,6 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/charm-mssql-infra,,auto-discover
 ,https://github.com/canonical/charm-nrpe,,auto-discover
 ,https://github.com/canonical/charm-openstack-service-checks,,auto-discover
-,https://github.com/canonical/charm-ovn-central,,auto-discover
-,https://github.com/canonical/charm-ovn-chassis,,auto-discover
-,https://github.com/canonical/charm-ovn-dedicated-chassis,,auto-discover
 ,https://github.com/canonical/charm-prometheus-blackbox-exporter,,auto-discover
 ,https://github.com/canonical/charm-prometheus-libvirt-exporter,,auto-discover
 ,https://github.com/canonical/charm-rabbitmq-k8s,,auto-discover
