@@ -60,18 +60,20 @@ class AutoRunner:
                 returncode=None,
                 duration_s=0.0,
             )
-        last: base.RunResult | None = None
+        last_result: base.RunResult | None = None
         launch_failed: base.RunResult | None = None
         for runner in applicable:
-            last = await runner.run(repo, target)
-            if last.status is base.RunStatus.RUNNER_ERROR:
-                launch_failed = launch_failed or last
-            elif last.status is not base.RunStatus.NO_TARGET:
-                return last
-        # Nothing actually ran. Report a launch failure ahead of ``no_target``:
-        # "make is not installed" is more actionable than "no such target".
-        assert last is not None
-        return launch_failed or last
+            last_result = await runner.run(repo, target)
+            if last_result.status is base.RunStatus.RUNNER_ERROR:
+                launch_failed = launch_failed or last_result
+            elif last_result.status is not base.RunStatus.NO_TARGET:
+                return last_result
+        # Nothing actually ran: every runner reported ``no_target`` or failed to
+        # launch, so ``last_result`` is whichever of those the final runner gave.
+        # Report the first launch failure ahead of it: "make is not installed" is
+        # more actionable than "no such target".
+        assert last_result is not None
+        return launch_failed or last_result
 
 
 def auto(

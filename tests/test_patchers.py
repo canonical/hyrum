@@ -611,7 +611,10 @@ def test_ops_source_git_inline_forms_emit_rev(ref: str):
 
 @pytest.mark.parametrize('ref', _REFS)
 def test_ops_source_pep508_still_interpolates_the_ref(ref: str):
-    # The PEP 508 form was always correct; guard against "fixing" it too.
+    # Unlike the uv and Poetry inline forms, this one was always correct: the
+    # ref goes straight into the URL, so branches, tags and SHAs all resolve.
+    # Pinned here so a later sweep doesn't apply the ``branch`` -> ``rev``
+    # change to a form that has no such key.
     ops = patchers.OpsSource(branch=ref)
     assert ops.pep508_dep('ops') == f'ops @ git+https://github.com/canonical/operator@{ref}'
 

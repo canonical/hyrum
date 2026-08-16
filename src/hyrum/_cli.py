@@ -469,12 +469,12 @@ def _available_backends(
     available: list[str] = []
     missing: list[str] = []
     for name in _RUNNER_BACKENDS[choice]:
-        program = _missing_program(commands[name])
-        if program is None:
+        missing_program = _missing_program(commands[name])
+        if missing_program is None:
             available.append(name)
         else:
-            missing.append(program)
-            logger.warning('%s is not installed; %s charms cannot be run', program, name)
+            missing.append(missing_program)
+            logger.warning('%s is not installed; %s charms cannot be run', missing_program, name)
     if not available:
         sys.exit(f'hyrum: error: no runner available: {", ".join(missing)} not found on PATH.')
     return tuple(available)
