@@ -316,6 +316,11 @@ def from_run_output(
 
     stdout = _runners_base.strip_ansi(stdout)
     stderr = _runners_base.strip_ansi(stderr)
+    if status == 'runner_error':
+        # The runner never started, so there is no output to mine — stderr
+        # carries the launch error the runner recorded for us.
+        detail = stderr.decode('utf-8', 'replace').strip()
+        return truncate(detail or 'runner could not be launched')
     combined = stdout + b'\n' + stderr
 
     counts_result = _pytest_counts(stdout)

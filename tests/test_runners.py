@@ -34,10 +34,13 @@ class FakeProc:
 class FakeSpawner:
     """Hand FakeProc instances to consecutive create_subprocess_exec calls.
 
+    A queued exception is raised instead of returned, which is how a missing
+    or unexecutable runner binary shows up.
+
     Records each invocation as (argv, cwd) for assertion.
     """
 
-    def __init__(self, procs: list[FakeProc]):
+    def __init__(self, procs: list[FakeProc | OSError]):
         self._procs = list(procs)
         self.calls: list[tuple[tuple[str, ...], str]] = []
 
@@ -45,20 +48,27 @@ class FakeSpawner:
         self.calls.append((tuple(args), str(kwargs.get('cwd'))))
         if not self._procs:
             raise AssertionError('FakeSpawner exhausted')
-        return self._procs.pop(0)
+        proc = self._procs.pop(0)
+        if isinstance(proc, OSError):
+            raise proc
+        return proc
 
 
 @pytest.fixture
 def spawner(monkeypatch):
-    procs: list[FakeProc] = []
+    procs: list[FakeProc | OSError] = []
     fake = FakeSpawner(procs)
     monkeypatch.setattr(asyncio, 'create_subprocess_exec', fake)
 
-    def _setup(*new_procs: FakeProc) -> FakeSpawner:
+    def _setup(*new_procs: FakeProc | OSError) -> FakeSpawner:
         fake._procs.extend(new_procs)
         return fake
 
     return _setup
+
+
+def _missing(program: str) -> FileNotFoundError:
+    return FileNotFoundError(2, 'No such file or directory', program)
 
 
 # ---- ToxRunner ---------------------------------------------------------------
@@ -129,6 +139,17 @@ async def test_tox_runner_timeout_kills_process(tmp_path: pathlib.Path, spawner)
     assert result.returncode is None
 
 
+async def test_tox_runner_missing_executable_is_a_runner_error(tmp_path: pathlib.Path, spawner):
+    # A missing tox is a host problem, not a charm problem: it must not be
+    # reported as `failed` (a test failure) or escape to the pool's catch-all
+    # (which records it as a patcher problem).
+    spawner(_missing('tox'))
+    result = await runners.ToxRunner().run(tmp_path, 'unit')
+    assert result.status is runners.RunStatus.RUNNER_ERROR
+    assert result.returncode is None
+    assert b"could not run 'tox'" in result.stderr
+
+
 async def test_tox_runner_passes_executable_through(tmp_path: pathlib.Path, spawner):
     s = spawner(FakeProc(returncode=0))
     await runners.ToxRunner(executable='uvx tox').run(tmp_path, 'lint')
@@ -182,6 +203,15 @@ async def test_make_runner_no_target_from_real_run_stderr(tmp_path: pathlib.Path
     )
     result = await runners.MakeRunner().run(tmp_path, 'mystery')
     assert result.status is runners.RunStatus.NO_TARGET
+
+
+async def test_make_runner_missing_executable_is_a_runner_error(tmp_path: pathlib.Path, spawner):
+    # The `-nq` probe swallows the launch failure so the real invocation can
+    # report it with its own status; both calls raise here.
+    spawner(_missing('make'), _missing('make'))
+    result = await runners.MakeRunner().run(tmp_path, 'unit')
+    assert result.status is runners.RunStatus.RUNNER_ERROR
+    assert b"could not run 'make'" in result.stderr
 
 
 async def test_make_runner_timeout(tmp_path: pathlib.Path, spawner):
@@ -238,6 +268,32 @@ async def test_auto_reports_no_target_when_no_runner_can_run(tmp_path: pathlib.P
     result = await runners.auto().run(tmp_path, 'unit')
     assert result.status is runners.RunStatus.NO_TARGET
     assert result.runner == 'auto'
+
+
+async def test_auto_falls_back_to_make_when_tox_cannot_launch(tmp_path: pathlib.Path, spawner):
+    (tmp_path / 'tox.ini').write_text('[tox]\n')
+    (tmp_path / 'Makefile').write_text('unit:\n\ttrue\n')
+    spawner(
+        _missing('tox'),  # tox attempt: not installed
+        FakeProc(returncode=0),  # make probe
+        FakeProc(returncode=0),  # make real
+    )
+    result = await runners.auto().run(tmp_path, 'unit')
+    assert result.runner == 'make'
+    assert result.status is runners.RunStatus.PASSED
+
+
+async def test_auto_prefers_launch_failure_over_no_target(tmp_path: pathlib.Path, spawner):
+    # "tox is not installed" is more actionable than make's "no such target".
+    (tmp_path / 'tox.ini').write_text('[tox]\n')
+    (tmp_path / 'Makefile').write_text('lint:\n\ttrue\n')
+    spawner(
+        _missing('tox'),
+        FakeProc(returncode=2, stderr=b"make: *** No rule to make target 'unit'.  Stop.\n"),
+    )
+    result = await runners.auto().run(tmp_path, 'unit')
+    assert result.status is runners.RunStatus.RUNNER_ERROR
+    assert b"could not run 'tox'" in result.stderr
 
 
 async def test_auto_prefer_order_respected(tmp_path: pathlib.Path, spawner):

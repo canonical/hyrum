@@ -33,9 +33,9 @@ class AutoRunner:
     """Picks a runner per repo and falls back if the target is not present.
 
     Order: prefer tox where ``tox.ini`` exists, otherwise make. If the
-    primary runner reports ``no_target``, the secondary is tried so that
-    a charm with both files but the target only on the other side still
-    runs.
+    primary runner reports ``no_target`` — or could not be launched at
+    all — the secondary is tried, so that a charm with both files but the
+    target only on the other side still runs.
     """
 
     name = 'auto'
@@ -60,13 +60,20 @@ class AutoRunner:
                 returncode=None,
                 duration_s=0.0,
             )
-        last: base.RunResult | None = None
+        last_result: base.RunResult | None = None
+        launch_failed: base.RunResult | None = None
         for runner in applicable:
-            last = await runner.run(repo, target)
-            if last.status is not base.RunStatus.NO_TARGET:
-                return last
-        assert last is not None
-        return last
+            last_result = await runner.run(repo, target)
+            if last_result.status is base.RunStatus.RUNNER_ERROR:
+                launch_failed = launch_failed or last_result
+            elif last_result.status is not base.RunStatus.NO_TARGET:
+                return last_result
+        # Nothing actually ran: every runner reported ``no_target`` or failed to
+        # launch, so ``last_result`` is whichever of those the final runner gave.
+        # Report the first launch failure ahead of it: "make is not installed" is
+        # more actionable than "no such target".
+        assert last_result is not None
+        return launch_failed or last_result
 
 
 def auto(

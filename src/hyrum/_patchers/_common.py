@@ -224,6 +224,14 @@ def detect_pyproject_flavour(parsed: dict[str, Any], uv_lock_present: bool) -> s
     return 'unknown'
 
 
+# uv and Poetry both restrict their ``branch`` key to refs under
+# ``refs/heads/``, so a tag or commit SHA passed there fails to resolve
+# ("couldn't find remote ref refs/heads/<sha>"). Their ``rev`` key accepts
+# branches, tags and SHAs alike, so hyrum always emits ``rev`` and never has
+# to guess which kind of ref the user typed.
+GIT_REF_KEY = 'rev'
+
+
 def _extras_str(extras: Sequence[str]) -> str:
     return f'[{",".join(sorted(extras))}]' if extras else ''
 
@@ -259,7 +267,7 @@ def patch_git_dep(
 
     if flavour == 'uv':
         subdir_part = f', subdirectory = "{subdir}"' if subdir else ''
-        branch_part = f', branch = "{branch}"' if branch else ''
+        branch_part = f', {GIT_REF_KEY} = "{branch}"' if branch else ''
         source_line = f'{pkg_name} = {{ git = "{url}"{branch_part}{subdir_part} }}'
         return _inject_uv_source(original, source_line)
 
@@ -268,7 +276,7 @@ def patch_git_dep(
             f', extras = [{", ".join(repr(e) for e in sorted(extras))}]' if extras else ''
         )
         subdir_part = f', subdirectory = "{subdir}"' if subdir else ''
-        branch_part = f', branch = "{branch}"' if branch else ''
+        branch_part = f', {GIT_REF_KEY} = "{branch}"' if branch else ''
         pkg_toml = f'\n{pkg_name} = {{git = "{url}"{branch_part}{subdir_part}{extras_list}}}\n'
         content = strip_dep_declaration(original, pkg_name)
         return _inject_poetry(content, pkg_toml)
