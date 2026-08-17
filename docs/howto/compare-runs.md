@@ -67,7 +67,7 @@ NEW FAILURES
   ...
 ```
 
-The charms under `NEW FAILURES` are the ones to investigate: they passed on their pinned dependencies and fail with the patch applied. `NEW ERRORS` lists charms that newly ended as `patcher_error` or `timeout`, which usually points at an infrastructure problem rather than a regression. Charms that fail in both runs do not appear at all.
+The charms under `NEW FAILURES` are the ones to investigate: they passed on their pinned dependencies and fail with the patch applied. `NEW ERRORS` lists charms that newly ended as `patcher_error`, `runner_error`, or `timeout`, which usually points at an infrastructure problem rather than a regression. Charms that fail in both runs do not appear at all.
 
 Charms are matched by their path relative to the charms directory, so a baseline saved on one machine can be compared against a run from another.
 

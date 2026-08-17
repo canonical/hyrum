@@ -16,6 +16,7 @@ Each charm produces exactly one outcome. The possible statuses are:
 | `failed`        | The runner exited non-zero. |
 | `no_target`     | The requested tox environment or make target does not exist in this charm. Not counted as a failure. |
 | `timeout`       | The runner was killed after `--timeout` seconds. |
+| `runner_error`  | The runner itself could not be launched — for example, `make` is not installed. This is a host problem, not a charm result. |
 | `patcher_error` | The dependency swap could not be applied. This is distinct from a runner failure: it points to an infrastructure problem, not a charm test failure. |
 | `skipped`       | Excluded before the run began (by `--repo`, `--framework`, `[ignore]` in `hyrum.toml`, no Python source, a legacy reactive/hooks layout, or no `tox.ini`/`Makefile`), or skipped by a patcher that had nothing to do. |
 
@@ -42,6 +43,7 @@ passed                 42   70%
 failed                  5    8%
 no_target               3    5%
 timeout                 1    2%
+runner_error            0    0%
 patcher_error           2    3%
 skipped                 7   12%
   dep_not_declared      4    7%
@@ -57,12 +59,15 @@ Use `--no-headers` to suppress the header row.
 
 ## Verbose output
 
-With `--verbose`, hyrum appends an offender list after the summary table, grouping charms by status:
+With `--verbose`, hyrum appends an offender list after the summary table, grouping charms by status (`failed`, `runner_error`, `patcher_error`, then `timeout`):
 
 ```text
 failed:
   charm-apt-mirror
   hardware-observer-operator — could not parse pyproject.toml
+
+runner_error:
+  charm-nfs-client — make: [Errno 2] No such file or directory
 
 patcher_error:
   opensearch-operator — poetry lock timed out after 600s
@@ -200,7 +205,7 @@ Three categories are reported:
 : Charms that failed in the baseline and passed in the current run.
 
 `New errors`
-: Charms that ended as `patcher_error` or `timeout` in the current run without having done so in the baseline.
+: Charms that ended as `patcher_error`, `runner_error`, or `timeout` in the current run without having done so in the baseline.
 
 If none of the three has any entries, hyrum prints `No changes between runs.` instead.
 
@@ -228,7 +233,7 @@ A cell reads `_absent_` when the charm is missing from that run, and `same` when
 | Code | Condition |
 |------|-----------|
 | `0`  | All non-skipped charms passed (or `--no-fail` was set). |
-| `1`  | At least one charm resulted in `failed`, `timeout`, or `patcher_error`, or the results file could not be written. |
+| `1`  | At least one charm resulted in `failed`, `timeout`, `runner_error`, or `patcher_error`, or the results file could not be written. |
 | `2`  | The save target is unusable. Checked before the run starts, so a long run is not lost at the end. |
 
 `no_target` and `skipped` outcomes do not affect the exit code.
