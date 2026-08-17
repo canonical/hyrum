@@ -9,7 +9,7 @@ myst:
 ```{warning}
 Hyrum executes third-party code on your machine. Unit tests — and, in principle, even lint hooks — run with your user's privileges: anything you can do, a test can do. Charm test suites may not mock every side effect, so a test may write or delete files anywhere your user can reach, install packages, modify `crontab`, download arbitrary content, or reach out to the network.
 
-**Always install and run hyrum inside an isolated VM** (for example, [Multipass](https://multipass.run/) or an LXD virtual machine): create a throwaway instance, install hyrum inside it, and dispose of the instance when you are done. The instructions below assume you are already inside such a VM.
+**Always install and run hyrum inside an isolated VM** (for example, [Multipass](https://canonical.com/multipass) or an LXD virtual machine): create a throwaway instance, install hyrum inside it, and dispose of the instance when you are done. The instructions below assume you are already inside such a VM.
 ```
 
 ## Install from PyPI
