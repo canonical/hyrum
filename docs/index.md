@@ -17,7 +17,7 @@ The primary use case is pointing every charm's `ops` dependency at a development
 ```{warning}
 Hyrum executes third-party code on your machine. Unit tests — and, in principle, even lint hooks — run with your user's privileges: anything you can do, a test can do. Charm test suites may not mock every side effect, so a test may write or delete files anywhere your user can reach, install packages, modify `crontab`, download arbitrary content, or reach out to the network.
 
-**Always run hyrum in an isolated VM** (for example, [Multipass](https://multipass.run/) or an LXD virtual machine): create a throwaway instance, install hyrum inside it, and dispose of the instance when you are done. Do not run checks on your workstation, laptop, or any host holding data you care about.
+**Always run hyrum in an isolated VM** (for example, [Multipass](https://canonical.com/multipass) or an LXD virtual machine): create a throwaway instance, install hyrum inside it, and dispose of the instance when you are done. Do not run checks on your workstation, laptop, or any host holding data you care about.
 ```
 
 ## Install
@@ -75,4 +75,4 @@ Hyrum is an open source project ([Apache 2.0 license](https://www.apache.org/lic
 - [Contribute](https://github.com/canonical/hyrum/blob/main/CONTRIBUTING.md)
 - [Charm Development on Matrix](https://matrix.to/#/#charmhub-charmdev:ubuntu.com)
 - [Discourse forum](https://discourse.charmhub.io/)
-- [Code of conduct](https://ubuntu.com/community/ethos/code-of-conduct)
+- [Code of conduct](https://ubuntu.com/community/docs/ethos/code-of-conduct)
