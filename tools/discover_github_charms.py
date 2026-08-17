@@ -313,7 +313,7 @@ class GitHubClient:
             return None
 
     def _get(self, url: str) -> tuple[dict[str, typing.Any], dict[str, str]]:
-        request = urllib.request.Request(  # noqa: S310
+        request = urllib.request.Request(  # ruff: ignore[suspicious-url-open-usage]
             url,
             headers={
                 'Accept': 'application/vnd.github+json',
@@ -321,7 +321,7 @@ class GitHubClient:
                 'X-GitHub-Api-Version': '2022-11-28',
             },
         )
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:  # ruff: ignore[suspicious-url-open-usage]
             return json.loads(response.read().decode()), dict(response.headers)
 
     @staticmethod

@@ -10,7 +10,7 @@ import logging
 import os
 import pathlib
 import re
-import subprocess  # noqa: S404 — subprocess is core to running poetry/uv lock
+import subprocess  # ruff: ignore[suspicious-subprocess-import] — subprocess is core to running poetry/uv lock
 from collections.abc import Sequence
 from typing import Any
 
@@ -224,6 +224,14 @@ def detect_pyproject_flavour(parsed: dict[str, Any], uv_lock_present: bool) -> s
     return 'unknown'
 
 
+# uv and Poetry both restrict their ``branch`` key to refs under
+# ``refs/heads/``, so a tag or commit SHA passed there fails to resolve
+# ("couldn't find remote ref refs/heads/<sha>"). Their ``rev`` key accepts
+# branches, tags and SHAs alike, so hyrum always emits ``rev`` and never has
+# to guess which kind of ref the user typed.
+GIT_REF_KEY = 'rev'
+
+
 def _extras_str(extras: Sequence[str]) -> str:
     return f'[{",".join(sorted(extras))}]' if extras else ''
 
@@ -259,7 +267,7 @@ def patch_git_dep(
 
     if flavour == 'uv':
         subdir_part = f', subdirectory = "{subdir}"' if subdir else ''
-        branch_part = f', branch = "{branch}"' if branch else ''
+        branch_part = f', {GIT_REF_KEY} = "{branch}"' if branch else ''
         source_line = f'{pkg_name} = {{ git = "{url}"{branch_part}{subdir_part} }}'
         return _inject_uv_source(original, source_line)
 
@@ -268,7 +276,7 @@ def patch_git_dep(
             f', extras = [{", ".join(repr(e) for e in sorted(extras))}]' if extras else ''
         )
         subdir_part = f', subdirectory = "{subdir}"' if subdir else ''
-        branch_part = f', branch = "{branch}"' if branch else ''
+        branch_part = f', {GIT_REF_KEY} = "{branch}"' if branch else ''
         pkg_toml = f'\n{pkg_name} = {{git = "{url}"{branch_part}{subdir_part}{extras_list}}}\n'
         content = strip_dep_declaration(original, pkg_name)
         return _inject_poetry(content, pkg_toml)
@@ -413,7 +421,7 @@ def run_lock(
     # project's requires-python — even when we wrap with ``uv run --python``.
     env = {k: v for k, v in os.environ.items() if k != 'VIRTUAL_ENV'}
     try:
-        result = subprocess.run(  # noqa: S603 — cmd built from project config
+        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] — cmd built from project config
             list(cmd),
             cwd=repo,
             check=False,

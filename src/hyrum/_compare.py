@@ -10,7 +10,10 @@ from typing import TextIO
 from hyrum import _ansi
 from hyrum import _pool as pool
 
-_ERROR_STATUSES: frozenset[str] = frozenset({'patcher_error', 'timeout'})
+# ``runner_error`` and ``patcher_error`` are host problems rather than charm
+# results, so they count as errors but are not "ran": leaving them out of the
+# denominator keeps a run that couldn't launch tox from inflating the pass rate.
+_ERROR_STATUSES: frozenset[str] = frozenset({'patcher_error', 'runner_error', 'timeout'})
 _RAN_STATUSES: frozenset[str] = frozenset({'passed', 'failed', 'timeout'})
 
 
@@ -121,7 +124,7 @@ def render(result: CompareResult, *, file: TextIO | None = None) -> None:
         print(f'{green}No changes between runs.{reset}', file=out)
 
 
-_NON_PASSING = frozenset({'failed', 'timeout', 'patcher_error'})
+_NON_PASSING = frozenset({'failed', 'timeout', 'patcher_error', 'runner_error'})
 
 
 def _short(repo: str) -> str:

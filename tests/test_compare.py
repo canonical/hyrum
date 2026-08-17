@@ -39,6 +39,18 @@ def test_diff_new_error_from_clean_baseline():
     assert result.new_failures == []
 
 
+def test_diff_runner_error_counts_as_a_new_error():
+    # A host problem — make not installed, a runner that couldn't launch — is
+    # an error, not a charm that started failing.
+    base = [_o('alpha', 'passed')]
+    cur = [_o('alpha', 'runner_error')]
+    result = _compare.diff(base, cur)
+    assert result.new_errors == ['/cache/alpha']
+    assert result.new_failures == []
+    # It never ran, so it drops out of the pass-rate denominator entirely.
+    assert result.current_ran == 0
+
+
 def test_diff_persistent_error_not_re_flagged():
     base = [_o('alpha', 'timeout')]
     cur = [_o('alpha', 'timeout')]
