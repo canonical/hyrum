@@ -17,6 +17,7 @@ passed                 42   70%
 failed                  5    8%
 no_target               3    5%
 timeout                 1    2%
+runner_error            0    0%
 patcher_error           2    3%
 skipped                 7   12%
   dep_not_declared      4    7%
@@ -41,6 +42,9 @@ Indented rows under `skipped` show why a patcher skipped a charm, when it was a 
 
 `timeout`
 : The runner was killed after `--timeout` seconds (default: 1800). The charm may have a very slow test suite, or it may be hanging. Investigate the log file if you saved one with `--log-dir`.
+
+`runner_error`
+: The runner itself could not be launched — for example, `make` is not installed on the host. This is a host problem, not a charm result, so it is reported separately from `failed`. `--preflight` (on by default) catches a missing runner before the run starts, so this status usually means the executable disappeared mid-run or is not executable.
 
 `patcher_error`
 : The dependency swap could not be applied. For example, the charm's `pyproject.toml` could not be parsed, or `poetry lock` failed in a way hyrum could not recover from. This is an infrastructure problem, not a charm failure. Use `--verbose` to see the error message.

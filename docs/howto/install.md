@@ -66,7 +66,7 @@ sudo apt-get install -y \
 uv tool install poetry
 ```
 
-A handful of charms shell out to other tools (for example `yq`, `go`, `skopeo`, a JDK, libjpeg) from their tox env or Makefile. They are not installed up-front since they only affect a few charms; they surface as `failed` with a `command not found` line in the per-charm log. Install the missing tool to unmask the underlying charm result.
+A handful of charms shell out to other tools (for example `yq`, `go`, `skopeo`, a JDK, libjpeg) from their tox env or Makefile. They are not installed up-front since they only affect a few charms; they surface as `failed` with a `command not found` line in the per-charm log. Install the missing tool to unmask the underlying charm result. A missing `tox` or `make` itself is caught up front by `--preflight` (on by default) rather than once per charm.
 
 ### Python-version-specific build issues
 

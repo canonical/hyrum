@@ -66,9 +66,13 @@ class Runner(Protocol):
 
 - A pre-pool skip (filtered out before patching): `status='skipped'`.
 - A patcher failure: `status='patcher_error'` with the error message in `outcome.error`.
-- A runner result (pass, fail, no-target, timeout): status from `RunStatus`.
+- A runner result (pass, fail, no-target, timeout, or a runner that could not be launched): status from `RunStatus`.
 
-The distinction between `patcher_error` and `failed` is important: a patcher failure means hyrum could not apply the dependency swap, which is an infrastructure problem. A `failed` outcome means the charm's own tests reported failure. Mixing these two would make the "N charms broke" count misleading.
+The distinction between the infrastructure statuses and `failed` is important: `patcher_error` means hyrum could not apply the dependency swap, and `runner_error` means tox or make itself could not be launched. A `failed` outcome means the charm's own tests reported failure. Mixing these together would make the "N charms broke" count misleading.
+
+Attribution only works if each layer reports its own faults, so the runners catch `OSError` on launch and return a `runner_error` result rather than letting the exception escape into the pool, where it would have been recorded against the patcher. The pool's catch-all therefore blames neither layer: it says only that the error was unexpected.
+
+The same reasoning motivates the preflight that runs before the pool starts. An unresolvable `--patch` ref patches cleanly and only breaks when the runner installs the dependency, so every charm would be recorded as `failed` — a plausible-looking pile of regressions caused by one typo. Checking each distinct git ref with `git ls-remote`, and each runner executable with a PATH lookup, turns that into one error message before any charm runs.
 
 Each non-passing outcome also carries a one-line `summary`, extracted heuristically from the runner's output: a pytest tally, an exception class, a missing build tool, a resolver error. It exists so that a comparison table is readable without opening the log files — the shape of a failure is usually enough to tell a genuine regression from host noise.
 

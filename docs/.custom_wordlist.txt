@@ -28,6 +28,8 @@ patcher
 patchers
 Patchers
 pre-commit
+Preflight
+preflight
 pyproject
 PyPI
 pytest

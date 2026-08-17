@@ -76,6 +76,7 @@ passed             1  100%
 failed             0    0%
 no_target          0    0%
 timeout            0    0%
+runner_error       0    0%
 patcher_error      0    0%
 skipped            0    0%
 1 of 1 runs passed (100%); 0 not run.

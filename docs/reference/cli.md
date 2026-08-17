@@ -111,6 +111,12 @@ hyrum check [OPTIONS] TARGET
 : When enabled, hyrum wraps `poetry lock` with `uv run --python X.Y` so that the lock command runs under an interpreter that satisfies the charm's declared `requires-python`. Requires `uv` on PATH.
 : Default: `--auto-python`
 
+### Preflight
+
+`--preflight / --no-preflight`
+: Before any charm runs, check that each `--patch` git ref exists in its remote (one `git ls-remote` per distinct URL and ref) and that the runner executables are installed, so a typo or a missing tool fails once instead of once per charm. A ref that does not exist in the remote is fatal; a full 40-character commit SHA is accepted even though `git ls-remote` cannot see it, while an abbreviated SHA is rejected because it cannot be fetched. Network and authentication failures warn and let the run continue, since they say nothing about whether the ref exists. Under `--runner auto`, a backend whose executable is missing is dropped with a warning, and only an empty set of backends is fatal. The ref check needs network access.
+: Default: `--preflight`
+
 ### Host environment
 
 `--host-env-defaults / --no-host-env-defaults`
@@ -224,7 +230,7 @@ Each repository is cloned to `<dest>/<owner>/<name>`, where `<owner>` and `<name
 | Code | Meaning |
 |------|---------|
 | `0`  | All non-skipped charms passed (or `--no-fail` was set, or `hyrum get-charms` succeeded, or `hyrum compare` found no regressions) |
-| `1`  | At least one charm resulted in `failed`, `timeout`, or `patcher_error`; or the results file could not be written; or `hyrum compare` could not read a results file, or found a regression under `--fail-on-regression` |
+| `1`  | At least one charm resulted in `failed`, `timeout`, `runner_error`, or `patcher_error`; or the results file could not be written; or `hyrum compare` could not read a results file, or found a regression under `--fail-on-regression` |
 | `2`  | The save target given to `hyrum check` is unusable (a missing or unwritable directory, or a path that is a directory when a file is expected). Checked before the run starts. |
 
 ## Environment variables
