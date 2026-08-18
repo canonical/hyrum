@@ -5,6 +5,7 @@ Sections marked [BEYOND SPHINX STACK] go beyond what the stack provides.
 """
 
 import datetime
+import os
 
 #######################
 # Project information #
@@ -19,8 +20,10 @@ html_title = project + ' documentation'
 
 # [BEYOND SPHINX STACK] These docs are published to GitHub Pages rather than
 # Read the Docs behind the canonical.com proxy, so there is no version slug and
-# no Read the Docs flyout to rewrite.
-html_baseurl = 'https://canonical.github.io/hyrum/'
+# no Read the Docs flyout to rewrite. A fork building a preview sets
+# HYRUM_DOCS_OWNER so that canonical URLs point at the preview's own site.
+_docs_owner = os.environ.get('HYRUM_DOCS_OWNER', 'canonical')
+html_baseurl = f'https://{_docs_owner}.github.io/hyrum/'
 
 # Documentation website URL.
 ogp_site_url = html_baseurl
