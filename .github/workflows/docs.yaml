@@ -1,0 +1,99 @@
+name: Docs
+
+on:
+  push:
+    # 'docs/**' branches build and deploy previews on forks; see the deploy job.
+    branches: [main, 'docs/**']
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build documentation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0  # needed for sphinx-last-updated-by-git
+          persist-credentials: false
+
+      - name: Build HTML
+        env:
+          # Forks serve the site from their own github.io subdomain.
+          HYRUM_DOCS_OWNER: ${{ github.repository_owner }}
+        run: make -C docs html
+
+      - name: Upload pages artifact
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.repository_owner != 'canonical')
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
+        with:
+          path: docs/_build
+
+  checks:
+    name: Prose checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # Run every check even if an earlier one fails, so a single run reports
+      # all the prose problems rather than only the first.
+      - name: Check links
+        if: success() || failure()
+        run: make -C docs linkcheck
+
+      - name: Check spelling
+        if: success() || failure()
+        run: make -C docs spelling
+
+      - name: Check style guide compliance
+        if: success() || failure()
+        run: make -C docs vale
+
+      - name: Check inclusive language
+        if: success() || failure()
+        run: make -C docs woke
+
+  deploy:
+    # GitHub Pages is not enabled for the canonical organisation, so the site is
+    # published from a fork instead: any push to a 'docs/**' branch on a fork
+    # replaces the preview, which reviewers can read alongside the pull request.
+    # Once Pages is enabled upstream, drop the repository_owner conditions here
+    # and in the build job so that main publishes the real site again.
+    name: Deploy to GitHub Pages
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.repository_owner != 'canonical')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write       # deploy the built site to GitHub Pages
+      id-token: write    # OIDC token for actions/deploy-pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # Turns Pages on for the fork the first time this runs, so publishing a
+      # preview needs no manual repository setup.
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b  # v5.0.0
+        with:
+          enablement: true
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128  # v5.0.0

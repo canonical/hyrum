@@ -27,5 +27,8 @@ htmlcov/
 .hyrum-logs/
 results-*.json
 
+# Docs build output is ignored by docs/.gitignore, which comes from the
+# Canonical Sphinx stack.
+
 # uv
 .python-version

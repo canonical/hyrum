@@ -1,0 +1,67 @@
+---
+myst:
+  html_meta:
+    description: How hyrum relates to ops, Charmcraft, tox, make, and the wider Juju charm tooling ecosystem.
+---
+
+# Relationship to charm tooling
+
+This page describes how hyrum relates to the other tools you'll meet around it.
+
+## The operator library (ops)
+
+[`ops`](https://github.com/canonical/operator) is the Python framework for writing Juju charms. It provides the charm lifecycle, event dispatch, storage, relations, and the testing harness. Hyrum's primary purpose is to test proposed changes to `ops` against a fleet of charms before the changes are released.
+
+The ops-source patcher (the component that rewrites each charm's dependency declarations) handles the three packaging formats in common use among charms: pip `requirements.txt`, Poetry (`pyproject.toml` with `[tool.poetry]`), and uv (`pyproject.toml` with `[tool.uv]`), including PEP 621 `[project.optional-dependencies]` and PEP 735 `[dependency-groups]`. It also handles the `ops[testing]` and `ops[tracing]` extras, which pull companion packages from subdirectories of the operator monorepo.
+
+A generic dependency patcher applies the same rewriting logic to any other package via `--patch`, so the same flow can swap a transitive library to a candidate release or a fork without rewriting the runner.
+
+## Charm libraries
+
+Charm libraries are the reusable pieces of charm code that sit between `ops` and an individual charm: interface implementations, workload helpers, and similar. They exist in two forms, and hyrum can swap either.
+
+Traditionally a charm library is *vendored*: charmcraft fetches a single-file copy into `lib/charms/<author>/v<n>/<lib>.py`, and the charm imports it as `charms.<author>.v<n>.<lib>`. Every consumer holds its own copy, at whatever version it last fetched, which is precisely the situation in which a behaviour change is hard to assess.
+
+The newer form is a published package from the [charmlibs](https://github.com/canonical/charmlibs) monorepo, installed from PyPI as `charmlibs-<name>` and imported as `charmlibs.<name>`. General libraries live in top-level directories of the monorepo; interface libraries live under `interfaces/`.
+
+Hyrum has a patcher for each. The charmlibs patcher repoints an existing `charmlibs-*` dependency at a branch of the monorepo, answering the same question for a charm library that the ops-source patcher answers for `ops`. The vendored-library patcher goes further: it deletes the vendored file, adds the package, and rewrites the charm's imports, which answers a migration question rather than a compatibility one — would this charm still work if it stopped vendoring and depended on the published library instead?
+
+Because most charms use neither any given charm library nor its vendored ancestor, these runs skip the bulk of the fleet. That is expected, and hyrum reports it as `skipped` rather than as an error.
+
+## Testing frameworks
+
+### Scenario (ops[testing])
+
+Scenario is a unit-testing framework for Juju charms, now distributed as the `testing` extra of `ops`. It provides `Context`, `State`, and related constructs for writing tests that simulate charm events without a live model.
+
+Hyrum can filter to Scenario-using charms with `--framework scenario`. Framework detection checks dependency declarations (`ops[testing]`, `ops-scenario`) and falls back to AST analysis of test files if no dependency match is found.
+
+### Jubilant
+
+[Jubilant](https://github.com/canonical/jubilant) is an integration-testing library that wraps the Juju CLI. Hyrum can filter to Jubilant-using charms with `--framework jubilant`.
+
+However, hyrum does not run integration tests. Jubilant is listed as a detectable framework so that a future version can use the information, but integration tests are out of scope today. Only charms that have a unit or lint target are useful as subjects.
+
+## Runner backends
+
+Charm repositories use two common build systems:
+
+- **tox** (`tox.ini` present): `tox -e <env>` runs the environment. Hyrum auto-detects this and uses it by default.
+- **make** (`Makefile` present): `make <target>` runs the target. GNU make's missing-target behaviour is ambiguous (non-zero exit vs. warning), so hyrum probes with `make -nq` before running.
+
+When both `tox.ini` and `Makefile` are present, hyrum prefers tox. When the requested target is missing, it falls back to the other backend.
+
+## Pebble
+
+[Pebble](https://github.com/canonical/pebble) is the service manager embedded in every Kubernetes charm container. It has its own set of charm consumers and its own evolution challenges. The patcher abstraction is shaped so that a pebble-library patcher can be added later without changing the runner or pool layers.
+
+## Scope boundaries
+
+Hyrum is a *lint and unit* test runner. It does not:
+
+- Clone or curate the charm collection (that is a separate concern).
+- Run integration tests (those need a live Juju controller and model).
+- Act as a general-purpose CI orchestrator.
+- Manage or publish charm releases.
+
+The tool exists to answer one question: does this proposed upstream change break any charm's lint or unit tests?
