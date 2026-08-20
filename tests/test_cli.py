@@ -861,6 +861,24 @@ def test_cli_compare_disjoint_runs_warn_and_fail_the_gate(
     assert 'no charms in common' in captured.err
 
 
+def test_cli_compare_disjoint_runs_without_the_gate_still_warn_but_exit_zero(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    base = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
+    cur = [pool.Outcome(repo=pathlib.Path('canonical/bar'), status='passed')]
+    base_path = tmp_path / 'a.json'
+    cur_path = tmp_path / 'b.json'
+    results.save(base, base_path)
+    results.save(cur, cur_path)
+
+    rc = _run(['compare', str(base_path), str(cur_path)])
+    captured = capsys.readouterr()
+    # Without the gate, compare only reports: the warning goes to stderr, but
+    # exiting non-zero would break callers using it as a plain diff.
+    assert rc == 0
+    assert 'no charms in common' in captured.err
+
+
 def test_cli_compare_new_charm_does_not_trip_the_gate(tmp_path: pathlib.Path):
     base = [pool.Outcome(repo=pathlib.Path('canonical/foo'), status='passed')]
     cur = [

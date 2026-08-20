@@ -104,13 +104,16 @@ def diff(baseline: list[pool.Outcome], current: list[pool.Outcome]) -> CompareRe
     base_passed = sum(1 for o in baseline if o.status == 'passed')
     cur_passed = sum(1 for o in current if o.status == 'passed')
 
+    base_keys = set(base_by_key)
+    cur_keys = set(cur_by_key)
+
     return CompareResult(
         new_failures=new_failures,
         resolved=resolved,
         new_errors=new_errors,
-        only_in_baseline=sorted(set(base_by_key) - set(cur_by_key)),
-        only_in_current=sorted(set(cur_by_key) - set(base_by_key)),
-        common=len(set(base_by_key) & set(cur_by_key)),
+        only_in_baseline=sorted(base_keys - cur_keys),
+        only_in_current=sorted(cur_keys - base_keys),
+        common=len(base_keys & cur_keys),
         baseline_pass_rate=base_passed / base_ran if base_ran else None,
         current_pass_rate=cur_passed / cur_ran if cur_ran else None,
         baseline_passed=base_passed,
@@ -144,7 +147,7 @@ def _drift_sentence(result: CompareResult) -> str:
     return (
         f'{_plural(len(result.only_in_baseline), "charm")} only in baseline, '
         f'{len(result.only_in_current)} only in current — these cannot regress '
-        f'or resolve, but they do affect each pass rate.'
+        f"or resolve, but each one counts towards its own run's pass rate."
     )
 
 
@@ -168,7 +171,8 @@ def render(result: CompareResult, *, file: TextIO | None = None) -> None:
         delta_str = 'n/a'
     else:
         # Percentage *points*, to one decimal: a 0.4-point regression must not
-        # round away to '+0%', and a bare '%' would read as a relative change.
+        # round away to '+0%', and suffixing '%' instead of 'pts' would be
+        # ambiguous — 50% -> 60% is +10 points but +20% relative.
         delta_pts = (result.current_pass_rate - result.baseline_pass_rate) * 100
         sign = '+' if delta_pts >= 0 else ''
         delta_str = f'{sign}{delta_pts:.1f} pts'
