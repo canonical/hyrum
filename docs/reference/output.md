@@ -34,7 +34,7 @@ A patcher skips a charm, rather than reporting `patcher_error`, when the charm s
 
 ## Summary table
 
-After all charms have been processed, hyrum prints a plain-text tally. Columns are separated by two spaces; ANSI colour is applied to status names when stdout is a tty and `NO_COLOR` is unset.
+After all charms have been processed, hyrum prints a plain-text tally. Columns are separated by two spaces; ANSI colour is applied to status names when stdout is a tty and `NO_COLOR` is unset or empty.
 
 ```text
 hyrum: unit
