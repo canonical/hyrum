@@ -48,9 +48,16 @@ above.
 
 ## Architecture
 
-- Entry point: `hyrum.cli:main` — a Click group with two subcommands:
-  `check` (the core bulk-runner) and `get-charms` (clones/pulls every
-  repository listed in `charm-list/charms.csv` into the cache folder).
+- Entry point: `hyrum._cli:main` — an `argparse` parser with three
+  subcommands: `check` (the core bulk-runner), `get-charms` (clones/pulls
+  every repository listed in `charm-list/charms.csv` into the cache
+  folder), and `compare` (diffs two saved runs).
+- `results` / `compare` — run persistence and run-to-run diff. `check`
+  saves outcomes as JSON (`--save` / `--auto-save`, rolling by target);
+  `compare` diffs two such files as text, markdown, or JSON. Charms are
+  keyed by `owner/name`, not cache path, so runs from different hosts
+  compare. Exit codes: 0 clean, 1 regression (with
+  `--fail-on-regression`), 2 bad input or no charms in common.
 - `enumerate` / `filters` / `frameworks` / `config` — repo selection. The
   `hyrum check` subcommand does not curate the charm collection; it
   expects a pre-populated cache folder. `hyrum get-charms` populates it.

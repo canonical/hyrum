@@ -7,6 +7,7 @@ import asyncio
 import csv
 import dataclasses
 import itertools
+import json
 import logging
 import os
 import pathlib
@@ -1052,18 +1053,22 @@ def _add_compare_subparser(
         action=argparse.BooleanOptionalAction,
         default=False,
         help=(
-            'Exit non-zero if there are any new failures or new errors versus '
-            'the baseline. [default: disabled]'
+            'Exit 1 on any regression: a charm that passed in the baseline now '
+            'fails, or hits a new timeout or patcher error. Charms present in '
+            'only one of the runs never count as regressions; if the two runs '
+            'share no charms at all the gate cannot be evaluated and hyrum '
+            'exits 2. [default: disabled]'
         ),
     )
     parser.add_argument(
         '--format',
         dest='output_format',
-        choices=['text', 'markdown'],
+        choices=['text', 'markdown', 'json'],
         default='text',
         help=(
             'text: the colourised status-level summary. markdown: a table with one row '
-            'per non-passing charm and a per-run failure summary. [default: text]'
+            'per non-passing charm and a per-run failure summary. json: the same diff '
+            "as a machine-readable object, with both runs' metadata. [default: text]"
         ),
     )
     parser.set_defaults(func=_run_compare)
@@ -1287,7 +1292,9 @@ def _run_compare(args: argparse.Namespace) -> int:
         current = _results.load(args.current)
     except ValueError as exc:
         print(f'hyrum: error: {exc}', file=sys.stderr)
-        return 1
+        # 2 = bad input, matching argparse, and distinct from 1 = the
+        # --fail-on-regression gate tripping on a comparison that did run.
+        return 2
 
     if (
         baseline.meta.target
@@ -1301,7 +1308,31 @@ def _run_compare(args: argparse.Namespace) -> int:
         )
 
     result = _compare.diff(baseline.outcomes, current.outcomes)
-    if args.output_format == 'markdown':
+    if result.disjoint:
+        print(
+            'hyrum: warning: the two runs have no charms in common — were they '
+            'saved from different charm collections, or by a hyrum version that '
+            'stored absolute paths?',
+            file=sys.stderr,
+        )
+
+    if args.output_format == 'json':
+        payload = {
+            # Bump when the shape below changes incompatibly, so scripts
+            # consuming this can tell which contract they are looking at.
+            'version': _compare.JSON_FORMAT_VERSION,
+            'baseline': {
+                'path': str(args.baseline),
+                'meta': dataclasses.asdict(baseline.meta),
+            },
+            'current': {
+                'path': str(args.current),
+                'meta': dataclasses.asdict(current.meta),
+            },
+            'diff': result.as_dict(),
+        }
+        print(json.dumps(payload, indent=2))
+    elif args.output_format == 'markdown':
         target = current.meta.target or baseline.meta.target
         title = f'hyrum run comparison ({target})' if target else 'hyrum run comparison'
         _compare.render_markdown(baseline.outcomes, current.outcomes, result, title=title)
@@ -1311,8 +1342,13 @@ def _run_compare(args: argparse.Namespace) -> int:
         print()
         _compare.render(result)
 
-    if args.fail_on_regression and (result.new_failures or result.new_errors):
-        return 1
+    if args.fail_on_regression:
+        if result.disjoint:
+            # The gate cannot be evaluated over runs with no charms in common;
+            # exiting 0 would green-light a meaningless comparison.
+            return 2
+        if result.new_failures or result.new_errors:
+            return 1
     return 0
 
 
