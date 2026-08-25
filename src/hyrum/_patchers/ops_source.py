@@ -32,6 +32,7 @@ from collections.abc import Generator, Sequence
 from typing import Any
 
 import packaging.requirements
+import packaging.specifiers
 
 from hyrum._patchers import _common, base
 from hyrum._patchers._common import (
@@ -42,6 +43,14 @@ from hyrum._patchers._common import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+_SPECIFIER_OPERATOR_RE = re.compile(r'\s*(===|==|!=|~=|<=|>=|<|>|=)')
+"""Leading PEP 440 comparison operator, if the version pin carries its own.
+
+A lone ``=`` is not a PEP 440 operator, but matching it means ``=2.17.0``
+is rejected as the typo it is rather than silently becoming ``===2.17.0``.
+"""
 
 
 # Optional extras on the ``ops`` package map to companion packages that
@@ -68,9 +77,10 @@ class OpsSource:
     - **path**: ``path`` — local operator checkout, expressed as a
       ``file://`` URL. Companions live in subdirectories of that
       checkout, so their subdirectory is joined onto the path.
-    - **pypi**: ``version`` — pin ops to a PyPI version. Companion
-      packages are left untouched, since their versioning is independent
-      of ``ops``.
+    - **pypi**: ``version`` — pin ops to a PyPI version. Accepts a bare
+      version (``2.17.0``, taken as ``==2.17.0``) or any PEP 440
+      specifier set (``>=2,<3``, ``~=2.17``). Companion packages are
+      left untouched, since their versioning is independent of ``ops``.
     """
 
     url: str = 'https://github.com/canonical/operator'
@@ -93,6 +103,26 @@ class OpsSource:
     def __post_init__(self) -> None:
         if self.version is not None and self.path is not None:
             raise ValueError('OpsSource: set at most one of `version` and `path`')
+        if self.version is not None:
+            # Fail here rather than several minutes into a run, when a
+            # malformed pin surfaces as an opaque ``uv lock`` warning.
+            try:
+                packaging.specifiers.SpecifierSet(self.specifier)
+            except packaging.specifiers.InvalidSpecifier as exc:
+                raise ValueError(f'OpsSource: invalid version {self.version!r}: {exc}') from exc
+
+    @property
+    def specifier(self) -> str:
+        """The ``version`` pin as a PEP 440 specifier set, operator included.
+
+        ``version`` may be a bare version number (``2.17.0``) or a whole
+        specifier set (``==2.17.0``, ``>=2,<3``). A bare version is taken
+        as an exact pin.
+        """
+        assert self.version is not None
+        if _SPECIFIER_OPERATOR_RE.match(self.version):
+            return self.version
+        return f'=={self.version}'
 
     @property
     def kind(self) -> str:
@@ -130,7 +160,7 @@ class OpsSource:
         """Full PEP 508 requirement line for ``name``."""
         extras_str = f'[{",".join(sorted(extras))}]' if extras else ''
         if self.kind == 'pypi':
-            return f'{name}{extras_str}=={self.version}'
+            return f'{name}{extras_str}{self.specifier}'
         return f'{name}{extras_str} @ {self._source_url(subdir=subdir)}'
 
     def overrides_companions(self) -> bool:
@@ -162,9 +192,9 @@ class OpsSource:
         """Right-hand side for ``pkg = ...`` in ``[tool.poetry.dependencies]``."""
         if self.kind == 'pypi':
             if not extras:
-                return f'"=={self.version}"'
+                return f'"{self.specifier}"'
             extras_repr = ', '.join(repr(e) for e in sorted(extras))
-            return f'{{ version = "=={self.version}", extras = [{extras_repr}] }}'
+            return f'{{ version = "{self.specifier}", extras = [{extras_repr}] }}'
         if self.kind == 'path':
             parts = [f'path = "{self._companion_path(subdir)}"']
         else:

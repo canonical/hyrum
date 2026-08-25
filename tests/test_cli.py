@@ -159,6 +159,31 @@ def test_parse_patch_rejects_garbage():
         cli._parse_patch('!!! not a requirement')
 
 
+# ``--patch ops==2.17.0`` used to reach ``OpsSource`` with the operator still
+# attached and come out as ``ops====2.17.0``; check the whole path, not just
+# the parse.
+
+
+@pytest.mark.parametrize(
+    ('arg', 'expected'),
+    [
+        ('ops==2.17.0', 'ops==2.17.0'),
+        ('ops>=2.17', 'ops>=2.17'),
+        ('ops>=2,<3', 'ops<3,>=2'),
+    ],
+)
+def test_ops_pypi_patch_renders_one_operator(arg: str, expected: str):
+    spec = cli._parse_patch(arg)
+    patcher = cli._build_ops_patcher(
+        spec,
+        poetry_executable='poetry',
+        uv_executable='uv',
+        lock_timeout=1,
+        auto_python=False,
+    )
+    assert patcher.ops.pep508_dep('ops') == expected
+
+
 def test_parse_patch_vendored_swap_pypi():
     parsed = cli._parse_patch('charms.operator_libs_linux.v0.apt -> charmlibs-apt==1.0.0')
     assert parsed == cli.PatchSpec(
