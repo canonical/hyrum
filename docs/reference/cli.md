@@ -42,7 +42,7 @@ hyrum check [OPTIONS] TARGET
 : Default: `.*` (all charms)
 
 `--limit N`
-: Stop after processing the first *N* charms discovered (0 = no limit).
+: Stop once *N* charms have been selected to run (0 = no limit). Charms that the filters skip do not count towards *N*, but they still appear in the skipped tally, so `--limit 1` always gives one run if any charm is runnable at all.
 : Default: `0`
 
 `--framework {scenario,jubilant}`
