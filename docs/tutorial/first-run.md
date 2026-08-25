@@ -82,6 +82,8 @@ skipped            0    0%
 1 of 1 runs passed (100%); 0 not run.
 ```
 
+The summary table is not the only thing that run produced. Hyrum saves the outcomes to a JSON file whether or not you ask it to, under `~/.cache/hyrum/results`, named after the target — so that run wrote `unit.auto.json`. Nothing on screen mentions it, so it is worth knowing it is there: it is what [`hyrum compare`](../howto/compare-runs) reads, and it means you can compare against a run you did not plan ahead for. `--save PATH` writes somewhere specific instead, `--auto-save DIR` moves the rolling pair, and `--no-save` turns saving off. Per-charm runner output is separate and is *not* kept by default — see [Save per-charm logs](#save-per-charm-logs) below.
+
 ## Try with multiple workers
 
 Clone a second charm and run with two parallel workers:

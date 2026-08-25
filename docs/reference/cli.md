@@ -239,7 +239,7 @@ Each repository is cloned to `<dest>/<owner>/<name>`, where `<owner>` and `<name
 : Default charms directory used by both `hyrum check --charms-dir` and `hyrum get-charms --dest`. Overridden by the explicit flag.
 
 `NO_COLOR`
-: When set (to any value), suppresses ANSI colour in the summary table even on a tty.
+: When set to a non-empty value (any value, not just `1`), suppresses ANSI colour in the summary table even on a tty. Setting it to the empty string leaves colour enabled.
 
 `TOX_OVERRIDE`
 : Read and appended to by `--host-env-defaults` so that tox `pass_env` entries propagate into the testenv. See [Host prerequisites](../howto/install).
