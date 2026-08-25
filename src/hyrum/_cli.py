@@ -6,7 +6,6 @@ import argparse
 import asyncio
 import csv
 import dataclasses
-import itertools
 import json
 import logging
 import os
@@ -580,7 +579,15 @@ def _select_repos(
     limit: int,
     framework: str | None,
 ) -> tuple[list[pathlib.Path], list[tuple[pathlib.Path, str]]]:
-    """Return (repos to run, list of (repo, skip-reason) pairs)."""
+    """Return (repos to run, list of (repo, skip-reason) pairs).
+
+    ``limit`` caps the number of charms *selected to run*, not the number
+    considered: enumeration continues past charms the filter chain skips.
+    The collection is alphabetical and opens on a run of legacy charms, so a
+    cap applied before filtering makes small values select nothing at all.
+    Charms passed over on the way to the cap still land in ``skipped``, so
+    the summary stays honest about what was looked at.
+    """
     chain: list[filt.Filter] = [
         filt.not_legacy,
         filt.has_python,
@@ -599,10 +606,7 @@ def _select_repos(
 
     repos: list[pathlib.Path] = []
     skipped: list[tuple[pathlib.Path, str]] = []
-    raw = _enumerate.iter_charm_repos(cache)
-    if limit > 0:
-        raw = itertools.islice(raw, limit)
-    for repo in raw:
+    for repo in _enumerate.iter_charm_repos(cache):
         for predicate in chain:
             reason = predicate(repo)
             if reason:
@@ -610,6 +614,8 @@ def _select_repos(
                 break
         else:
             repos.append(repo)
+            if limit > 0 and len(repos) >= limit:
+                break
     return repos, skipped
 
 
@@ -845,7 +851,7 @@ def _add_check_subparser(
         '--limit',
         type=_non_negative_int,
         default=0,
-        help='Stop after this many charms (0 = all).',
+        help='Stop after selecting this many charms to run (0 = all).',
     )
     parser.add_argument(
         '--framework',
