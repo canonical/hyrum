@@ -22,12 +22,14 @@ hyrum check unit --no-patch --repo '^charm-apt-mirror$'
 
 ## Limit by count
 
-`--limit N` stops after processing the first *N* charms (in the order hyrum discovers them, which is alphabetical):
+`--limit N` stops once *N* charms have been selected to run, taken in the order hyrum discovers them, which is alphabetical:
 
 ```text
-# Process only the first charm found:
+# Run only the first runnable charm found:
 hyrum check unit --no-patch --limit 1
 ```
+
+Charms that the filters skip — legacy charms, charms with no Python source, charms without the requested target — do not count towards *N*. They still show up in the skipped tally, so the summary stays honest about what was looked at on the way there.
 
 ## Combine filters
 

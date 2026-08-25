@@ -42,6 +42,8 @@ For each row in the CSV, hyrum clones the repository (shallow) into `<dest>/<own
 
 Clones run concurrently, capped at `--workers` git processes, so that a list of several hundred repositories cannot exhaust the process file-descriptor limit. Only the `Repository` column is required in the CSV; `Branch (if not the default)` is honoured if present, and every other column is ignored.
 
+Rows that resolve to a checkout directory an earlier row already claimed are skipped, and the run reports how many. A charm listed twice under two different teams is real metadata, so the CSV itself is left alone — only the second clone is skipped. Rows that differ by branch get their own directory, so they are not duplicates.
+
 The default destination is `~/.cache/hyrum/charms`, overridable by `HYRUM_CHARMS` or `--dest`. The same default and override apply to `hyrum check --charms-dir`.
 
 ## Run across the full fleet

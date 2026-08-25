@@ -99,15 +99,17 @@ With `--workers 2`, hyrum runs both charms concurrently. The summary will now sh
 
 ## Limit the run to one charm
 
-Use `--repo` to filter by name (a regex matched against the directory name) or `--limit` to stop after a given number:
+Use `--repo` to filter by name (a regex matched against the directory name) or `--limit` to cap how many charms are run:
 
 ```text
 # Only the charm whose directory name contains "apt":
 hyrum check unit --no-patch --repo apt
 
-# Stop after the first charm, whichever it is:
+# Run the first charm hyrum can run, whichever it is:
 hyrum check unit --no-patch --limit 1
 ```
+
+`--limit` counts the charms that are selected to run, not the charms it looked at, so skipped charms never eat into the count.
 
 ## Compare two runs
 
