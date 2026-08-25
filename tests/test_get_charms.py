@@ -255,6 +255,70 @@ async def test_process_rows_logs_summary(tmp_path: pathlib.Path, spawner, caplog
     assert any('Failed: canonical/bad' in r.message for r in caplog.records)
 
 
+# ---- duplicate rows ---------------------------------------------------------
+
+# Two rows for one repository used to become two workers racing for the same
+# destination directory, which is why one cause produced two different git
+# errors: one worker lost the mkdir, the other arrived after a sibling had
+# already populated the directory.
+
+
+async def test_process_rows_clones_a_duplicated_repository_once(
+    tmp_path: pathlib.Path, spawner, caplog
+):
+    # One proc queued: a second git call would fail the FakeSpawner assertion.
+    fake = spawner(FakeProc(returncode=0))
+    rows = [
+        {'Repository': 'https://github.com/canonical/foo', 'Branch (if not the default)': ''},
+        {'Repository': 'https://github.com/canonical/foo', 'Branch (if not the default)': ''},
+    ]
+    with caplog.at_level(logging.INFO, logger=get_charms.logger.name):
+        await get_charms.process_rows(rows, tmp_path)
+
+    assert len(fake.calls) == 1
+    assert any('1 succeeded, 0 failed' in r.message for r in caplog.records)
+    assert any('1 rows skipped as duplicates' in r.message for r in caplog.records)
+
+
+async def test_process_rows_dedupes_on_the_destination_not_the_url(
+    tmp_path: pathlib.Path, spawner
+):
+    """Two spellings of one repository still flatten to one directory."""
+    fake = spawner(FakeProc(returncode=0))
+    rows = [
+        {'Repository': 'https://github.com/canonical/foo', 'Branch (if not the default)': ''},
+        {'Repository': 'https://github.com/canonical/foo/', 'Branch (if not the default)': ''},
+    ]
+    await get_charms.process_rows(rows, tmp_path)
+
+    assert len(fake.calls) == 1
+
+
+async def test_process_rows_keeps_rows_that_differ_only_by_branch(tmp_path: pathlib.Path, spawner):
+    """A branch gets its own directory, so those rows are not duplicates."""
+    fake = spawner(FakeProc(returncode=0), FakeProc(returncode=0))
+    rows = [
+        {'Repository': 'https://github.com/canonical/foo', 'Branch (if not the default)': ''},
+        {'Repository': 'https://github.com/canonical/foo', 'Branch (if not the default)': '1.0'},
+    ]
+    await get_charms.process_rows(rows, tmp_path)
+
+    assert len(fake.calls) == 2
+
+
+async def test_process_rows_says_nothing_when_there_are_no_duplicates(
+    tmp_path: pathlib.Path, spawner, caplog
+):
+    spawner(FakeProc(returncode=0))
+    rows = [
+        {'Repository': 'https://github.com/canonical/foo', 'Branch (if not the default)': ''},
+    ]
+    with caplog.at_level(logging.INFO, logger=get_charms.logger.name):
+        await get_charms.process_rows(rows, tmp_path)
+
+    assert not any('duplicates' in r.message for r in caplog.records)
+
+
 # ---- timeouts ---------------------------------------------------------------
 
 
