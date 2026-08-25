@@ -18,7 +18,7 @@ import json
 import logging
 import os
 import pathlib
-import subprocess  # noqa: S404
+import subprocess  # ruff: ignore[suspicious-subprocess-import] — shelling out to git is core to this script
 import sys
 import typing
 import urllib.error
@@ -222,8 +222,8 @@ class LaunchpadClient:
         so the same call works against Launchpad and opendev.
         """
         try:
-            proc = subprocess.run(  # noqa: S603
-                ['git', 'ls-remote', repository, 'HEAD'],  # noqa: S607
+            proc = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] — fixed argv, no shell
+                ['git', 'ls-remote', repository, 'HEAD'],  # ruff: ignore[start-process-with-partial-path] — git from PATH is intended
                 capture_output=True,
                 text=True,
                 timeout=self.git_timeout,
