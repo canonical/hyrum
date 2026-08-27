@@ -593,6 +593,56 @@ def test_ops_source_kind_property():
     assert patchers.OpsSource(path='/x').kind == 'path'
 
 
+# ``--patch`` hands the whole specifier over, operator included, so a bare
+# version and a full specifier set both have to reach the same place.
+
+
+@pytest.mark.parametrize(
+    ('version', 'expected'),
+    [
+        ('2.17.0', '==2.17.0'),
+        ('==2.17.0', '==2.17.0'),
+        ('>=2.17', '>=2.17'),
+        ('<3,>=2', '<3,>=2'),
+        ('~=2.17.0', '~=2.17.0'),
+        ('!=2.17.0', '!=2.17.0'),
+        ('===2.17.0', '===2.17.0'),
+    ],
+)
+def test_ops_source_specifier_normalises_version(version: str, expected: str):
+    assert patchers.OpsSource(version=version).specifier == expected
+
+
+def test_ops_source_rejects_invalid_version():
+    with pytest.raises(ValueError, match='invalid version'):
+        patchers.OpsSource(version='=2.17.0')
+
+
+def test_pep508_dep_does_not_double_the_operator():
+    ops = patchers.OpsSource(version='==2.17.0')
+    assert ops.pep508_dep('ops', extras=['testing']) == 'ops[testing]==2.17.0'
+
+
+def test_pep508_dep_keeps_a_range_specifier():
+    ops = patchers.OpsSource(version='<3,>=2')
+    assert ops.pep508_dep('ops') == 'ops<3,>=2'
+
+
+def test_poetry_dep_inline_does_not_double_the_operator():
+    ops = patchers.OpsSource(version='==2.17.0')
+    assert ops.poetry_dep_inline() == '"==2.17.0"'
+    assert ops.poetry_dep_inline(extras=['testing']) == (
+        '{ version = "==2.17.0", extras = [\'testing\'] }'
+    )
+
+
+def test_requirements_pypi_range_specifier(tmp_path: pathlib.Path):
+    req = tmp_path / 'requirements.txt'
+    req.write_text('ops>=2.10\n')
+    with patchers.OpsSourcePatcher(patchers.OpsSource(version='<3,>=2')).apply(tmp_path):
+        assert 'ops<3,>=2' in _read(req)
+
+
 # ---- OpsSource rendering: git refs -------------------------------------------
 
 # Any ref git understands must survive into the emitted TOML. uv and Poetry
