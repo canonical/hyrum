@@ -11,6 +11,7 @@ import pytest
 
 from hyrum import _cli as cli
 from hyrum import _compare as compare
+from hyrum import _config as config_loader
 from hyrum import _pool as pool
 from hyrum import _results as results
 from hyrum import _runners as runners
@@ -1078,3 +1079,65 @@ def test_cli_no_preflight_skips_the_ref_check(monkeypatch, tmp_path: pathlib.Pat
     ])
     assert rc == 0
     assert fake.calls == []
+
+
+# ---- --limit ----------------------------------------------------------------
+
+# ``--limit`` used to cap enumeration, before the filter chain ran, so charms
+# that were then skipped ate into the cap. The collection is alphabetical and
+# opens on a run of legacy charms, so small limits selected nothing at all.
+
+
+def _limit_cache(charm_cache: pathlib.Path) -> pathlib.Path:
+    for name in ('a-legacy', 'b-legacy', 'c-modern', 'd-modern'):
+        repo = make_charm(charm_cache / name)
+        if name.endswith('-legacy'):
+            (repo / 'reactive').mkdir()
+    return charm_cache
+
+
+def test_limit_counts_selected_charms_not_skipped_ones(charm_cache: pathlib.Path):
+    repos, skipped = cli._select_repos(
+        _limit_cache(charm_cache),
+        config=config_loader.Config(),
+        repo_re='.*',
+        limit=1,
+        framework=None,
+    )
+    assert [p.name for p in repos] == ['c-modern']
+    # Charms passed over on the way to the cap still show up as skipped.
+    assert [p.name for p, _ in skipped] == ['a-legacy', 'b-legacy']
+
+
+def test_limit_stops_enumerating_once_it_is_reached(charm_cache: pathlib.Path):
+    repos, skipped = cli._select_repos(
+        _limit_cache(charm_cache),
+        config=config_loader.Config(),
+        repo_re='.*',
+        limit=2,
+        framework=None,
+    )
+    assert [p.name for p in repos] == ['c-modern', 'd-modern']
+    assert [p.name for p, _ in skipped] == ['a-legacy', 'b-legacy']
+
+
+def test_limit_zero_selects_everything(charm_cache: pathlib.Path):
+    repos, _ = cli._select_repos(
+        _limit_cache(charm_cache),
+        config=config_loader.Config(),
+        repo_re='.*',
+        limit=0,
+        framework=None,
+    )
+    assert [p.name for p in repos] == ['c-modern', 'd-modern']
+
+
+def test_limit_above_the_number_available_selects_everything(charm_cache: pathlib.Path):
+    repos, _ = cli._select_repos(
+        _limit_cache(charm_cache),
+        config=config_loader.Config(),
+        repo_re='.*',
+        limit=99,
+        framework=None,
+    )
+    assert [p.name for p in repos] == ['c-modern', 'd-modern']
