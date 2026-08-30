@@ -18,7 +18,6 @@ Commercial Systems,https://github.com/canonical/timescaledb-charm,,manual
 Commercial Systems,https://github.com/canonical/trino-k8s-operator,,manual
 Data,https://github.com/canonical/kafka-operator,,manual
 Data,https://github.com/canonical/kafka-broker-rack-awareness-operator,,manual
-Data,https://github.com/canonical/kafka-k8s-operator,,manual
 Data,https://github.com/canonical/mongodb-operator,,manual
 Data,https://github.com/canonical/mongodb-k8s-operator,,manual
 Data,https://github.com/canonical/opensearch-operator,,manual
@@ -353,8 +352,6 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/jwt-integrator,,auto-discover
 ,https://github.com/canonical/k6-k8s-operator,,auto-discover
 ,https://github.com/canonical/kafka-benchmark-operator,,auto-discover
-,https://github.com/canonical/kafka-connect-k8s-operator,,auto-discover
-,https://github.com/canonical/kafka-connect-operator,,auto-discover
 ,https://github.com/canonical/kafka-test-app,,auto-discover
 ,https://github.com/canonical/kafka-ui-k8s-operator,,auto-discover
 ,https://github.com/canonical/kafka-ui-operator,,auto-discover
@@ -555,10 +552,8 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/oem-qa-tools,,auto-discover
 ,https://github.com/canonical/open-graph-images-generator,,auto-discover
 ,https://github.com/canonical/openapi-rest-proxy,,auto-discover
-,https://github.com/canonical/opendkim-operator,,auto-discover
 ,https://github.com/canonical/paas-charm-cli,,auto-discover
 ,https://github.com/canonical/phoronix-system-tests,,auto-discover
-,https://github.com/canonical/postfix-relay-operators,,auto-discover
 ,https://github.com/canonical/postgresql-bundle-1,,auto-discover
 ,https://github.com/canonical/sunbeam-cinder-factory,,auto-discover
 ,https://github.com/canonical/roadmap.canonical.com,,auto-discover
@@ -586,3 +581,4 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/webteam-juju-demos-testing,,auto-discover
 ,https://github.com/canonical/webteam-webbot,,auto-discover
 ,https://git.launchpad.net/landscape-charm,,auto
+,https://github.com/canonical/loki-operators,,auto
