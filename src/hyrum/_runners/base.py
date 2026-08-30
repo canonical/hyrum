@@ -13,6 +13,13 @@ interleave the two streams, and a failing run interleaves them most, so
 ordering is worth more when triaging than knowing which stream a line came
 from. The choice is made at capture time and cannot be undone: separate
 pipes keep the distinction and lose the order.
+
+One cost of merging at capture time: two writes larger than ``PIPE_BUF`` can
+interleave mid-line and tear a line in half, which separate pipes cannot do.
+That is what a terminal does too, but ``strip_ansi`` and the summary patterns
+both work on whole lines, so a torn pytest summary line means no summary at
+all for that charm. Rare, and only on noisy concurrent output, but it is the
+explanation when a failing run has no one-line summary.
 """
 
 from __future__ import annotations
@@ -58,7 +65,10 @@ class RunResult:
     returncode: int | None
     duration_s: float
     output: bytes = b''
-    """Merged stdout and stderr, in the order the subprocess wrote them."""
+    """Merged stdout and stderr, in the order the subprocess wrote them.
+
+    When the process never started, this carries the launch error instead.
+    """
 
     @property
     def passed(self) -> bool:
