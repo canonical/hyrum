@@ -232,10 +232,42 @@ async def test_make_runner_no_target_from_real_run_output(tmp_path: pathlib.Path
     # the real invocation points stderr at the stdout pipe.
     spawner(
         FakeProc(returncode=1),  # probe (no marker)
-        FakeProc(returncode=2, stderr=b"No rule to make target 'mystery'.  Stop.\n"),
+        FakeProc(returncode=2, stderr=b"make: *** No rule to make target 'mystery'.  Stop.\n"),
     )
     result = await runners.MakeRunner().run(tmp_path, 'mystery')
     assert result.status is runners.RunStatus.NO_TARGET
+
+
+async def test_make_runner_marker_in_recipe_output_is_still_a_failure(
+    tmp_path: pathlib.Path, spawner
+):
+    # The real invocation merges stderr into stdout, so a recipe that prints
+    # the words itself reaches the missing-target check. Without make's own
+    # `make:` prefix it is a failing test, not an absent target, and reporting
+    # it as absent would drop a broken charm out of the tally entirely.
+    spawner(
+        FakeProc(returncode=1),  # probe: target exists
+        FakeProc(
+            returncode=2,
+            stdout=b"FAILED tests/test_make.py::test_missing - 'No rule to make target'\n",
+        ),
+    )
+    result = await runners.MakeRunner().run(tmp_path, 'unit')
+    assert result.status is runners.RunStatus.FAILED
+
+
+async def test_make_runner_nested_missing_target_is_a_failure(tmp_path: pathlib.Path, spawner):
+    # A sub-make reporting a missing target says nothing about the target we
+    # asked for, which does exist and did run.
+    spawner(
+        FakeProc(returncode=1),  # probe: target exists
+        FakeProc(
+            returncode=2,
+            stdout=b"make[1]: *** No rule to make target 'inner'.  Stop.\n",
+        ),
+    )
+    result = await runners.MakeRunner().run(tmp_path, 'unit')
+    assert result.status is runners.RunStatus.FAILED
 
 
 async def test_make_runner_probe_keeps_streams_apart_but_run_merges(

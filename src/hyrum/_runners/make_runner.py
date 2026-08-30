@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import pathlib
+import re
 import time
 from collections.abc import Sequence
 
@@ -28,10 +29,13 @@ from hyrum._runners import base
 
 logger = logging.getLogger(__name__)
 
-_NO_RULE_MARKERS = (
-    b'No rule to make target',
-    b'no rule to make target',
-)
+# make prefixes its own diagnostics with `make:`, so anchoring to that keeps
+# recipe output that happens to mention a missing target from being read as
+# one - the real invocation captures stdout and stderr on one pipe, so the
+# recipe's own output reaches this check too. A sub-make's `make[1]:` prefix
+# is deliberately not matched: a nested target being absent does not mean the
+# target we asked for is.
+_NO_RULE_RE = re.compile(rb'(?mi)^make: \*\*\* No rule to make target\b')
 
 
 class MakeRunner:
@@ -135,7 +139,7 @@ class MakeRunner:
 
 
 def _looks_like_missing_target(output: bytes) -> bool:
-    return any(marker in output for marker in _NO_RULE_MARKERS)
+    return _NO_RULE_RE.search(output) is not None
 
 
 async def _kill_and_drain(proc: asyncio.subprocess.Process, repo: pathlib.Path) -> None:
