@@ -7,7 +7,7 @@ import pathlib
 import sys
 from typing import TextIO
 
-from hyrum import _ansi
+from hyrum import _ansi, _percent
 from hyrum import _pool as pool
 
 # Version of the `hyrum compare --format json` payload, independent of the
@@ -154,7 +154,7 @@ def _drift_sentence(result: CompareResult) -> str:
 def _fmt_pct(rate: float | None) -> str:
     # One decimal, to match the percentage-point delta: at whole-number
     # precision a single regression across a few hundred charms is invisible.
-    return 'n/a' if rate is None else f'{rate * 100:.1f}%'
+    return 'n/a' if rate is None else _percent.format_pct(rate, decimals=1)
 
 
 def render(result: CompareResult, *, file: TextIO | None = None) -> None:

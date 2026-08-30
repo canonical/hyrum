@@ -123,3 +123,26 @@ def test_render_no_headers_suppresses_header_row(tmp_path: pathlib.Path):
     assert 'COUNT' not in out
     # The status rows themselves are still present (with zero counts).
     assert 'passed' in out
+
+
+def test_render_floors_small_percentages(tmp_path: pathlib.Path):
+    outcomes = [pool.Outcome(repo=tmp_path / 'pass', status='passed')]
+    outcomes += [pool.Outcome(repo=tmp_path / f'skip{i}', status='skipped') for i in range(300)]
+    out = _render(outcomes, base=tmp_path)
+    # 1 in 301 is 0.33%, which must not render as a bare '0%'.
+    passed_row = next(line for line in out.splitlines() if line.startswith('passed'))
+    assert passed_row.split() == ['passed', '1', '<1%']
+
+
+def test_render_labels_the_table_denominator(tmp_path: pathlib.Path):
+    out = _render([], base=tmp_path)
+    assert '% OF ALL' in out
+
+
+def test_render_labels_the_summary_denominator(tmp_path: pathlib.Path):
+    outcomes = [
+        pool.Outcome(repo=tmp_path / 'a', status='passed'),
+        pool.Outcome(repo=tmp_path / 'b', status='skipped'),
+    ]
+    out = _render(outcomes, base=tmp_path)
+    assert '1 of 1 runs passed (100% of runs); 1 not run (1 skipped).' in out
