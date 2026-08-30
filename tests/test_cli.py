@@ -808,6 +808,28 @@ def test_cli_reports_log_dir(
     assert f'Per-charm logs saved to {log_dir}' in captured.err
 
 
+def test_cli_does_not_report_log_dir_when_nothing_ran(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    log_dir = tmp_path / 'logs'
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--no-save',
+        '--log-dir',
+        str(log_dir),
+    ])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert 'Per-charm logs saved to' not in captured.err
+
+
 def test_cli_save_flags_mutually_exclusive(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):
