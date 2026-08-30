@@ -17,7 +17,12 @@ def format_pct(fraction: float, *, decimals: int = 0) -> str:
     precision, ``<0.1%`` at one decimal place. A fraction below one that would
     round up to a hundred renders as the largest representable value prefixed
     with ``>`` — ``>99%``, or ``>99.9%`` at one decimal place.
+
+    Raises:
+        ValueError: if *fraction* is outside 0.0-1.0.
     """
+    if not 0 <= fraction <= 1:
+        raise ValueError(f'fraction must be between 0 and 1, not {fraction}')
     pct = fraction * 100
     rendered = f'{pct:.{decimals}f}'
     # Compare the rendered text rather than the value: what matters is whether

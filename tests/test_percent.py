@@ -35,3 +35,9 @@ def test_format_pct_whole_numbers(fraction: float, expected: str):
 )
 def test_format_pct_one_decimal(fraction: float, expected: str):
     assert _percent.format_pct(fraction, decimals=1) == expected
+
+
+@pytest.mark.parametrize('fraction', [-0.0001, -1.0, 1.5])
+def test_format_pct_rejects_out_of_range(fraction: float):
+    with pytest.raises(ValueError):
+        _percent.format_pct(fraction)
