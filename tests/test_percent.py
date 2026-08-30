@@ -14,6 +14,9 @@ from hyrum import _percent
         (0.004, '<1%'),
         (1 / 576, '<1%'),
         (0.006, '1%'),
+        (575 / 576, '>99%'),
+        (0.999, '>99%'),
+        (0.994, '99%'),
     ],
 )
 def test_format_pct_whole_numbers(fraction: float, expected: str):
@@ -26,6 +29,8 @@ def test_format_pct_whole_numbers(fraction: float, expected: str):
         (0.0, '0.0%'),
         (1 / 576, '0.2%'),
         (0.0001, '<0.1%'),
+        (575 / 576, '99.8%'),
+        (0.9999, '>99.9%'),
     ],
 )
 def test_format_pct_one_decimal(fraction: float, expected: str):
