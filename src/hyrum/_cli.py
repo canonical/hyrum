@@ -1258,7 +1258,8 @@ def _run_check(args: argparse.Namespace) -> int:
     # Logged after the report so the paths are the last thing on screen: the
     # saved results are what makes `hyrum compare` work without planning ahead.
     if saved_to is not None:
-        logger.info('Results saved to %s', saved_to)
+        noun = 'result' if len(results) == 1 else 'results'
+        logger.info('Saved %d %s to %s', len(results), noun, saved_to)
     # Only when something actually ran: skipped charms produce no log file,
     # so an empty selection would otherwise point at an empty directory.
     if args.log_dir is not None and any(o.status != 'skipped' for o in results):

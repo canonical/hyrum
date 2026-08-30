@@ -696,7 +696,7 @@ def test_cli_reports_default_auto_save_destination(
     rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch'])
     assert rc == 0
     captured = capsys.readouterr()
-    assert f'Results saved to {default_dir / "unit.auto.json"}' in captured.err
+    assert f'Saved 1 result to {default_dir / "unit.auto.json"}' in captured.err
 
 
 def test_cli_reports_explicit_save_destination(
@@ -711,7 +711,7 @@ def test_cli_reports_explicit_save_destination(
     rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--save', str(out)])
     assert rc == 0
     captured = capsys.readouterr()
-    assert f'Results saved to {out}' in captured.err
+    assert f'Saved 1 result to {out}' in captured.err
 
 
 def test_cli_reports_auto_save_dir_destination(
@@ -734,7 +734,7 @@ def test_cli_reports_auto_save_dir_destination(
     ])
     assert rc == 0
     captured = capsys.readouterr()
-    assert f'Results saved to {save_dir / "unit.auto.json"}' in captured.err
+    assert f'Saved 1 result to {save_dir / "unit.auto.json"}' in captured.err
 
 
 def test_cli_reports_timestamped_save_destination(
@@ -751,7 +751,7 @@ def test_cli_reports_timestamped_save_destination(
     assert rc == 0
     captured = capsys.readouterr()
     written = next(iter(out_dir.glob('hyrum-*-unit.json')))
-    assert f'Results saved to {written}' in captured.err
+    assert f'Saved 1 result to {written}' in captured.err
 
 
 def test_cli_no_save_reports_no_destination(
@@ -765,7 +765,7 @@ def test_cli_no_save_reports_no_destination(
     rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--no-save'])
     assert rc == 0
     captured = capsys.readouterr()
-    assert 'Results saved to' not in captured.err
+    assert 'Saved' not in captured.err
 
 
 def test_cli_quiet_does_not_report_destinations(
@@ -781,7 +781,7 @@ def test_cli_quiet_does_not_report_destinations(
     rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--quiet'])
     assert rc == 0
     captured = capsys.readouterr()
-    assert 'Results saved to' not in captured.err
+    assert 'Saved' not in captured.err
 
 
 def test_cli_reports_log_dir(
