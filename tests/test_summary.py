@@ -275,3 +275,23 @@ def test_last_pytest_summary_wins():
     out = _s(stdout=stdout)
     assert '6 failed' in out
     assert '102 passed' in out
+
+
+def test_interleaved_transcript():
+    # The other tests build their buffer from a stdout half and a stderr half,
+    # which is the shape the runners stopped producing: stderr now arrives
+    # wherever it was written. This is one transcript in write order, with
+    # tox's own stderr landing after pytest's summary line.
+    output = (
+        b'Resolved 42 packages in 12ms\n'
+        b'tests/unit/test_foo.py .F\n'
+        b'E   ValueError: bad thing happened\n'
+        b'=========== 1 failed, 102 passed in 4.21s ============\n'
+        b'unit: exit 1 (4.30 seconds)\n'
+        b'  unit: FAIL code 1 (4.35 seconds)\n'
+        b'  evaluation failed :( (4.41 seconds)\n'
+    )
+    out = _summary.from_run_output(output, status='failed', returncode=1)
+    assert '1 failed' in out
+    assert '102 passed' in out
+    assert 'ValueError: bad thing happened' in out
