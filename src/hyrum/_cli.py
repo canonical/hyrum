@@ -650,12 +650,6 @@ def _default_auto_save_dir() -> pathlib.Path:
     return pathlib.Path('~/.cache/hyrum/results').expanduser()
 
 
-def _log_written(path: pathlib.Path, count: int) -> None:
-    """Note the file a save plan just produced."""
-    noun = 'outcome' if count == 1 else 'outcomes'
-    logger.info('Wrote %d %s to %s', count, noun, path)
-
-
 @dataclasses.dataclass(frozen=True)
 class _NoSavePlan:
     """Do not persist results."""
@@ -670,8 +664,9 @@ class _NoSavePlan:
         base: pathlib.Path,
         target: str,
         patcher: str,
-    ) -> None:
-        pass
+    ) -> pathlib.Path | None:
+        """Persist the outcomes and return the file written, if any."""
+        return None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -700,9 +695,10 @@ class _PathSavePlan:
         base: pathlib.Path,
         target: str,
         patcher: str,
-    ) -> None:
+    ) -> pathlib.Path | None:
+        """Persist the outcomes and return the file written, if any."""
         _results.save(outcomes, self.path, base=base, target=target, patcher=patcher)
-        _log_written(self.path, len(outcomes))
+        return self.path
 
 
 @dataclasses.dataclass(frozen=True)
@@ -740,10 +736,11 @@ class _TimestampedSavePlan(_DirectorySavePlan):
         base: pathlib.Path,
         target: str,
         patcher: str,
-    ) -> None:
+    ) -> pathlib.Path | None:
+        """Persist the outcomes and return the file written, if any."""
         path = self.directory / _results.timestamped_name(target)
         _results.save(outcomes, path, base=base, target=target, patcher=patcher)
-        _log_written(path, len(outcomes))
+        return path
 
 
 @dataclasses.dataclass(frozen=True)
@@ -757,11 +754,11 @@ class _RollingSavePlan(_DirectorySavePlan):
         base: pathlib.Path,
         target: str,
         patcher: str,
-    ) -> None:
-        path = _results.save_auto(
+    ) -> pathlib.Path | None:
+        """Persist the outcomes and return the file written, if any."""
+        return _results.save_auto(
             outcomes, self.directory, target=target, base=base, patcher=patcher
         )
-        _log_written(path, len(outcomes))
 
 
 _SavePlan = _NoSavePlan | _PathSavePlan | _TimestampedSavePlan | _RollingSavePlan
@@ -1226,8 +1223,9 @@ def _run_check(args: argparse.Namespace) -> int:
     pool.add_skipped(results, skipped)
     results.sort(key=lambda o: str(o.repo))
 
+    saved_to: pathlib.Path | None = None
     try:
-        save_plan.save(
+        saved_to = save_plan.save(
             results,
             base=charms_dir,
             target=args.target,
@@ -1256,6 +1254,13 @@ def _run_check(args: argparse.Namespace) -> int:
             if o.status in ('failed', 'timeout', 'runner_error', 'patcher_error')
         )
         print(f'hyrum: {failed} charm(s) did not pass.', file=sys.stderr)
+
+    # Logged after the report so the paths are the last thing on screen: the
+    # saved results are what makes `hyrum compare` work without planning ahead.
+    if saved_to is not None:
+        logger.info('Results saved to %s', saved_to)
+    if args.log_dir is not None:
+        logger.info('Per-charm logs saved to %s', args.log_dir)
 
     if save_failed:
         return 1
