@@ -4,7 +4,13 @@ from hyrum import _summary
 
 
 def _s(stdout: bytes = b'', stderr: bytes = b'', *, status: str = 'failed', rc: int | None = 1):
-    return _summary.from_run_output(stdout, stderr, status=status, returncode=rc)
+    """Summarise output that a runner captured with the streams merged.
+
+    Tests still say which stream each fragment came from, because that is what
+    makes the samples recognisable, but the runner hands the summariser one
+    buffer, so join them here.
+    """
+    return _summary.from_run_output(stdout + b'\n' + stderr, status=status, returncode=rc)
 
 
 def test_passed_status_returns_empty():

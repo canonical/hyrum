@@ -4,7 +4,15 @@ Runners deliberately do *not* parse their subprocess's stdout/stderr
 yet — Phase 5 of the productisation plan will add structured per-test
 results, and a runner-level surface area is the right place to plug
 that in later. For now a runner reports pass/fail/no-target/timeout
-and the captured streams so callers can persist them if they wish.
+and the captured output so callers can persist it if they wish.
+
+Runners point the subprocess's stderr at the same pipe as its stdout, so
+``RunResult.output`` is a single transcript in the order the process wrote
+it — what you would have seen in a terminal. tox, make and uv all
+interleave the two streams, and a failing run interleaves them most, so
+ordering is worth more when triaging than knowing which stream a line came
+from. The choice is made at capture time and cannot be undone: separate
+pipes keep the distinction and lose the order.
 """
 
 from __future__ import annotations
@@ -49,8 +57,8 @@ class RunResult:
     status: RunStatus
     returncode: int | None
     duration_s: float
-    stdout: bytes = b''
-    stderr: bytes = b''
+    output: bytes = b''
+    """Merged stdout and stderr, in the order the subprocess wrote them."""
 
     @property
     def passed(self) -> bool:
@@ -96,7 +104,7 @@ def launch_failure(
         status=RunStatus.RUNNER_ERROR,
         returncode=None,
         duration_s=0.0,
-        stderr=f'could not run {argv[0]!r}: {exc}'.encode(),
+        output=f'could not run {argv[0]!r}: {exc}'.encode(),
     )
 
 

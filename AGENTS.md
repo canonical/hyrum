@@ -69,7 +69,10 @@ above.
   git source) can slot in without changes elsewhere.
 - `runners/` — `ToxRunner`, `MakeRunner`, `auto()` per-charm with fallback.
   GNU make's missing-target ambiguity is handled by probing with
-  `make -nq` and falling back to stderr inspection.
+  `make -nq` and falling back to inspecting the run's output. Runners
+  capture stderr into the stdout pipe, so `RunResult.output` is a single
+  transcript in the order the process wrote it; the `-nq` probe is the one
+  place that keeps the streams apart, because it reads stderr as a signal.
 - `pool` — async worker pool, `Outcome` dataclass with `patcher_error` and
   `runner_error` as statuses distinct from `failed` (so infrastructure
   problems don't get mis-attributed to the charm). The `check` subcommand
