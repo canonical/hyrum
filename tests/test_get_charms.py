@@ -257,10 +257,6 @@ async def test_process_rows_logs_summary(tmp_path: pathlib.Path, spawner, caplog
 
 # ---- duplicate rows ---------------------------------------------------------
 
-# Two rows for one repository used to become two workers racing for the same
-# destination directory, which is why one cause produced two different git
-# errors: one worker lost the mkdir, the other arrived after a sibling had
-# already populated the directory.
 
 
 async def test_process_rows_clones_a_duplicated_repository_once(
