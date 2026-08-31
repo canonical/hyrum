@@ -257,7 +257,6 @@ async def test_process_rows_logs_summary(tmp_path: pathlib.Path, spawner, caplog
 
 # ---- duplicate rows ---------------------------------------------------------
 
-
 async def test_process_rows_clones_a_duplicated_repository_once(
     tmp_path: pathlib.Path, spawner, caplog
 ):
