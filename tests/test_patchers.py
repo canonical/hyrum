@@ -569,6 +569,85 @@ def test_pyproject_poetry_leaves_scenario_alone_when_absent(
         assert 'ops-scenario' not in patched
 
 
+def test_pyproject_poetry_injects_into_the_group_that_declared_ops(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    """ops declared only in a named group is patched back into that group.
+
+    The strip pass walks named groups, so the original declaration always
+    came out. Injecting into the base table instead would move the dep to a
+    scope the charm never installs — and with no base table at all, as here,
+    it would vanish entirely.
+    """
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [tool.poetry]
+        name = "c"
+        version = "0"
+        description = ""
+        authors = ["x <x@x>"]
+        package-mode = false
+
+        [tool.poetry.group.charm.dependencies]
+        python = "^3.10"
+        ops = "^2.10"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        patched = _read(py)
+        assert 'ops = "^2.10"' not in patched
+        group_body = patched.split('[tool.poetry.group.charm.dependencies]', 1)[1]
+        assert 'ops = {git = "https://github.com/canonical/operator", rev = "fix/X"}' in group_body
+
+
+def test_pyproject_poetry_injects_into_every_declaring_table(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    """ops declared in both the base table and a group is patched in both."""
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [tool.poetry]
+        name = "c"
+        version = "0"
+        description = ""
+        authors = ["x <x@x>"]
+
+        [tool.poetry.dependencies]
+        python = "^3.10"
+        ops = "^2.10"
+
+        [tool.poetry.group.unit.dependencies]
+        pytest = "*"
+        ops = "^2.10"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        patched = _read(py)
+        assert 'ops = "^2.10"' not in patched
+        assert patched.count('ops = {git = "https://github.com/canonical/operator"') == 2
+
+
+def test_strip_ops_declarations_reports_the_tables_it_stripped_from():
+    text = textwrap.dedent("""\
+        [tool.poetry.dependencies]
+        ops = "^2.10"
+
+        [tool.poetry.group.unit.dependencies]
+        pytest = "*"
+        ops = "^2.10"
+
+        [tool.poetry.group.lint.dependencies]
+        ruff = "*"
+    """)
+    stripped, sections = ops_source._strip_ops_declarations(text)
+    assert 'ops = "^2.10"' not in stripped
+    assert sections == ['tool.poetry.dependencies', 'tool.poetry.group.unit.dependencies']
+
+
 # ---- OpsSource: PyPI version mode -------------------------------------------
 
 
