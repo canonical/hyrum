@@ -437,18 +437,53 @@ def _is_top_level_ops_dep_line(stripped: str) -> bool:
     return bool(_OPS_LINE_RE.match(stripped))
 
 
-def _strip_ops_declarations(original: str) -> str:
+def _strip_ops_declarations(original: str) -> tuple[str, list[str]]:
     """Remove explicit ``ops`` declarations from pyproject.toml text.
 
     String-level edit; intentionally conservative (lines that mention
     ``ops`` in unrelated ways — table headers, etc. — are left alone).
+
+    Returns the stripped text along with the names of the TOML tables the
+    declarations came out of, in file order and without duplicates, so the
+    caller can put the patched declaration back where it found the
+    original rather than assuming the base dependency table.
     """
     out_lines: list[str] = []
+    sections: list[str] = []
+    section = ''
     for raw in original.splitlines(keepends=True):
+        header = _SECTION_HEADER_RE.match(raw)
+        if header:
+            section = header.group(1).strip()
+            out_lines.append(raw)
+            continue
         stripped = raw.split('#', 1)[0].strip().strip('"').strip("'")
         if _is_top_level_ops_dep_line(stripped):
+            if section not in sections:
+                sections.append(section)
             continue
         out_lines.append(raw)
+    return ''.join(out_lines), sections
+
+
+_POETRY_GROUP_DEPS_RE = re.compile(r'^tool\.poetry\.group\.[^.]+\.dependencies$')
+
+
+def _is_poetry_dep_section(section: str) -> bool:
+    """Is ``section`` a table Poetry reads dependencies out of?"""
+    return section in ('tool.poetry.dependencies', 'tool.poetry.dev-dependencies') or bool(
+        _POETRY_GROUP_DEPS_RE.match(section)
+    )
+
+
+def _inject_after_sections(content: str, sections: list[str], block: str) -> str:
+    """Insert ``block`` immediately after each ``[section]`` header line."""
+    out_lines: list[str] = []
+    for raw in content.splitlines(keepends=True):
+        out_lines.append(raw)
+        header = _SECTION_HEADER_RE.match(raw)
+        if header and header.group(1).strip() in sections:
+            out_lines.append(block)
     return ''.join(out_lines)
 
 
@@ -692,7 +727,7 @@ def _patch_pyproject_uv(
         # PyPI ops pulls companions from PyPI normally — no source block,
         # no companion hoisting. Just rewrite the ops version pin in
         # [project.dependencies].
-        stripped = _strip_ops_declarations(original)
+        stripped, _ = _strip_ops_declarations(original)
         ops_pep508 = ops.pep508_dep('ops', extras=sorted(ops_extras))
         return stripped.replace(
             'dependencies = [',
@@ -764,7 +799,7 @@ def _patch_pyproject_uv(
 def _patch_pyproject_poetry(original: str, ops: OpsSource, ops_extras: set[str]) -> str:
     ops_toml = f'\nops = {ops.poetry_dep_inline(extras=sorted(ops_extras))}\n'
 
-    content = _strip_ops_declarations(original)
+    content, declared_in = _strip_ops_declarations(original)
     if ops.overrides_companions():
         for extra, (pkg, subdir) in _COMPANION_PACKAGES.items():
             # Swap the companion when either (a) the charm asked for the
@@ -777,11 +812,16 @@ def _patch_pyproject_poetry(original: str, ops: OpsSource, ops_extras: set[str])
             content = _strip_companion_declarations(content, pkg)
             ops_toml += f'\n{pkg} = {ops.poetry_dep_inline(subdir=subdir)}\n'
 
-    return content.replace(
-        '[tool.poetry.dependencies]',
-        f'[tool.poetry.dependencies]{ops_toml}',
-        1,
-    )
+    # Put the patched declaration back into every table the original was
+    # taken out of. A charm that declares ops only under a named group
+    # (``[tool.poetry.group.unit.dependencies]``) has no base declaration to
+    # replace, so injecting into the base table would either move the dep to
+    # a scope the charm never installs or — with no base table at all — drop
+    # it on the floor and silently test the wrong thing.
+    targets = [section for section in declared_in if _is_poetry_dep_section(section)]
+    if not targets:
+        targets = ['tool.poetry.dependencies']
+    return _inject_after_sections(content, targets, ops_toml)
 
 
 def _pyproject_declares_poetry_pkg(content: str, pkg_name: str) -> bool:
