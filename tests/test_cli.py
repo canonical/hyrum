@@ -683,6 +683,153 @@ def test_cli_default_is_auto_save(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
     assert (default_dir / 'unit.auto.json').exists()
 
 
+def test_cli_reports_default_auto_save_destination(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+    default_dir = tmp_path / 'default-auto'
+    monkeypatch.setattr(cli, '_default_auto_save_dir', lambda: default_dir)
+
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch'])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert f'Saved 1 result to {default_dir / "unit.auto.json"}' in captured.err
+
+
+def test_cli_reports_explicit_save_destination(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+    out = tmp_path / 'run.json'
+
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--save', str(out)])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert f'Saved 1 result to {out}' in captured.err
+
+
+def test_cli_reports_auto_save_dir_destination(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+    save_dir = tmp_path / 'auto'
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--auto-save',
+        str(save_dir),
+    ])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert f'Saved 1 result to {save_dir / "unit.auto.json"}' in captured.err
+
+
+def test_cli_reports_timestamped_save_destination(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+    out_dir = tmp_path / 'runs'
+    out_dir.mkdir()
+
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--save', str(out_dir)])
+    assert rc == 0
+    captured = capsys.readouterr()
+    written = next(iter(out_dir.glob('hyrum-*-unit.json')))
+    assert f'Saved 1 result to {written}' in captured.err
+
+
+def test_cli_no_save_reports_no_destination(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--no-save'])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert 'Saved' not in captured.err
+
+
+def test_cli_quiet_does_not_report_destinations(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+    default_dir = tmp_path / 'default-auto'
+    monkeypatch.setattr(cli, '_default_auto_save_dir', lambda: default_dir)
+
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--quiet'])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert 'Saved' not in captured.err
+
+
+def test_cli_reports_log_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+    log_dir = tmp_path / 'logs'
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--no-save',
+        '--log-dir',
+        str(log_dir),
+    ])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert f'Per-charm logs saved to {log_dir}' in captured.err
+
+
+def test_cli_does_not_report_log_dir_when_nothing_ran(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    log_dir = tmp_path / 'logs'
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--no-save',
+        '--log-dir',
+        str(log_dir),
+    ])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert 'Per-charm logs saved to' not in captured.err
+
+
 def test_cli_save_flags_mutually_exclusive(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):
