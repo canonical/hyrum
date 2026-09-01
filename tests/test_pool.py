@@ -16,13 +16,11 @@ class StubRunner:
         self,
         status: runners.RunStatus = runners.RunStatus.PASSED,
         returncode: int = 0,
-        stdout: bytes = b'',
-        stderr: bytes = b'',
+        output: bytes = b'',
     ):
         self.status = status
         self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
+        self.output = output
         self.seen: list[pathlib.Path] = []
 
     async def run(self, repo: pathlib.Path, target: str) -> runners.RunResult:
@@ -34,8 +32,7 @@ class StubRunner:
             status=self.status,
             returncode=self.returncode,
             duration_s=0.01,
-            stdout=self.stdout,
-            stderr=self.stderr,
+            output=self.output,
         )
 
 
@@ -101,7 +98,7 @@ async def test_run_pool_handles_runner_exception_as_patcher_error(tmp_path: path
 
 async def test_run_one_runner_error_is_not_a_test_failure(tmp_path: pathlib.Path):
     runner = StubRunner(runners.RunStatus.RUNNER_ERROR, returncode=None)
-    runner.stderr = b"could not run 'make': [Errno 2] No such file or directory: 'make'"
+    runner.output = b"could not run 'make': [Errno 2] No such file or directory: 'make'"
     outcome = await pool.run_one(tmp_path, 'unit', patcher=patchers.NullPatcher(), runner=runner)
     assert outcome.status == 'runner_error'
     # Not attributed to the patcher, and the cause survives into the report.
@@ -116,7 +113,9 @@ async def test_log_dir_dumps_runner_output(tmp_path: pathlib.Path):
     repo.mkdir(parents=True)
     log_dir = tmp_path / 'logs'
     runner = StubRunner(
-        runners.RunStatus.FAILED, returncode=2, stdout=b'pytest ran\n', stderr=b'oops\n'
+        runners.RunStatus.FAILED,
+        returncode=2,
+        output=b'collecting ...\npytest ran\noops\n',
     )
     outcome = await pool.run_one(
         repo,
@@ -133,8 +132,11 @@ async def test_log_dir_dumps_runner_output(tmp_path: pathlib.Path):
     content = log.read_text()
     assert 'status: failed' in content
     assert 'returncode: 2' in content
-    assert 'pytest ran' in content
-    assert 'oops' in content
+    # One transcript, in the order the runner captured it — no per-stream
+    # sections to reassemble.
+    assert '=== output ===\ncollecting ...\npytest ran\noops\n' in content
+    assert '=== stdout ===' not in content
+    assert '=== stderr ===' not in content
 
 
 async def test_log_dir_dumps_patcher_error(tmp_path: pathlib.Path):

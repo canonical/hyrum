@@ -973,8 +973,9 @@ def _add_check_subparser(
         type=pathlib.Path,
         default=None,
         help=(
-            "Write each charm's runner stdout/stderr to a per-charm file under "
-            'this directory. Useful for triaging failures without rerunning. '
+            "Write each charm's runner output (stdout and stderr merged, in the "
+            'order they were written) to a per-charm file under this directory. '
+            'Useful for triaging failures without rerunning. '
             'File names use the repo path with ``/`` flattened to ``__``.'
         ),
     )
