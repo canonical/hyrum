@@ -60,7 +60,7 @@ def _configure_logging(level: int) -> None:
 def _verbose_report(*, verbose: bool, verbosity: str | None) -> bool:
     """Should the report include the per-charm offender list?
 
-    The verbosity rungs are cumulative, so each is a superset of the one
+    The verbosity levels are cumulative, so each is a superset of the one
     below it: ``--verbosity debug``/``trace`` implies ``--verbose``.
     Without this, climbing from verbose to trace *loses* the offender
     list, which reads as the two flags controlling orthogonal things.
