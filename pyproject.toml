@@ -16,7 +16,7 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
 ]
 dependencies = [
-    "packaging>=24.0",
+    "packaging>=26.3",
 ]
 
 [project.scripts]
