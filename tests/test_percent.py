@@ -37,6 +37,20 @@ def test_format_pct_one_decimal(fraction: float, expected: str):
     assert _percent.format_pct(fraction, decimals=1) == expected
 
 
+@pytest.mark.parametrize(
+    ('fraction', 'expected'),
+    [
+        (0.0, '0.00%'),
+        (0.001, '0.10%'),
+        (0.0000001, '<0.01%'),
+        (0.9999999, '>99.99%'),
+        (1.0, '100.00%'),
+    ],
+)
+def test_format_pct_two_decimals(fraction: float, expected: str):
+    assert _percent.format_pct(fraction, decimals=2) == expected
+
+
 @pytest.mark.parametrize('fraction', [-0.0001, -1.0, 1.5])
 def test_format_pct_rejects_out_of_range(fraction: float):
     with pytest.raises(ValueError):
