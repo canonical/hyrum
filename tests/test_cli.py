@@ -1288,3 +1288,49 @@ def test_limit_above_the_number_available_selects_everything(charm_cache: pathli
         framework=None,
     )
     assert [p.name for p in repos] == ['c-modern', 'd-modern']
+
+
+def test_verbose_report_rungs_are_cumulative():
+    """Each verbosity rung is a superset of the one below it."""
+    assert not cli._verbose_report(verbose=False, verbosity=None)
+    assert cli._verbose_report(verbose=True, verbosity=None)
+    assert cli._verbose_report(verbose=False, verbosity='debug')
+    assert cli._verbose_report(verbose=False, verbosity='trace')
+
+
+def test_cli_verbosity_debug_includes_offender_list(
+    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--verbosity',
+        'debug',
+    ])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert 'alpha' in captured.out
+
+
+def test_cli_brief_is_accepted_and_omits_offender_list(
+    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
+
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--brief'])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert 'alpha' not in captured.out
