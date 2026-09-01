@@ -57,6 +57,17 @@ def _configure_logging(level: int) -> None:
     root.setLevel(level)
 
 
+def _verbose_report(*, verbose: bool, verbosity: str | None) -> bool:
+    """Should the report include the per-charm offender list?
+
+    The verbosity levels are cumulative, so each is a superset of the one
+    below it: ``--verbosity debug``/``trace`` implies ``--verbose``.
+    Without this, climbing from verbose to trace *loses* the offender
+    list, which reads as the two flags controlling orthogonal things.
+    """
+    return verbose or verbosity is not None
+
+
 def _resolve_log_level(*, quiet: bool, verbosity: str | None) -> int:
     if quiet:
         return logging.WARNING
@@ -954,6 +965,11 @@ def _add_check_subparser(
         help='No output except errors. Exit code still reflects pass/fail.',
     )
     verbosity_group.add_argument(
+        '--brief',
+        action='store_true',
+        help='Ordinary output: the summary tally only. [default]',
+    )
+    verbosity_group.add_argument(
         '--verbose',
         action='store_true',
         help='Descriptive detail: include the per-charm offender list in the report.',
@@ -964,8 +980,9 @@ def _add_check_subparser(
         choices=['debug', 'trace'],
         default=None,
         help=(
-            'Developer-level detail. Use debug for execution detail; trace reserved for '
-            'future code-level detail (currently aliased to debug).'
+            'Developer-level detail, including everything --verbose adds. Use debug for '
+            'execution detail; trace reserved for future code-level detail (currently '
+            'aliased to debug).'
         ),
     )
     parser.add_argument(
@@ -1244,7 +1261,7 @@ def _run_check(args: argparse.Namespace) -> int:
             results,
             base=charms_dir,
             target=args.target,
-            verbose=args.verbose,
+            verbose=_verbose_report(verbose=args.verbose, verbosity=args.verbosity),
             no_headers=args.no_headers,
         )
     elif not pool.passed(results):
