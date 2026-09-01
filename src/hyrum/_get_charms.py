@@ -88,6 +88,16 @@ async def process_rows(
 ) -> None:
     """Clone or pull each repository row concurrently.
 
+    Rows that resolve to a checkout directory an earlier row already claimed
+    are skipped: without that, two rows for one repository become two workers
+    racing for the same destination, and one of them fails with either "could
+    not create work tree dir" or "already exists and is not an empty
+    directory" depending on which lost. Deduplication is keyed on the
+    directory rather than the URL so two spellings of one repository, or two
+    rows for one charm listed under different teams, collapse as well. The
+    rows themselves are left alone: a charm listed twice under two teams is
+    real metadata.
+
     ``workers`` caps how many ``git`` subprocesses run at once so a large
     charm list can't exhaust the process file-descriptor limit. ``timeout``
     bounds each individual ``git`` invocation so one unresponsive forge can't
@@ -106,6 +116,8 @@ async def process_rows(
             return await _clone(repo_path, name, repository, branch, timeout=timeout)
 
     tasks: list[tuple[str, asyncio.Task[bool]]] = []
+    claimed: dict[pathlib.Path, str] = {}
+    duplicates = 0
     async with asyncio.TaskGroup() as tg:
         for row in rows:
             if not row.get('Repository'):
@@ -115,6 +127,13 @@ async def process_rows(
             name = _repo_label(repository)
             branch = row.get('Branch (if not the default)') or None
             repo_path = repo_folder(dest, repository, branch)
+            if repo_path in claimed:
+                logger.debug(
+                    'Skipping %s: %s already claims %s', name, claimed[repo_path], repo_path
+                )
+                duplicates += 1
+                continue
+            claimed[repo_path] = name
             if repo_path.exists():
                 tasks.append((name, tg.create_task(_pull_bounded(repo_path, name))))
             else:
@@ -126,6 +145,8 @@ async def process_rows(
     failures = [name for name, task in tasks if not task.result()]
     succeeded = len(tasks) - len(failures)
     logger.info('get-charms: %d succeeded, %d failed.', succeeded, len(failures))
+    if duplicates:
+        logger.info('get-charms: %d rows skipped as duplicates of an earlier row.', duplicates)
     if failures:
         logger.warning('Failed: %s', ', '.join(failures))
 
