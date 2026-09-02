@@ -1,0 +1,26 @@
+# Install development tools.
+snap install --classic astral-uv
+
+# `make` is the command runner for hyrum's own targets, and the runner backend
+# for the charms that don't use tox. The rest are what the charms in the
+# curated list need in order to build their C and Rust extensions from source:
+# without them a charm fails with a missing gcc, Python.h, or ffi.h rather than
+# with a real result. See "Host prerequisites" in README.md.
+apt-get update -qq
+apt-get install -yqq \
+    build-essential \
+    git \
+    libffi-dev \
+    libmariadb-dev \
+    libpq-dev \
+    pkg-config \
+    python3-dev
+
+# uv hardlinks by default, which fails across the workshop mount boundary.
+echo UV_LINK_MODE=copy >> /etc/environment
+# Avoid clashes with the host's .venv in the mounted project directory.
+echo UV_PROJECT_ENVIRONMENT=/home/workshop/.venv-hyrum >> /etc/environment
+# `uv tool install` drops binaries in the user's ~/.local/bin, which isn't on
+# the default PATH for non-interactive commands. Ubuntu's default PATH, plus
+# that directory.
+echo 'PATH=/home/workshop/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' >> /etc/environment
