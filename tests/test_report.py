@@ -131,7 +131,7 @@ def test_render_floors_small_percentages(tmp_path: pathlib.Path):
     out = _render(outcomes, base=tmp_path)
     # 1 in 301 is 0.33%, which must not render as a bare '0%'.
     passed_row = next(line for line in out.splitlines() if line.startswith('passed'))
-    assert passed_row.split() == ['passed', '1', '<1%']
+    assert passed_row.split() == ['passed', '1', '<1%', '100%']
 
 
 def test_render_labels_the_table_denominator(tmp_path: pathlib.Path):
@@ -146,3 +146,32 @@ def test_render_labels_the_summary_denominator(tmp_path: pathlib.Path):
     ]
     out = _render(outcomes, base=tmp_path)
     assert '1 of 1 runs passed (100% of runs); 1 not run (1 skipped).' in out
+
+
+def test_render_reports_both_denominators(tmp_path: pathlib.Path):
+    outcomes = [
+        pool.Outcome(repo=tmp_path / 'pass', status='passed'),
+        pool.Outcome(repo=tmp_path / 'fail', status='failed'),
+    ]
+    outcomes += [pool.Outcome(repo=tmp_path / f'skip{i}', status='skipped') for i in range(8)]
+    rows = {
+        line.split()[0]: line.split()[1:]
+        for line in _render(outcomes, base=tmp_path).splitlines()
+        if line.split() and line.split()[0] in ('passed', 'failed', 'skipped')
+    }
+    # One passing charm in ten is 10% of the fleet but half of what ran, and
+    # the table now says both rather than leaving the reader to guess which
+    # one the column means.
+    assert rows['passed'] == ['1', '10%', '50%']
+    assert rows['failed'] == ['1', '10%', '50%']
+    # A skipped charm never ran, so its share of the runs is not zero, it is
+    # undefined.
+    assert rows['skipped'] == ['8', '80%', '\u2014']
+
+
+def test_render_has_no_run_percentages_when_nothing_ran(tmp_path: pathlib.Path):
+    outcomes = [pool.Outcome(repo=tmp_path / f'skip{i}', status='skipped') for i in range(3)]
+    out = _render(outcomes, base=tmp_path)
+    skipped_row = next(line for line in out.splitlines() if line.startswith('skipped'))
+    assert skipped_row.split() == ['skipped', '3', '100%', '\u2014']
+    assert 'No runs executed.' in out
