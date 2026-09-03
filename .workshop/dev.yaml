@@ -1,0 +1,10 @@
+name: dev
+base: ubuntu@26.04
+sdks:
+  - name: project-hyrum
+actions:
+  all: make all
+  format: make format
+  lint: make lint ARGS="$*"
+  unit: make unit ARGS="$*"
+  hyrum: uv run hyrum "$@"
