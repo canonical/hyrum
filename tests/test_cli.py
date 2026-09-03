@@ -1327,7 +1327,7 @@ def test_top_level_help_does_not_use_an_undefined_target(capsys: pytest.CaptureF
 
 
 def test_help_text_carries_no_rest_markup(capsys: pytest.CaptureFixture[str]):
-    for command in ((), ('check',), ('compare',), ('get-charms',)):
+    for command in ((), ('check',), ('clean',), ('compare',), ('get-charms',)):
         text = _help(capsys, *command)
         assert '``' not in text
 
@@ -1556,3 +1556,34 @@ def test_show_is_always_a_path_no_shorthand_resolution(
 def test_show_help_carries_no_rest_markup(capsys: pytest.CaptureFixture[str]):
     text = _help(capsys, 'show')
     assert '``' not in text
+
+
+def _cache_with_artefacts(tmp_path: pathlib.Path) -> pathlib.Path:
+    cache = tmp_path / 'charms'
+    repo = cache / 'a-charm'
+    (repo / '.git').mkdir(parents=True)
+    (repo / 'charmcraft.yaml').write_text('type: charm\n')
+    (repo / '.tox').mkdir()
+    (repo / '.tox' / 'big').write_bytes(b'x' * 2048)
+    return cache
+
+
+def test_clean_removes_artefacts_and_reports_what_it_reclaimed(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = _cache_with_artefacts(tmp_path)
+    assert _run(['clean', '--charms-dir', str(cache)]) == 0
+    assert 'Reclaimed 2.0 KiB from 1 artefact.' in capsys.readouterr().out
+    assert not (cache / 'a-charm' / '.tox').exists()
+    assert (cache / 'a-charm' / 'charmcraft.yaml').exists()
+
+
+def test_clean_dry_run_removes_nothing(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
+    cache = _cache_with_artefacts(tmp_path)
+    assert _run(['clean', '--charms-dir', str(cache), '--dry-run']) == 0
+    assert 'Would reclaim 2.0 KiB from 1 artefact.' in capsys.readouterr().out
+    assert (cache / 'a-charm' / '.tox' / 'big').exists()
+
+
+def test_clean_on_a_missing_charms_dir_is_an_error(tmp_path: pathlib.Path):
+    assert _run(['clean', '--charms-dir', str(tmp_path / 'nope')]) != 0
