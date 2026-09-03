@@ -20,7 +20,7 @@ from collections.abc import Sequence
 
 import packaging.requirements
 
-from hyrum import _compare, _enumerate, _results, _version
+from hyrum import _compare, _enumerate, _locks, _results, _version
 from hyrum import _config as config_loader
 from hyrum import _filters as filt
 from hyrum import _frameworks as frameworks
@@ -979,6 +979,15 @@ def _add_check_subparser(
         ),
     )
     parser.add_argument(
+        '--no-lock',
+        action='store_true',
+        help=(
+            'Do not take a per-charm lock. Two runs sharing a charms directory then '
+            'patch the same charm at the same time, and each reports results for '
+            'whichever patch won, so only use this when nothing else is running.'
+        ),
+    )
+    parser.add_argument(
         '--no-headers',
         action='store_true',
         help='Suppress header row in the summary table.',
@@ -1218,6 +1227,7 @@ def _run_check(args: argparse.Namespace) -> int:
             workers=args.workers,
             log_dir=args.log_dir,
             log_base=charms_dir,
+            lock_root=None if args.no_lock else _locks.lock_root_for(charms_dir),
         )
     )
     pool.add_skipped(results, skipped)
