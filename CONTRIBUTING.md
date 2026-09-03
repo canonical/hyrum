@@ -61,7 +61,7 @@ workshop run dev hyrum get-charms
 workshop run dev hyrum check unit --patch 'ops @ canonical:some-branch'
 ```
 
-`workshop refresh` resets the workshop's home directory, so `~/.cache/hyrum` (the charm checkouts and the saved results) is a mount rather than a plain directory, and survives. To back it with a directory on the host instead — to share the checkouts between workshops, or to keep them when you `workshop remove dev` — run `workshop remount dev/hyrum:cache ~/.cache/hyrum`.
+Inside the workshop, hyrum's cache is at the usual `~/.cache/hyrum` — but that's the *container's* home directory (`/home/workshop/.cache/hyrum`), not your host's, so the charm checkouts and saved results are separate from anything a host install of hyrum has cached. It's also a mount rather than a plain directory, because `workshop refresh` resets the container's home directory and re-cloning the curated charm list is expensive. By default the mount is storage that workshop manages, and it goes away with `workshop remove dev`. To back it with a directory on the host instead — to share the checkouts with the host or with other workshops, and to keep them when the workshop is removed — run `workshop remount dev/hyrum:cache ~/.cache/hyrum`.
 
 The workshop doesn't set `PYO3_USE_ABI3_FORWARD_COMPATIBILITY` or `TOX_OVERRIDE`; see "Host prerequisites" in the README for when you want those.
 
