@@ -1310,10 +1310,16 @@ def test_help_text_carries_no_rest_markup(capsys: pytest.CaptureFixture[str]):
         assert '``' not in text
 
 
-def test_patch_help_puts_each_form_on_its_own_line(capsys: pytest.CaptureFixture[str]):
+def test_patch_help_puts_each_form_on_its_own_line(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv('COLUMNS', '80')
     lines = _help(capsys, 'check').splitlines()
     for form in ('version pin', 'git source', 'local path', 'owner:branch', 'vendored swap'):
         assert sum(1 for line in lines if line.strip().startswith(form)) == 1
+    # A form long enough to wrap must not spill past the terminal it is
+    # wrapped for: the formatter has to keep the indent inside the width.
+    assert max(len(line) for line in lines) <= 80
 
 
 def test_patch_help_states_its_default_like_every_other_flag(capsys: pytest.CaptureFixture[str]):

@@ -927,18 +927,16 @@ def _add_check_subparser(
             'Swap a dependency, in PEP 508 form. May be given multiple times. '
             'Mutually exclusive with --no-patch. [default: `ops @ canonical:main`]\n'
             'One of these forms:\n'
-            '  version pin      `requests==2.31.0`, `requests>=1.2,<2`\n'
-            '  git source       `requests @ git+https://github.com/psf/requests@main`\n'
-            '  local path       `mylib @ file:///abs/path`\n'
-            '  owner:branch     `ops @ canonical:fix/X` (ops and charmlibs-* only)\n'
-            '  charmlib branch  `charmlibs-nginx_k8s @ canonical:main`, pointing a\n'
-            '                   charmlib at a branch of canonical/charmlibs; type the\n'
-            '                   package name with the same separators as the on-disk\n'
-            '                   directory\n'
-            '  vendored swap    `charms.<author>.v<n>.<lib> -> <spec>`, replacing\n'
-            '                   lib/charms/<author>/v<n>/<lib>.py with a PyPI package;\n'
-            "                   <spec> takes any form above, and for canonical's\n"
-            '                   monorepo include #subdirectory=<lib>'
+            '  version pin: `requests==2.31.0`, `requests>=1.2,<2`\n'
+            '  git source: `requests @ git+https://github.com/psf/requests@main`\n'
+            '  local path: `mylib @ file:///abs/path`\n'
+            '  owner:branch: `ops @ canonical:fix/X` (ops and charmlibs-* only)\n'
+            '  charmlib branch: `charmlibs-nginx_k8s @ canonical:main`, pointing a '
+            'charmlib at a branch of canonical/charmlibs; type the package name with '
+            'the same separators as the on-disk directory\n'
+            '  vendored swap: `charms.<author>.v<n>.<lib> -> <spec>`, replacing '
+            'lib/charms/<author>/v<n>/<lib>.py with a PyPI package; <spec> takes any '
+            "form above, and for canonical's monorepo include #subdirectory=<lib>"
         ),
     )
     parser.add_argument(
