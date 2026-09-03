@@ -17,6 +17,12 @@ from typing import TextIO
 from hyrum import _ansi, _percent
 from hyrum import _pool as pool
 
+# The statuses that mean the charm's target actually ran, as opposed to the
+# charm being skipped or the run falling over before it got that far.
+_RAN_STATUSES = ('passed', 'failed', 'timeout')
+# Stands in for a percentage that has no meaning, rather than one that is zero.
+_NOT_APPLICABLE = '—'
+
 _RESET = _ansi.RESET
 _BOLD = _ansi.BOLD
 _STATUS_COLOURS: dict[str, str] = {
@@ -38,30 +44,30 @@ def _relative(repo: pathlib.Path, base: pathlib.Path) -> str:
 
 
 def _format_table(
-    rows: list[tuple[str, str, str]],
+    rows: list[tuple[str, ...]],
     *,
-    headers: tuple[str, str, str] | None,
+    headers: tuple[str, ...] | None,
     colour_for_first: dict[str, str],
     use_colour: bool,
 ) -> str:
-    raw_rows: list[tuple[str, str, str]] = []
+    raw_rows: list[tuple[str, ...]] = []
     if headers is not None:
         raw_rows.append(headers)
     raw_rows.extend(rows)
-    widths = [max(len(r[i]) for r in raw_rows) for i in range(3)]
+    columns = len(raw_rows[0])
+    widths = [max(len(r[i]) for r in raw_rows) for i in range(columns)]
 
-    def render(row: tuple[str, str, str], *, header: bool = False) -> str:
-        status_cell = row[0].ljust(widths[0])
-        count_cell = row[1].rjust(widths[1])
-        pct_cell = row[2].rjust(widths[2])
+    def render(row: tuple[str, ...], *, header: bool = False) -> str:
+        # The first column is the label, the rest are numbers, so only the
+        # first is left-aligned.
+        cells = [row[0].ljust(widths[0])]
+        cells.extend(cell.rjust(width) for cell, width in zip(row[1:], widths[1:], strict=True))
         if use_colour and header:
-            status_cell = f'{_BOLD}{status_cell}{_RESET}'
-            count_cell = f'{_BOLD}{count_cell}{_RESET}'
-            pct_cell = f'{_BOLD}{pct_cell}{_RESET}'
+            cells = [f'{_BOLD}{cell}{_RESET}' for cell in cells]
         elif use_colour and row[0] in colour_for_first:
             colour = colour_for_first[row[0]]
-            status_cell = f'{colour}{status_cell}{_RESET}'
-        return f'{status_cell}  {count_cell}  {pct_cell}'
+            cells[0] = f'{colour}{cells[0]}{_RESET}'
+        return '  '.join(cells)
 
     lines: list[str] = []
     if headers is not None:
@@ -88,26 +94,35 @@ def render(
 
     counts = collections.Counter(o.status for o in outcomes)
     total = len(outcomes)
-    ran = sum(counts.get(s, 0) for s in ('passed', 'failed', 'timeout'))
+    ran = sum(counts.get(s, 0) for s in _RAN_STATUSES)
 
     title = f'hyrum: {target}'
     print(f'{_BOLD}{title}{_RESET}' if use_colour else title, file=stream)
 
-    rows: list[tuple[str, str, str]] = []
+    def of_all(count: int) -> str:
+        return _percent.format_pct(count / total) if total else _NOT_APPLICABLE
+
+    def of_runs(status: str, count: int) -> str:
+        # Only the statuses that come from a charm actually being run have a
+        # share of the runs; for the others the cell would be a category error
+        # rather than a zero.
+        if status not in _RAN_STATUSES or not ran:
+            return _NOT_APPLICABLE
+        return _percent.format_pct(count / ran)
+
+    rows: list[tuple[str, ...]] = []
     for status in pool.OUTCOME_STATUSES:
         count = counts.get(status, 0)
-        pct = _percent.format_pct(count / total) if total else '—'
-        rows.append((status, str(count), pct))
+        rows.append((status, str(count), of_all(count), of_runs(status, count)))
         if status == 'skipped' and count:
             skip_kinds: collections.Counter[str] = collections.Counter(
                 o.skip_reason_kind.value for o in outcomes if o.skip_reason_kind is not None
             )
             for kind, kind_count in sorted(skip_kinds.items()):
-                kind_pct = _percent.format_pct(kind_count / total) if total else '—'
-                rows.append((f'  {kind}', str(kind_count), kind_pct))
+                rows.append((f'  {kind}', str(kind_count), of_all(kind_count), _NOT_APPLICABLE))
     table = _format_table(
         rows,
-        headers=None if no_headers else ('STATUS', 'COUNT', '% OF ALL'),
+        headers=None if no_headers else ('STATUS', 'COUNT', '% OF ALL', '% OF RUNS'),
         colour_for_first=_STATUS_COLOURS,
         use_colour=use_colour,
     )
