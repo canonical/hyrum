@@ -15,6 +15,7 @@ import shlex
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] — subprocess is core to the git ls-remote preflight
 import sys
+import textwrap
 import time
 from collections.abc import Sequence
 
@@ -235,7 +236,7 @@ def _parse_patch(arg: str) -> PatchSpec:
         if not m:
             raise argparse.ArgumentTypeError(
                 f'--patch: left of "->" must be a vendored dotted form '
-                f'``charms.<author>.v<n>.<lib>``, got {lhs!r}'
+                f'`charms.<author>.v<n>.<lib>`, got {lhs!r}'
             )
         rhs_spec = rhs.strip()
         if not rhs_spec:
@@ -268,7 +269,7 @@ def _parse_patch(arg: str) -> PatchSpec:
     if not str(req.specifier):
         raise argparse.ArgumentTypeError(
             f'--patch: {arg!r} must include a version specifier (==X.Y.Z), '
-            f'a ``@`` source (git+URL, file:// path, owner:branch shorthand), '
+            f'a `@` source (git+URL, file:// path, owner:branch shorthand), '
             f'or a bare path'
         )
     return PatchSpec(pkg_name=req.name, version=str(req.specifier))
@@ -808,12 +809,42 @@ def _plan_from_config(save_config: config_loader.SaveConfig) -> _SavePlan:
     return _PathSavePlan(save_config.path)
 
 
+class _HelpFormatter(argparse.HelpFormatter):
+    """Wrap each line of a help string on its own, so explicit newlines survive.
+
+    argparse's default formatter reflows help text into a single block, which
+    runs --patch's list of accepted forms together into one paragraph.
+    """
+
+    def _split_lines(self, text: str, width: int) -> list[str]:
+        lines: list[str] = []
+        for line in text.splitlines():
+            body = line.lstrip()
+            if not body:
+                lines.append('')
+                continue
+            indent = ' ' * (len(line) - len(body))
+            # Only an already-indented line is part of a list, and only there
+            # does a hanging indent help; unindented prose stays flush so the
+            # other flags look exactly as they did.
+            lines.extend(
+                textwrap.wrap(
+                    body,
+                    width,
+                    initial_indent=indent,
+                    subsequent_indent=indent + '  ' if indent else '',
+                )
+            )
+        return lines
+
+
 def _add_check_subparser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> argparse.ArgumentParser:
     parser = subparsers.add_parser(
         'check',
-        help='Run TARGET across many charm repos.',
+        formatter_class=_HelpFormatter,
+        help='Run a tox environment or make target (e.g. unit, lint) across many charm repos.',
         description=(
             'Run TARGET (a tox environment or make target, e.g. unit, lint) '
             'across many charm repos.'
@@ -893,20 +924,21 @@ def _add_check_subparser(
         type=_parse_patch,
         default=[],
         help=(
-            'Swap a dependency. PEP 508 form, such as ``ops==2.17.0``, '
-            '``ops @ canonical:fix/X`` (``owner:branch`` shorthand for ops or '
-            'charmlibs-*), ``requests==2.31.0``, ``requests>=1.2,<2``, '
-            '``requests @ git+https://github.com/psf/requests@main``, '
-            '``mylib @ file:///abs/path``, or '
-            '``charmlibs-nginx_k8s @ canonical:main`` to point a charmlib at '
-            'a branch of canonical/charmlibs (type the package name with the '
-            'same separators as the on-disk directory), or '
-            '``charms.<author>.v<n>.<lib> -> <spec>`` to swap a vendored '
-            'lib/charms/<author>/v<n>/<lib>.py file for a PyPI package '
-            "(``<spec>`` accepts the same forms as above; for canonical's "
-            'monorepo include ``#subdirectory=<lib>``). May be given multiple times. '
-            'If not given (and ``--no-patch`` is not set), defaults to '
-            '``ops @ canonical:main``. Mutually exclusive with ``--no-patch``.'
+            'Swap a dependency, in PEP 508 form. May be given multiple times. '
+            'Mutually exclusive with --no-patch. [default: `ops @ canonical:main`]\n'
+            'One of these forms:\n'
+            '  version pin      `requests==2.31.0`, `requests>=1.2,<2`\n'
+            '  git source       `requests @ git+https://github.com/psf/requests@main`\n'
+            '  local path       `mylib @ file:///abs/path`\n'
+            '  owner:branch     `ops @ canonical:fix/X` (ops and charmlibs-* only)\n'
+            '  charmlib branch  `charmlibs-nginx_k8s @ canonical:main`, pointing a\n'
+            '                   charmlib at a branch of canonical/charmlibs; type the\n'
+            '                   package name with the same separators as the on-disk\n'
+            '                   directory\n'
+            '  vendored swap    `charms.<author>.v<n>.<lib> -> <spec>`, replacing\n'
+            '                   lib/charms/<author>/v<n>/<lib>.py with a PyPI package;\n'
+            "                   <spec> takes any form above, and for canonical's\n"
+            '                   monorepo include #subdirectory=<lib>'
         ),
     )
     parser.add_argument(
@@ -975,7 +1007,7 @@ def _add_check_subparser(
         help=(
             "Write each charm's runner stdout/stderr to a per-charm file under "
             'this directory. Useful for triaging failures without rerunning. '
-            'File names use the repo path with ``/`` flattened to ``__``.'
+            'File names use the repo path with `/` flattened to `__`.'
         ),
     )
     parser.add_argument(

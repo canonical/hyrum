@@ -1288,3 +1288,35 @@ def test_limit_above_the_number_available_selects_everything(charm_cache: pathli
         framework=None,
     )
     assert [p.name for p in repos] == ['c-modern', 'd-modern']
+
+
+def _help(capsys: pytest.CaptureFixture[str], *argv: str) -> str:
+    with pytest.raises(SystemExit):
+        cli.main([*argv, '--help'])
+    return capsys.readouterr().out
+
+
+def test_top_level_help_does_not_use_an_undefined_target(capsys: pytest.CaptureFixture[str]):
+    # `TARGET` has no referent until you run `hyrum check --help`, so the
+    # top-level line has to stand on its own.
+    text = _help(capsys)
+    assert 'TARGET' not in text
+    assert 'Run a tox environment or make target (e.g. unit, lint)' in text
+
+
+def test_help_text_carries_no_rest_markup(capsys: pytest.CaptureFixture[str]):
+    for command in ((), ('check',), ('compare',), ('get-charms',)):
+        text = _help(capsys, *command)
+        assert '``' not in text
+
+
+def test_patch_help_puts_each_form_on_its_own_line(capsys: pytest.CaptureFixture[str]):
+    lines = _help(capsys, 'check').splitlines()
+    for form in ('version pin', 'git source', 'local path', 'owner:branch', 'vendored swap'):
+        assert sum(1 for line in lines if line.strip().startswith(form)) == 1
+
+
+def test_patch_help_states_its_default_like_every_other_flag(capsys: pytest.CaptureFixture[str]):
+    text = _help(capsys, 'check')
+    assert '[default: `ops @ canonical:main`]' in text
+    assert 'defaults to' not in text
