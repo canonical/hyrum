@@ -844,16 +844,19 @@ def _add_check_subparser(
     parser = subparsers.add_parser(
         'check',
         formatter_class=_HelpFormatter,
-        help='Run a tox environment or make target (e.g. unit, lint) across many charm repos.',
+        help=(
+            'Run a tox environment or make target (for example, unit or lint) '
+            'across many charm repos.'
+        ),
         description=(
-            'Run TARGET (a tox environment or make target, e.g. unit, lint) '
+            'Run TARGET (a tox environment or make target, for example unit or lint) '
             'across many charm repos.'
         ),
     )
     parser.add_argument(
         'target',
         metavar='TARGET',
-        help='Tox environment or make target to run (e.g. unit, lint).',
+        help='Tox environment or make target to run (for example, unit or lint).',
     )
     parser.add_argument(
         '--charms-dir',
@@ -1025,7 +1028,8 @@ def _add_check_subparser(
         action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            'Inject sensible default env vars (e.g. PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1) '
+            'Inject sensible default env vars (for example, '
+            'PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1) '
             'plus matching TOX_OVERRIDE pass_env entries so common host build issues '
             'do not get mis-attributed to the charm. [default: enabled]'
         ),

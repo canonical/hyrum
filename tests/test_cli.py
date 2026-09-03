@@ -1301,7 +1301,10 @@ def test_top_level_help_does_not_use_an_undefined_target(capsys: pytest.CaptureF
     # top-level line has to stand on its own.
     text = _help(capsys)
     assert 'TARGET' not in text
-    assert 'Run a tox environment or make target (e.g. unit, lint)' in text
+    # argparse wraps the line to the terminal, so compare without the breaks.
+    assert 'Run a tox environment or make target (for example, unit or lint)' in ' '.join(
+        text.split()
+    )
 
 
 def test_help_text_carries_no_rest_markup(capsys: pytest.CaptureFixture[str]):
