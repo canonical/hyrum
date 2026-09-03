@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import pathlib
 
 import pytest
 
+from hyrum import _locks
 from hyrum import _patchers as patchers
 from hyrum import _pool as pool
 from hyrum import _runners as runners
@@ -188,3 +191,59 @@ def test_add_skipped_appends():
 )
 def test_passed(outcomes, expected):
     assert pool.passed(outcomes) is expected
+
+
+class LockObservingPatcher:
+    """Records whether the charm's lock was held while the patch was applied."""
+
+    def __init__(self, lock_file: pathlib.Path):
+        self._lock_file = lock_file
+        self.locked_during_patch: bool | None = None
+
+    @contextlib.contextmanager
+    def apply(self, repo: pathlib.Path):
+        self.locked_during_patch = _is_locked(self._lock_file)
+        yield
+
+
+def _is_locked(path: pathlib.Path) -> bool:
+    if not path.exists():
+        return False
+    with path.open('r') as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(handle, fcntl.LOCK_UN)
+    return False
+
+
+async def test_run_one_holds_the_charm_lock_across_the_patch(tmp_path: pathlib.Path):
+    repo = tmp_path / 'a-charm'
+    repo.mkdir()
+    lock_root = _locks.lock_root_for(tmp_path)
+    lock_file = _locks.lock_path(repo, lock_root=lock_root, base=tmp_path)
+    patcher = LockObservingPatcher(lock_file)
+    outcome = await pool.run_one(
+        repo,
+        'unit',
+        patcher=patcher,
+        runner=StubRunner(),
+        log_base=tmp_path,
+        lock_root=lock_root,
+    )
+    assert outcome.status == 'passed'
+    # The window that matters starts before the patcher touches the tree.
+    assert patcher.locked_during_patch is True
+    # And it ends when the charm is done, so the next run is not shut out.
+    assert not _is_locked(lock_file)
+
+
+async def test_run_one_without_a_lock_root_takes_no_lock(tmp_path: pathlib.Path):
+    repo = tmp_path / 'a-charm'
+    repo.mkdir()
+    outcome = await pool.run_one(
+        repo, 'unit', patcher=patchers.NullPatcher(), runner=StubRunner(), log_base=tmp_path
+    )
+    assert outcome.status == 'passed'
+    assert not _locks.lock_root_for(tmp_path).exists()
