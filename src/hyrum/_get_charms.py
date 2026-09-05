@@ -3,7 +3,9 @@
 Reads ``charm-list/charms.csv`` (or another path given via ``--source``) and
 ensures each row has an up-to-date checkout in ``--dest``: missing
 repositories are cloned (shallow, single-branch), existing ones are pulled.
-Network work runs concurrently via ``asyncio``.
+``select_rows`` narrows the list first, so a slow or unstable link can
+populate the collection a slice at a time. Network work runs concurrently
+via ``asyncio``.
 
 The ``git`` CLI is invoked as a subprocess, so it inherits whatever
 authentication the calling shell has configured.
@@ -16,6 +18,7 @@ import contextlib
 import logging
 import os
 import pathlib
+import re
 import shutil
 import signal
 import typing
@@ -77,6 +80,40 @@ def find_default_source() -> pathlib.Path | None:
         if candidate.exists():
             return candidate
     return None
+
+
+def select_rows(
+    rows: typing.Iterable[CharmRow],
+    *,
+    repo: str = '.*',
+    limit: int = 0,
+) -> list[CharmRow]:
+    """Return the subset of ``rows`` to clone or pull.
+
+    ``repo`` is a case-insensitive regex matched against the checkout's
+    folder name -- the same string ``hyrum check --repo`` matches, so a
+    pattern selects the same charms in both subcommands. ``limit`` caps how
+    many rows are selected, counted after ``repo`` has been applied so that
+    it bounds the work done rather than the rows looked at; ``0`` selects
+    every match.
+
+    Rows with no ``Repository`` cannot be named, so they are dropped here
+    rather than counted against ``limit``. ``process_rows`` keeps its own
+    guard for callers that do not come through this function.
+    """
+    pattern = re.compile(repo, re.IGNORECASE)
+    selected: list[CharmRow] = []
+    for row in rows:
+        if limit > 0 and len(selected) >= limit:
+            break
+        repository = (row.get('Repository') or '').rstrip('/')
+        if not repository:
+            logger.warning('Skipping row without Repository: %r', row)
+            continue
+        branch = row.get('Branch (if not the default)') or None
+        if pattern.match(_folder_leaf(repository, branch)):
+            selected.append(row)
+    return selected
 
 
 async def process_rows(
@@ -159,10 +196,14 @@ def _repo_label(repository: str) -> str:
 
 def repo_folder(dest: pathlib.Path, repository: str, branch: str | None) -> pathlib.Path:
     """Return the directory inside ``dest`` for ``repository``, namespaced by owner."""
-    parts = repository.rstrip('/').rsplit('/', 2)
-    owner, base_name = parts[-2], parts[-1]
-    leaf = f'{base_name}-{branch}' if branch else base_name
-    return dest / owner / leaf
+    owner = repository.rstrip('/').rsplit('/', 2)[-2]
+    return dest / owner / _folder_leaf(repository, branch)
+
+
+def _folder_leaf(repository: str, branch: str | None) -> str:
+    """Return the checkout's folder name: the repo name, plus any branch suffix."""
+    base_name = repository.rstrip('/').rsplit('/', 2)[-1]
+    return f'{base_name}-{branch}' if branch else base_name
 
 
 class _TimeoutError(Exception):

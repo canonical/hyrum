@@ -128,6 +128,79 @@ def test_repo_folder_appends_branch_suffix_to_leaf(tmp_path: pathlib.Path):
     )
 
 
+# ---- select_rows ------------------------------------------------------------
+
+
+def _row(repository: str, branch: str = '') -> get_charms.CharmRow:
+    return typing.cast(
+        'get_charms.CharmRow',
+        {'Repository': repository, 'Branch (if not the default)': branch},
+    )
+
+
+def test_select_rows_defaults_to_every_row():
+    rows = [_row('https://github.com/canonical/foo'), _row('https://github.com/canonical/bar')]
+    assert get_charms.select_rows(rows) == rows
+
+
+def test_select_rows_matches_the_repo_name_not_the_owner():
+    rows = [_row('https://github.com/canonical/foo'), _row('https://github.com/other/bar')]
+    assert get_charms.select_rows(rows, repo='bar') == [rows[1]]
+
+
+def test_select_rows_repo_pattern_is_case_insensitive():
+    rows = [_row('https://github.com/canonical/Foo')]
+    assert get_charms.select_rows(rows, repo='foo') == rows
+
+
+def test_select_rows_repo_pattern_is_anchored_at_the_start():
+    rows = [_row('https://github.com/canonical/prefix-foo')]
+    assert get_charms.select_rows(rows, repo='foo') == []
+
+
+def test_select_rows_matches_the_branch_suffix_the_checkout_will_have():
+    rows = [_row('https://github.com/canonical/foo', '24.04')]
+    assert get_charms.select_rows(rows, repo='foo-24.04') == rows
+
+
+def test_select_rows_tolerates_a_trailing_slash_on_the_repository():
+    rows = [_row('https://github.com/canonical/foo/')]
+    assert get_charms.select_rows(rows, repo='foo$') == rows
+
+
+def test_select_rows_limit_caps_the_selection():
+    rows = [_row(f'https://github.com/canonical/foo{n}') for n in range(5)]
+    assert get_charms.select_rows(rows, limit=2) == rows[:2]
+
+
+def test_select_rows_limit_counts_matches_not_rows_looked_at():
+    rows = [
+        _row('https://github.com/canonical/skip-me'),
+        _row('https://github.com/canonical/keep-1'),
+        _row('https://github.com/canonical/skip-me-too'),
+        _row('https://github.com/canonical/keep-2'),
+    ]
+    assert get_charms.select_rows(rows, repo='keep', limit=2) == [rows[1], rows[3]]
+
+
+def test_select_rows_zero_limit_selects_everything():
+    rows = [_row(f'https://github.com/canonical/foo{n}') for n in range(3)]
+    assert get_charms.select_rows(rows, limit=0) == rows
+
+
+def test_select_rows_drops_and_warns_about_rows_without_repository(caplog):
+    rows = [_row(''), _row('https://github.com/canonical/foo')]
+    with caplog.at_level(logging.WARNING):
+        assert get_charms.select_rows(rows) == [rows[1]]
+    assert 'without Repository' in caplog.text
+
+
+def test_select_rows_does_not_count_a_malformed_row_against_the_limit(caplog):
+    rows = [_row(''), _row('https://github.com/canonical/foo')]
+    with caplog.at_level(logging.WARNING):
+        assert get_charms.select_rows(rows, limit=1) == [rows[1]]
+
+
 # ---- process_rows -----------------------------------------------------------
 
 
@@ -438,3 +511,90 @@ def test_get_charms_creates_dest_and_drives_clone(tmp_path: pathlib.Path, spawne
     assert dest.is_dir()
     argv, _ = fake.calls[0]
     assert argv[:2] == ('git', 'clone')
+
+
+def test_get_charms_repo_flag_narrows_what_is_cloned(tmp_path: pathlib.Path, spawner):
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text(
+        'Charm Name,Repository,Branch (if not the default)\n'
+        'foo,https://github.com/canonical/foo,\n'
+        'bar,https://github.com/canonical/bar,\n',
+        encoding='utf-8',
+    )
+    fake = spawner(FakeProc(returncode=0))
+
+    rc = _run_get_charms([
+        '--source',
+        str(csv_path),
+        '--dest',
+        str(tmp_path / 'dest'),
+        '--repo',
+        'bar',
+    ])
+
+    assert rc == 0
+    assert len(fake.calls) == 1
+    argv, _ = fake.calls[0]
+    assert 'https://github.com/canonical/bar' in argv
+
+
+def test_get_charms_limit_flag_caps_the_clones(tmp_path: pathlib.Path, spawner):
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text(
+        'Charm Name,Repository,Branch (if not the default)\n'
+        + ''.join(f'c{n},https://github.com/canonical/c{n},\n' for n in range(4)),
+        encoding='utf-8',
+    )
+    fake = spawner(FakeProc(returncode=0), FakeProc(returncode=0))
+
+    rc = _run_get_charms([
+        '--source',
+        str(csv_path),
+        '--dest',
+        str(tmp_path / 'dest'),
+        '--limit',
+        '2',
+    ])
+
+    assert rc == 0
+    assert len(fake.calls) == 2
+
+
+def test_get_charms_reports_when_the_repo_pattern_matches_nothing(
+    tmp_path: pathlib.Path, spawner, capsys
+):
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text(
+        'Charm Name,Repository,Branch (if not the default)\n'
+        'foo,https://github.com/canonical/foo,\n',
+        encoding='utf-8',
+    )
+    fake = spawner()
+
+    rc = _run_get_charms([
+        '--source',
+        str(csv_path),
+        '--dest',
+        str(tmp_path / 'dest'),
+        '--repo',
+        'nothing-matches-this',
+    ])
+
+    assert rc == 0
+    assert not fake.calls
+    assert 'nothing to do' in capsys.readouterr().err
+
+
+def test_get_charms_rejects_a_negative_limit(tmp_path: pathlib.Path):
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text('Charm Name,Repository\nfoo,https://github.com/canonical/foo\n')
+    with pytest.raises(SystemExit):
+        _cli.main([
+            'get-charms',
+            '--source',
+            str(csv_path),
+            '--dest',
+            str(tmp_path / 'dest'),
+            '--limit',
+            '-1',
+        ])
