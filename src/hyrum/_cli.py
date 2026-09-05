@@ -1085,7 +1085,8 @@ def _add_get_charms_subparser(
         'get-charms',
         help='Populate the charms directory by cloning or pulling every charm in the CSV.',
         description=(
-            'Populate the charms directory by cloning or pulling every charm listed in the CSV.'
+            'Populate the charms directory by cloning or pulling every charm listed in the CSV. '
+            'Use --repo and --limit to populate part of it at a time.'
         ),
     )
     parser.add_argument(
@@ -1117,6 +1118,17 @@ def _add_get_charms_subparser(
             'Seconds before a single git clone or pull is abandoned; 0 waits forever. '
             f'[default: {get_charms.DEFAULT_TIMEOUT:g}]'
         ),
+    )
+    parser.add_argument(
+        '--repo',
+        default='.*',
+        help='Regex on the repo name, as for check. [default: .*]',
+    )
+    parser.add_argument(
+        '--limit',
+        type=_non_negative_int,
+        default=0,
+        help='Stop after selecting this many charms to clone or pull (0 = all).',
     )
     parser.add_argument('--quiet', action='store_true', help='Suppress non-error output.')
     parser.set_defaults(func=_run_get_charms)
@@ -1290,6 +1302,10 @@ def _run_get_charms(args: argparse.Namespace) -> int:
 
     with source.open(newline='', encoding='utf-8') as f:
         rows: list[get_charms.CharmRow] = list(csv.DictReader(f))  # type: ignore[arg-type]
+    rows = get_charms.select_rows(rows, repo=args.repo, limit=args.limit)
+    if not rows:
+        logger.warning('No charms in %s match --repo %r; nothing to do.', source, args.repo)
+        return 0
     asyncio.run(get_charms.process_rows(rows, dest, workers=args.workers, timeout=args.timeout))
     return 0
 
