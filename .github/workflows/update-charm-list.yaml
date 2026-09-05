@@ -80,24 +80,25 @@ jobs:
             exit 0
           fi
 
+          # Each paragraph and bullet in the body below is one long line on
+          # purpose: GitHub renders the body as Markdown and soft-wraps it to
+          # the reader's window, so hard wraps show up as ragged breaks and
+          # survive into anything that quotes or edits the text. Do not
+          # re-wrap these to fit the eighty columns the rest of the file uses.
           gh pr create \
             --base main \
             --head "$BRANCH" \
             --title "$TITLE" \
             --label dependencies \
             --body "$(cat <<'BODY'
-          Automated weekly refresh of `charm-list/charms.csv` (and the
-          `charm-list/charms-no-source.csv` sidecar).
+          Automated weekly refresh of `charm-list/charms.csv` (and the `charm-list/charms-no-source.csv` sidecar).
 
           Source: `tools/update_charm_list.py` (see job log for details).
 
           Each run can:
           - Append charms newly published on Charmhub (`Source` set to `auto`).
           - Remove rows whose GitHub repository is archived or 404.
-          - Rewrite the `Repository` URL on `auto` rows when Charmhub now
-            reports a different source URL. `manual` rows are never rewritten;
-            drift against them is logged as a warning in the job log.
-          - Refresh the no-source sidecar with the set of Charmhub packages
-            that have no recorded source URL.
+          - Rewrite the `Repository` URL on `auto` rows when Charmhub now reports a different source URL. `manual` rows are never rewritten; drift against them is logged as a warning in the job log.
+          - Refresh the no-source sidecar with the set of Charmhub packages that have no recorded source URL.
           BODY
           )"
