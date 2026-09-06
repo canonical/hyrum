@@ -153,8 +153,9 @@ hyrum check unit --framework scenario
 # any failure):
 hyrum check unit --no-fail
 
-# Dump each charm's stdout, stderr, and run metadata to a per-charm
-# file under the given directory for offline triage:
+# Dump each charm's run metadata and output (stdout and stderr merged, in
+# the order they were written) to a per-charm file under the given
+# directory for offline triage:
 hyrum check unit --log-dir ~/hyrum-runs/logs
 
 # Which charms does an ops branch break? Save an unpatched baseline, save

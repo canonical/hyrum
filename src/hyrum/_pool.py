@@ -61,8 +61,7 @@ class Outcome:
     def from_run_result(cls, result: runners.RunResult) -> Outcome:
         """Build an Outcome from a completed runner invocation."""
         summary = _summary.from_run_output(
-            result.stdout,
-            result.stderr,
+            result.output,
             status=result.status.value,
             returncode=result.returncode,
         )
@@ -129,7 +128,11 @@ def _dump_run_log(
     base: pathlib.Path | None,
     result: runners.RunResult,
 ) -> None:
-    """Write a single-file log for one runner invocation."""
+    """Write a single-file log for one runner invocation.
+
+    The runner captured stdout and stderr on the same pipe, so the body is one
+    transcript in the order the process wrote it rather than two sections.
+    """
     path = _log_path(log_dir, result.repo, base)
     path.parent.mkdir(parents=True, exist_ok=True)
     header = (
@@ -143,13 +146,9 @@ def _dump_run_log(
     )
     with path.open('wb') as fp:
         fp.write(header.encode())
-        fp.write(b'=== stdout ===\n')
-        fp.write(result.stdout)
-        if not result.stdout.endswith(b'\n'):
-            fp.write(b'\n')
-        fp.write(b'=== stderr ===\n')
-        fp.write(result.stderr)
-        if result.stderr and not result.stderr.endswith(b'\n'):
+        fp.write(b'=== output ===\n')
+        fp.write(result.output)
+        if result.output and not result.output.endswith(b'\n'):
             fp.write(b'\n')
 
 
