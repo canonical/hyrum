@@ -1366,8 +1366,9 @@ def test_verbose_report_rungs_are_cumulative():
     assert cli._verbose_report(verbose=False, verbosity='trace')
 
 
-def test_cli_verbosity_debug_includes_offender_list(
-    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize('verbosity', ['debug', 'trace'])
+def test_cli_verbosity_includes_offender_list(
+    verbosity: str, monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):
     cache = tmp_path / 'cache'
     cache.mkdir()
@@ -1382,23 +1383,28 @@ def test_cli_verbosity_debug_includes_offender_list(
         str(cache),
         '--no-patch',
         '--verbosity',
-        'debug',
+        verbosity,
     ])
     captured = capsys.readouterr()
     assert rc == 1
     assert 'alpha' in captured.out
 
 
-def test_cli_brief_is_accepted_and_omits_offender_list(
+def test_cli_brief_is_the_default_rung(
     monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):
+    """--brief names the rung the run is already on, so it changes no output."""
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
 
     monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
 
-    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--brief'])
-    captured = capsys.readouterr()
-    assert rc == 1
-    assert 'alpha' not in captured.out
+    argv = ['check', 'unit', '--charms-dir', str(cache), '--no-patch']
+    assert _run(argv) == 1
+    without = capsys.readouterr().out
+    assert _run([*argv, '--brief']) == 1
+    with_brief = capsys.readouterr().out
+
+    assert with_brief == without
+    assert 'alpha' not in with_brief

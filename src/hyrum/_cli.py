@@ -1008,7 +1008,7 @@ def _add_check_subparser(
     verbosity_group.add_argument(
         '--brief',
         action='store_true',
-        help='Ordinary output: the summary tally only. [default]',
+        help='The summary tally, without the per-charm offender list. [default: enabled]',
     )
     verbosity_group.add_argument(
         '--verbose',
