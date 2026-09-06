@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import pathlib
 import shutil
@@ -1067,6 +1068,14 @@ def test_cli_compare_new_charm_does_not_trip_the_gate(tmp_path: pathlib.Path):
     assert rc == 0
 
 
+def test_quiet_logs_only_errors():
+    """--quiet promises "no output except errors", and get-charms already agrees."""
+    assert cli._resolve_log_level(quiet=True, verbosity=None) == logging.ERROR
+    assert cli._resolve_log_level(quiet=False, verbosity=None) == logging.INFO
+    assert cli._resolve_log_level(quiet=False, verbosity='debug') == logging.DEBUG
+    assert cli._resolve_log_level(quiet=False, verbosity='trace') == logging.DEBUG
+
+
 # ---- preflight: runner executables -------------------------------------------
 
 
@@ -1082,6 +1091,16 @@ def test_available_backends_drops_uninstalled_backend_under_auto(monkeypatch):
         runners.RunnerChoice.AUTO, tox_executable='tox', make_executable='make'
     )
     assert backends == ('tox',)
+
+
+def test_available_backends_reports_a_dropped_backend_as_an_error(monkeypatch, caplog):
+    """A missing tool is a host problem, and has to survive --quiet."""
+    monkeypatch.setattr(shutil, 'which', _installed('tox'))
+    with caplog.at_level(logging.ERROR):
+        cli._available_backends(
+            runners.RunnerChoice.AUTO, tox_executable='tox', make_executable='make'
+        )
+    assert 'make is not installed' in caplog.text
 
 
 def test_available_backends_exits_when_explicit_choice_is_missing(monkeypatch):
