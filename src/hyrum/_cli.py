@@ -833,6 +833,12 @@ class _HelpFormatter(argparse.HelpFormatter):
                     width,
                     initial_indent=indent,
                     subsequent_indent=indent + '  ' if indent else '',
+                    # A help string made of examples is one someone copies. A
+                    # narrow terminal splitting `git+https://...@main` across
+                    # three lines, or `--no-patch` after its hyphen, costs more
+                    # than a line that overruns the width.
+                    break_long_words=False,
+                    break_on_hyphens=False,
                 )
             )
         return lines
@@ -931,8 +937,10 @@ def _add_check_subparser(
             'Mutually exclusive with --no-patch. [default: `ops @ canonical:main`]\n'
             'One of these forms:\n'
             '  version pin: `requests==2.31.0`, `requests>=1.2,<2`\n'
-            '  git source: `requests @ git+https://github.com/psf/requests@main`\n'
-            '  local path: `mylib @ file:///abs/path`\n'
+            '  git source: `requests @ git+https://github.com/psf/requests@main`, '
+            'with the `git+` optional\n'
+            '  local checkout: `mylib @ ~/src/mylib`, `mylib @ ./rel`, `mylib @ /abs`, '
+            'or `mylib @ file:///abs`\n'
             '  owner:branch: `ops @ canonical:fix/X` (ops and charmlibs-* only)\n'
             '  charmlib branch: `charmlibs-nginx_k8s @ canonical:main`, pointing a '
             'charmlib at a branch of canonical/charmlibs; type the package name with '
