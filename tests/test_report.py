@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import pathlib
 
+from hyrum import _patchers as patchers
 from hyrum import _pool as pool
 from hyrum import _report as report
 
@@ -175,3 +176,43 @@ def test_render_has_no_run_percentages_when_nothing_ran(tmp_path: pathlib.Path):
     skipped_row = next(line for line in out.splitlines() if line.startswith('skipped'))
     assert skipped_row.split() == ['skipped', '3', '100%', '\u2014']
     assert 'No runs executed.' in out
+
+
+def test_render_gives_a_skip_kind_sub_row_all_four_cells(tmp_path: pathlib.Path):
+    """The sub-rows are the arity the rest of the table is, and say so.
+
+    A skip kind has no share of the runs for the same reason `skipped` has
+    none: the charm never ran. It is also the row a forgotten column lands
+    on, since it is built separately from the status loop.
+    """
+    outcomes = [
+        pool.Outcome(repo=tmp_path / 'pass', status='passed'),
+        pool.Outcome(
+            repo=tmp_path / 'skip',
+            status='skipped',
+            skip_reason='no pyproject.toml',
+            skip_reason_kind=patchers.PatcherSkipReason.NO_PYPROJECT,
+        ),
+    ]
+    out = _render(outcomes, base=tmp_path)
+    sub_row = next(line for line in out.splitlines() if line.strip().startswith('no_pyproject'))
+    assert sub_row.split() == ['no_pyproject', '1', '50%', '\u2014']
+
+
+def test_render_falls_back_to_ascii_when_the_stream_cannot_encode(tmp_path: pathlib.Path):
+    """Losing the whole tally to an encoding error is the worst way to end a run.
+
+    Every ordinary run has a non-run status, so every ordinary run carries the
+    marker; before this the table only reached it when nothing ran at all.
+    """
+    outcomes = [
+        pool.Outcome(repo=tmp_path / 'pass', status='passed'),
+        pool.Outcome(repo=tmp_path / 'skip', status='skipped', skip_reason='legacy charm'),
+    ]
+    buf = io.TextIOWrapper(io.BytesIO(), encoding='ascii', errors='strict', newline='')
+    report.render(outcomes, base=tmp_path, target='unit', verbose=True, stream=buf)
+    buf.flush()
+    out = buf.buffer.getvalue().decode('ascii')  # pyright: ignore[reportAttributeAccessIssue]
+    skipped_row = next(line for line in out.splitlines() if line.startswith('skipped'))
+    assert skipped_row.split() == ['skipped', '1', '50%', '-']
+    assert '\u2014' not in out

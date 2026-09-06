@@ -12,7 +12,7 @@ import collections
 import pathlib
 import sys
 from collections.abc import Iterable
-from typing import TextIO
+from typing import NamedTuple, TextIO
 
 from hyrum import _ansi, _percent
 from hyrum import _pool as pool
@@ -22,6 +22,7 @@ from hyrum import _pool as pool
 _RAN_STATUSES = ('passed', 'failed', 'timeout')
 # Stands in for a percentage that has no meaning, rather than one that is zero.
 _NOT_APPLICABLE = '—'
+_NOT_APPLICABLE_ASCII = '-'
 
 _RESET = _ansi.RESET
 _BOLD = _ansi.BOLD
@@ -36,6 +37,24 @@ _STATUS_COLOURS: dict[str, str] = {
 }
 
 
+def _em_dash(stream: TextIO) -> str:
+    """Return the em dash, or a hyphen when *stream* cannot encode one.
+
+    The table prints one per non-run status, so every ordinary run carries a
+    few. A stream that cannot encode them raises part-way through the report,
+    which on a fleet run means losing the tally after hours of work. Gated on
+    the stream the way :func:`_ansi.use_colour` is, rather than on a flag.
+    """
+    encoding = getattr(stream, 'encoding', None)
+    if not encoding:
+        return _NOT_APPLICABLE
+    try:
+        _NOT_APPLICABLE.encode(encoding)
+    except (UnicodeEncodeError, LookupError):
+        return _NOT_APPLICABLE_ASCII
+    return _NOT_APPLICABLE
+
+
 def _relative(repo: pathlib.Path, base: pathlib.Path) -> str:
     try:
         return str(repo.relative_to(base))
@@ -43,21 +62,36 @@ def _relative(repo: pathlib.Path, base: pathlib.Path) -> str:
         return str(repo)
 
 
+class _Row(NamedTuple):
+    """One line of the tally table.
+
+    Named rather than a bare tuple so that adding a column is a type error at
+    every construction site instead of an ``IndexError`` at print time, on
+    whichever run happens to have the row that was missed.
+    """
+
+    status: str
+    # ``charms`` rather than ``count``: a NamedTuple field called ``count``
+    # shadows ``tuple.count``.
+    charms: str
+    of_all: str
+    of_runs: str
+
+
 def _format_table(
-    rows: list[tuple[str, ...]],
+    rows: list[_Row],
     *,
-    headers: tuple[str, ...] | None,
+    headers: _Row | None,
     colour_for_first: dict[str, str],
     use_colour: bool,
 ) -> str:
-    raw_rows: list[tuple[str, ...]] = []
+    raw_rows: list[_Row] = []
     if headers is not None:
         raw_rows.append(headers)
     raw_rows.extend(rows)
-    columns = len(raw_rows[0])
-    widths = [max(len(r[i]) for r in raw_rows) for i in range(columns)]
+    widths = [max(len(cell) for cell in column) for column in zip(*raw_rows, strict=True)]
 
-    def render(row: tuple[str, ...], *, header: bool = False) -> str:
+    def render(row: _Row, *, header: bool = False) -> str:
         # The first column is the label, the rest are numbers, so only the
         # first is left-aligned.
         cells = [row[0].ljust(widths[0])]
@@ -91,6 +125,7 @@ def render(
         stream = sys.stdout
     assert stream is not None
     use_colour = _ansi.use_colour(stream)
+    not_applicable = _em_dash(stream)
 
     counts = collections.Counter(o.status for o in outcomes)
     total = len(outcomes)
@@ -100,29 +135,29 @@ def render(
     print(f'{_BOLD}{title}{_RESET}' if use_colour else title, file=stream)
 
     def of_all(count: int) -> str:
-        return _percent.format_pct(count / total) if total else _NOT_APPLICABLE
+        return _percent.format_pct(count / total) if total else not_applicable
 
     def of_runs(status: str, count: int) -> str:
         # Only the statuses that come from a charm actually being run have a
         # share of the runs; for the others the cell would be a category error
         # rather than a zero.
         if status not in _RAN_STATUSES or not ran:
-            return _NOT_APPLICABLE
+            return not_applicable
         return _percent.format_pct(count / ran)
 
-    rows: list[tuple[str, ...]] = []
+    rows: list[_Row] = []
     for status in pool.OUTCOME_STATUSES:
         count = counts.get(status, 0)
-        rows.append((status, str(count), of_all(count), of_runs(status, count)))
+        rows.append(_Row(status, str(count), of_all(count), of_runs(status, count)))
         if status == 'skipped' and count:
             skip_kinds: collections.Counter[str] = collections.Counter(
                 o.skip_reason_kind.value for o in outcomes if o.skip_reason_kind is not None
             )
             for kind, kind_count in sorted(skip_kinds.items()):
-                rows.append((f'  {kind}', str(kind_count), of_all(kind_count), _NOT_APPLICABLE))
+                rows.append(_Row(f'  {kind}', str(kind_count), of_all(kind_count), not_applicable))
     table = _format_table(
         rows,
-        headers=None if no_headers else ('STATUS', 'COUNT', '% OF ALL', '% OF RUNS'),
+        headers=None if no_headers else _Row('STATUS', 'COUNT', '% OF ALL', '% OF RUNS'),
         colour_for_first=_STATUS_COLOURS,
         use_colour=use_colour,
     )
@@ -159,7 +194,7 @@ def render(
             print(f'{_BOLD}{heading}{_RESET}' if use_colour else heading, file=stream)
             for outcome in sorted(offenders, key=lambda o: str(o.repo)):
                 detail = outcome.error or outcome.skip_reason or ''
-                trailer = f' — {detail}' if detail else ''
+                trailer = f' {not_applicable} {detail}' if detail else ''
                 print(f'  {_relative(outcome.repo, base)}{trailer}', file=stream)
 
         skipped = [o for o in outcomes if o.status == 'skipped']
@@ -168,4 +203,4 @@ def render(
             print(f'{_BOLD}{heading}{_RESET}' if use_colour else heading, file=stream)
             for outcome in sorted(skipped, key=lambda o: str(o.repo)):
                 reason = outcome.skip_reason or ''
-                print(f'  {_relative(outcome.repo, base)} — {reason}', file=stream)
+                print(f'  {_relative(outcome.repo, base)} {not_applicable} {reason}', file=stream)
