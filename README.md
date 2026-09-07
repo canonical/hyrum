@@ -198,6 +198,16 @@ Output statuses:
 | `patcher_error` | the dependency swap could not be applied (distinct from a tox failure) |
 | `skipped`       | filtered out before the run (regex, ignore-list, no runnable target, …)|
 
+## Sharing a charms directory
+
+Patching a charm means rewriting its working tree, so two runs over one
+charms directory would otherwise interleave: the second takes the first's
+patched tree for the original, and each then reports results for whichever
+patch won. `check` therefore takes an advisory lock per charm, held from
+the patch to the restore, and a second run waits for that charm rather
+than joining it. Locks live in `<charms-dir>/.hyrum-locks/`. `--no-lock`
+turns this off, at the cost of that guarantee.
+
 ## Dependency-swap scope
 
 Today only the `ops` family (with optional `testing` / `tracing`
