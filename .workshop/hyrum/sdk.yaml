@@ -1,0 +1,11 @@
+name: hyrum
+version: "0.1"
+summary: Development tools for hyrum, and the build tools the charms it checks need.
+
+plugs:
+  # hyrum's charm checkouts and saved results. They live on a mount so that
+  # cloning the curated charm list survives `workshop refresh`, and so that the
+  # cache can be pointed at a host directory with `workshop remount`.
+  cache:
+    interface: mount
+    workshop-target: /home/workshop/.cache/hyrum

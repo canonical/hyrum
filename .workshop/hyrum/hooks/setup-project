@@ -1,0 +1,8 @@
+# Install hyrum's own development dependencies.
+uv sync --all-groups
+
+# The runner backends hyrum invokes in each charm, and the build tool that a
+# handful of charms' tox environments call. `make` comes from build-essential
+# in setup-base; neither of these is a dependency of hyrum itself.
+uv tool install tox
+uv tool install poetry

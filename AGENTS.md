@@ -76,6 +76,10 @@ above.
   preflights `--patch` git refs and the runner executables before the pool
   starts, so a typo or a missing tool fails once, not once per charm.
 - `report` — Rich tally + verbose offender lists.
+- `.workshop/` — the `dev` workshop definition and the in-project `hyrum`
+  SDK behind it. The SDK's hooks install the development tooling and the
+  build dependencies the curated charm list needs; the workshop's actions
+  wrap the `make` targets and the CLI. `CONTRIBUTING.md` has the commands.
 - `tools/` — stdlib-only maintenance scripts that are **not** shipped in the
   hyrum wheel. `tools/update_charm_list.py` refreshes
   `charm-list/charms.csv` from Charmhub. Keep additions stdlib-only so they
