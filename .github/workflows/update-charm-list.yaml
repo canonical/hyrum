@@ -84,7 +84,7 @@ jobs:
           # purpose: GitHub renders the body as Markdown and soft-wraps it to
           # the reader's window, so hard wraps show up as ragged breaks and
           # survive into anything that quotes or edits the text. Do not
-          # re-wrap these to fit the eighty columns the rest of the file uses.
+          # re-wrap them.
           gh pr create \
             --base main \
             --head "$BRANCH" \
