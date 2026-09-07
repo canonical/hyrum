@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 # Directories a lint or unit run creates inside a charm. Anything here is
 # reproducible from the checkout, which is what makes it safe to remove.
 ARTEFACT_DIRS = frozenset({
+    '.hypothesis',
     '.mypy_cache',
     '.nox',
     '.pytest_cache',
@@ -34,6 +35,11 @@ ARTEFACT_DIRS = frozenset({
 # ones that carry the package name (`hyrum.egg-info`).
 ARTEFACT_DIR_SUFFIXES = ('.egg-info',)
 ARTEFACT_FILES = frozenset({'.coverage'})
+# `coverage run --parallel-mode`, and pytest-cov under xdist, write one
+# `.coverage.<host>.<pid>.<random>` per worker per run rather than a single
+# `.coverage`, and they are exactly as reproducible as the file they combine
+# into.
+ARTEFACT_FILE_PREFIXES = ('.coverage.',)
 # Never descend into these, whatever else is true of them: the checkout is the
 # thing being preserved.
 PRESERVED_DIRS = frozenset({'.git'})
@@ -55,10 +61,10 @@ def _is_artefact_dir(name: str) -> bool:
 def _tree_size(path: pathlib.Path) -> int:
     """Total size of the files under ``path``, not following symlinks."""
     total = 0
-    for root, dirs, files in os.walk(path):
-        # A symlinked directory's contents are not ours to count: they live
-        # somewhere else and are not freed by removing the link.
-        dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))]
+    # os.walk does not follow symlinked directories by default, so their
+    # contents — which live elsewhere and are not freed by removing the link —
+    # are already left out.
+    for root, _dirs, files in os.walk(path):
         for name in files:
             entry = pathlib.Path(root, name)
             if entry.is_symlink():
@@ -70,6 +76,40 @@ def _tree_size(path: pathlib.Path) -> int:
                 # were about to delete anyway.
                 continue
     return total
+
+
+def _is_artefact_file(name: str) -> bool:
+    return name in ARTEFACT_FILES or name.startswith(ARTEFACT_FILE_PREFIXES)
+
+
+def looks_like_a_cache(base: pathlib.Path) -> bool:
+    """Does ``base`` look like a directory of cloned charms?
+
+    A guard against a mistyped ``--charms-dir`` or a stray ``HYRUM_CHARMS``,
+    not a security boundary: a source tree in which every project happens to
+    be a git checkout is indistinguishable from a flat cache, and this says
+    yes to it. What it does catch is being pointed at somewhere that holds
+    anything else — a home directory, a downloads folder, a monorepo — which
+    is the shape the mistake usually takes.
+    """
+    children = [p for p in base.iterdir() if p.is_dir() and not p.name.startswith('.')]
+    if not children:
+        return False
+    return all(_holds_a_checkout(child) for child in children)
+
+
+def _holds_a_checkout(path: pathlib.Path) -> bool:
+    """Is ``path`` a git checkout, or a directory of them?
+
+    Two levels, because the cache is ``<charms-dir>/<owner>/<leaf>`` and a
+    hand-assembled one is sometimes flat.
+    """
+    if (path / '.git').exists():
+        return True
+    try:
+        return any((child / '.git').exists() for child in path.iterdir() if child.is_dir())
+    except OSError:
+        return False
 
 
 def find_artefacts(base: pathlib.Path) -> Iterator[Artefact]:
@@ -102,7 +142,7 @@ def find_artefacts(base: pathlib.Path) -> Iterator[Artefact]:
                 keep.append(name)
         dirs[:] = keep
         for name in sorted(files):
-            if name not in ARTEFACT_FILES:
+            if not _is_artefact_file(name):
                 continue
             path = root_path / name
             if path.is_symlink():
@@ -118,7 +158,8 @@ def remove(artefact: Artefact) -> bool:
     """Delete ``artefact``, returning whether it went.
 
     A failure is logged rather than raised: one unreadable charm should not
-    stop the rest of the cache being reclaimed.
+    stop the rest of the cache being reclaimed. At ERROR rather than WARNING,
+    because ``--quiet`` keeps errors and the caller's exit code depends on it.
     """
     try:
         if artefact.is_dir:
@@ -126,7 +167,7 @@ def remove(artefact: Artefact) -> bool:
         else:
             artefact.path.unlink()
     except OSError as exc:
-        logger.warning('Could not remove %s: %s', artefact.path, exc)
+        logger.error('Could not remove %s: %s', artefact.path, exc)
         return False
     return True
 

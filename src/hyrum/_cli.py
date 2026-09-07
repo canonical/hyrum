@@ -1215,6 +1215,11 @@ def _add_clean_subparser(
         action='store_true',
         help='Report what would be removed and how much it holds, without removing it.',
     )
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Clean a directory that does not look like a charms directory.',
+    )
     parser.add_argument('--quiet', action='store_true', help='Suppress non-error output.')
     parser.set_defaults(func=_run_clean)
     return parser
@@ -1445,6 +1450,17 @@ def _run_clean(args: argparse.Namespace) -> int:
     _configure_logging(level)
 
     charms_dir: pathlib.Path = args.charms_dir or _default_charms_dir()
+    if not charms_dir.is_dir():
+        sys.exit(f'hyrum: error: --charms-dir: {charms_dir} is not a directory.')
+    if not args.force and not _clean.looks_like_a_cache(charms_dir):
+        # Removal reaches .venv, which is the one artefact a person might have
+        # built by hand, so being pointed at a source tree rather than the
+        # cache costs more than a re-run.
+        sys.exit(
+            f'hyrum: error: --charms-dir: {charms_dir} does not look like a charms '
+            f'directory (its contents are not git checkouts). Pass --force to clean it '
+            f'anyway.'
+        )
     try:
         artefacts = list(_clean.find_artefacts(charms_dir))
     except (FileNotFoundError, NotADirectoryError) as exc:
@@ -1452,8 +1468,9 @@ def _run_clean(args: argparse.Namespace) -> int:
 
     removed = 0
     reclaimed = 0
+    failed = 0
     for artefact in artefacts:
-        relative = _relative_to(artefact.path, charms_dir)
+        relative = report.relative(artefact.path, charms_dir)
         if args.dry_run:
             logger.info('Would remove %s (%s)', relative, _clean.format_size(artefact.size))
             removed += 1
@@ -1463,19 +1480,18 @@ def _run_clean(args: argparse.Namespace) -> int:
         if _clean.remove(artefact):
             removed += 1
             reclaimed += artefact.size
+        else:
+            failed += 1
 
     if not args.quiet:
         verb = 'Would reclaim' if args.dry_run else 'Reclaimed'
         noun = 'artefact' if removed == 1 else 'artefacts'
         print(f'{verb} {_clean.format_size(reclaimed)} from {removed} {noun}.')
-    return 0
-
-
-def _relative_to(path: pathlib.Path, base: pathlib.Path) -> str:
-    try:
-        return str(path.relative_to(base))
-    except ValueError:
-        return str(path)
+    # A reclaim that did not happen has to say so: `hyrum clean && hyrum check`
+    # would otherwise carry on believing the disk came back, which is the
+    # situation this subcommand exists to prevent. `_clean.remove` logs each
+    # one at ERROR, so --quiet ("Suppress non-error output") keeps them.
+    return 1 if failed else 0
 
 
 def _describe_run(label: str, path: pathlib.Path, meta: _results.RunMeta) -> str:

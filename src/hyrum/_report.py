@@ -58,7 +58,7 @@ def _em_dash(stream: TextIO) -> str:
     return _NOT_APPLICABLE
 
 
-def _relative(repo: pathlib.Path, base: pathlib.Path) -> str:
+def relative(repo: pathlib.Path, base: pathlib.Path) -> str:
     try:
         return str(repo.relative_to(base))
     except ValueError:
@@ -204,7 +204,7 @@ def render(
             for outcome in sorted(offenders, key=lambda o: str(o.repo)):
                 detail = outcome.error or outcome.skip_reason or ''
                 trailer = f' {not_applicable} {detail}' if detail else ''
-                print(f'  {_relative(outcome.repo, base)}{trailer}', file=stream)
+                print(f'  {relative(outcome.repo, base)}{trailer}', file=stream)
 
         skipped = [o for o in outcomes if o.status == 'skipped']
         if skipped:
@@ -212,7 +212,7 @@ def render(
             print(f'{_BOLD}{heading}{_RESET}' if use_colour else heading, file=stream)
             for outcome in sorted(skipped, key=lambda o: str(o.repo)):
                 reason = outcome.skip_reason or ''
-                print(f'  {_relative(outcome.repo, base)} {not_applicable} {reason}', file=stream)
+                print(f'  {relative(outcome.repo, base)} {not_applicable} {reason}', file=stream)
 
 
 def render_markdown(
@@ -269,7 +269,7 @@ def render_markdown(
             for outcome in sorted(offenders, key=lambda o: str(o.repo)):
                 detail = outcome.error or outcome.skip_reason or ''
                 trailer = f' — {detail}' if detail else ''
-                print(f'- {_relative(outcome.repo, base)}{trailer}', file=out)
+                print(f'- {relative(outcome.repo, base)}{trailer}', file=out)
 
         skipped = [o for o in outcomes if o.status == 'skipped']
         if skipped:
@@ -278,4 +278,4 @@ def render_markdown(
             print(file=out)
             for outcome in sorted(skipped, key=lambda o: str(o.repo)):
                 reason = outcome.skip_reason or ''
-                print(f'- {_relative(outcome.repo, base)} — {reason}', file=out)
+                print(f'- {relative(outcome.repo, base)} — {reason}', file=out)

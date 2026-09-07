@@ -119,3 +119,41 @@ def test_a_missing_cache_is_an_error(tmp_path: pathlib.Path):
 )
 def test_format_size(size: int, expected: str):
     assert clean.format_size(size) == expected
+
+
+def test_finds_the_parallel_coverage_files(tmp_path: pathlib.Path):
+    """`coverage run --parallel-mode` and pytest-cov under xdist write one per worker."""
+    repo = _charm(tmp_path, 'a-charm')
+    (repo / '.coverage').write_text('')
+    (repo / '.coverage.host.1234.567890').write_text('')
+    (repo / '.coverage.host.1235.567891').write_text('')
+    (repo / '.hypothesis').mkdir()
+    assert _artefacts(tmp_path) == {
+        'a-charm/.coverage',
+        'a-charm/.coverage.host.1234.567890',
+        'a-charm/.coverage.host.1235.567891',
+        'a-charm/.hypothesis',
+    }
+
+
+def test_a_directory_of_checkouts_looks_like_a_cache(tmp_path: pathlib.Path):
+    _charm(tmp_path, 'a-charm')
+    _charm(tmp_path, 'b-charm')
+    assert clean.looks_like_a_cache(tmp_path)
+
+
+def test_an_owner_level_cache_looks_like_a_cache(tmp_path: pathlib.Path):
+    """The real layout is <charms-dir>/<owner>/<leaf>, so .git is two levels down."""
+    _charm(tmp_path / 'canonical', 'a-charm')
+    _charm(tmp_path / 'openstack', 'b-charm')
+    assert clean.looks_like_a_cache(tmp_path)
+
+
+def test_a_source_tree_does_not_look_like_a_cache(tmp_path: pathlib.Path):
+    (tmp_path / 'notes').mkdir()
+    _charm(tmp_path, 'a-charm')
+    assert not clean.looks_like_a_cache(tmp_path)
+
+
+def test_an_empty_directory_does_not_look_like_a_cache(tmp_path: pathlib.Path):
+    assert not clean.looks_like_a_cache(tmp_path)
