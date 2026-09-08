@@ -1377,14 +1377,6 @@ def test_patch_help_states_its_default_like_every_other_flag(capsys: pytest.Capt
     assert 'defaults to' not in text
 
 
-def test_verbose_report_rungs_are_cumulative():
-    """Each verbosity rung is a superset of the one below it."""
-    assert not cli._verbose_report(verbose=False, verbosity=None)
-    assert cli._verbose_report(verbose=True, verbosity=None)
-    assert cli._verbose_report(verbose=False, verbosity='debug')
-    assert cli._verbose_report(verbose=False, verbosity='trace')
-
-
 @pytest.mark.parametrize('verbosity', ['debug', 'trace'])
 def test_cli_verbosity_includes_offender_list(
     verbosity: str, monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]

@@ -12,7 +12,7 @@ def _render(
     *,
     base: pathlib.Path,
     target: str = 'unit',
-    verbose: bool = False,
+    list_offenders: bool = False,
     no_headers: bool = False,
 ):
     buf = io.StringIO()
@@ -20,7 +20,7 @@ def _render(
         outcomes,
         base=base,
         target=target,
-        verbose=verbose,
+        list_offenders=list_offenders,
         no_headers=no_headers,
         stream=buf,
     )
@@ -73,7 +73,7 @@ def test_render_verbose_lists_failures(tmp_path: pathlib.Path):
         pool.Outcome(repo=tmp_path / 'broken', status='failed'),
         pool.Outcome(repo=tmp_path / 'ok', status='passed'),
     ]
-    out = _render(outcomes, base=tmp_path, verbose=True)
+    out = _render(outcomes, base=tmp_path, list_offenders=True)
     assert 'broken' in out
 
 
@@ -85,7 +85,7 @@ def test_render_verbose_includes_error_detail(tmp_path: pathlib.Path):
             error='bad pyproject',
         ),
     ]
-    out = _render(outcomes, base=tmp_path, verbose=True)
+    out = _render(outcomes, base=tmp_path, list_offenders=True)
     assert 'borked' in out
     assert 'bad pyproject' in out
 
@@ -98,7 +98,7 @@ def test_render_verbose_preserves_bracketed_detail(tmp_path: pathlib.Path):
             error='pyproject has no recognisable [project] or [tool.poetry] deps',
         ),
     ]
-    out = _render(outcomes, base=tmp_path, verbose=True)
+    out = _render(outcomes, base=tmp_path, list_offenders=True)
     assert '[project]' in out
     assert '[tool.poetry]' in out
 
@@ -107,7 +107,7 @@ def test_render_verbose_lists_skipped(tmp_path: pathlib.Path):
     outcomes = [
         pool.Outcome(repo=tmp_path / 'x', status='skipped', skip_reason='ignored (manual)'),
     ]
-    out = _render(outcomes, base=tmp_path, verbose=True)
+    out = _render(outcomes, base=tmp_path, list_offenders=True)
     assert 'ignored (manual)' in out
 
 

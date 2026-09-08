@@ -58,17 +58,6 @@ def _configure_logging(level: int) -> None:
     root.setLevel(level)
 
 
-def _verbose_report(*, verbose: bool, verbosity: str | None) -> bool:
-    """Should the report include the per-charm offender list?
-
-    The verbosity levels are cumulative, so each is a superset of the one
-    below it: ``--verbosity debug``/``trace`` implies ``--verbose``.
-    Without this, climbing from verbose to trace *loses* the offender
-    list, which reads as the two flags controlling orthogonal things.
-    """
-    return verbose or verbosity is not None
-
-
 def _resolve_log_level(*, quiet: bool, verbosity: str | None) -> int:
     # ``--quiet`` is ERROR, not WARNING: its help promises "no output except
     # errors", the spec's quiet rung is "only errors for failed operations",
@@ -1010,11 +999,7 @@ def _add_check_subparser(
         ),
     )
     verbosity_group = parser.add_mutually_exclusive_group()
-    verbosity_group.add_argument(
-        '--quiet',
-        action='store_true',
-        help='No output except errors. Exit code still reflects pass/fail.',
-    )
+    verbosity_group.add_argument('--quiet', action='store_true', help='No output except errors.')
     verbosity_group.add_argument(
         '--brief',
         action='store_true',
@@ -1313,7 +1298,9 @@ def _run_check(args: argparse.Namespace) -> int:
             results,
             base=charms_dir,
             target=args.target,
-            verbose=_verbose_report(verbose=args.verbose, verbosity=args.verbosity),
+            # --verbosity debug/trace implies --verbose: the rungs are
+            # cumulative, so climbing to trace mustn't lose the offender list.
+            list_offenders=args.verbose or args.verbosity is not None,
             no_headers=args.no_headers,
         )
     elif not pool.passed(results):

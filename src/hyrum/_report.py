@@ -75,11 +75,11 @@ def render(
     *,
     base: pathlib.Path,
     target: str,
-    verbose: bool = False,
+    list_offenders: bool = False,
     no_headers: bool = False,
     stream: TextIO | None = None,
 ) -> None:
-    """Print a plain-text tally of ``outcomes`` plus an optional verbose offender list."""
+    """Print a plain-text tally of ``outcomes`` plus an optional per-charm offender list."""
     outcomes = list(outcomes)
     if stream is None:
         stream = sys.stdout
@@ -135,7 +135,7 @@ def render(
     else:
         print('No runs executed.', file=stream)
 
-    if verbose:
+    if list_offenders:
         for status in ('failed', 'runner_error', 'patcher_error', 'timeout'):
             offenders = [o for o in outcomes if o.status == status]
             if not offenders:
