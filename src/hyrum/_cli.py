@@ -1177,6 +1177,47 @@ def _add_get_charms_subparser(
     return parser
 
 
+def _add_show_subparser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    parser = subparsers.add_parser(
+        'show',
+        help='Print the status summary of a saved hyrum run.',
+        description=(
+            'Print a saved hyrum run: its metadata, then the same status table '
+            '`check` prints at the end of a run.'
+        ),
+    )
+    # PATH is always a filesystem path: no default location, run id, or
+    # target-name lookup (same contract `compare`'s positionals already have).
+    # If a bare-word shorthand is ever added, check for an existing path
+    # first, so this never turns a currently-working invocation into a
+    # different one.
+    parser.add_argument('path', type=pathlib.Path, help='Path to a saved results JSON file.')
+    parser.add_argument(
+        '--verbose',
+        action='store_true',
+        help='Include the per-charm offender list.',
+    )
+    parser.add_argument(
+        '--no-headers',
+        action='store_true',
+        help='Suppress header row in the summary table.',
+    )
+    parser.add_argument(
+        '--format',
+        dest='output_format',
+        choices=['text', 'markdown', 'json'],
+        default='text',
+        help=(
+            'text: the colourised status-level summary. markdown: the same table in '
+            'markdown. json: the same outcomes as a machine-readable object. [default: text]'
+        ),
+    )
+    parser.set_defaults(func=_run_show)
+    return parser
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     description = 'Bulk-run a check across many charm repositories with a dependency swapped out.'
     parser = argparse.ArgumentParser(prog='hyrum', description=description)
@@ -1185,6 +1226,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     _add_check_subparser(subparsers)
     _add_compare_subparser(subparsers)
     _add_get_charms_subparser(subparsers)
+    _add_show_subparser(subparsers)
     return parser
 
 
@@ -1419,6 +1461,51 @@ def _run_compare(args: argparse.Namespace) -> int:
             return 2
         if result.new_failures or result.new_errors:
             return 1
+    return 0
+
+
+def _outcome_json(outcome: pool.Outcome) -> dict[str, object]:
+    """Turn one Outcome into a JSON-safe record, matching how `_results.save` writes them."""
+    record = dataclasses.asdict(outcome)
+    record['repo'] = str(outcome.repo)
+    kind = outcome.skip_reason_kind
+    record['skip_reason_kind'] = kind.value if kind is not None else None
+    return record
+
+
+def _run_show(args: argparse.Namespace) -> int:
+    try:
+        loaded = _results.load(args.path)
+    except ValueError as exc:
+        print(f'hyrum: error: {exc}', file=sys.stderr)
+        # 2 = bad input, matching `compare`'s convention for the same failure.
+        return 2
+
+    if args.output_format == 'json':
+        payload = {
+            'version': report.JSON_FORMAT_VERSION,
+            'path': str(args.path),
+            'meta': dataclasses.asdict(loaded.meta),
+            'outcomes': [_outcome_json(o) for o in loaded.outcomes],
+        }
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    summary = loaded.meta.summary()
+    print(f'{args.path} — {summary}' if summary else str(args.path))
+    # A run's own charms dir travels with it, so verbose paths are relative to
+    # where the run was made, not wherever `show` happens to be invoked from.
+    base = pathlib.Path(loaded.meta.charms_dir) if loaded.meta.charms_dir else pathlib.Path()
+    renderer = report.render_markdown if args.output_format == 'markdown' else report.render
+    renderer(
+        loaded.outcomes,
+        base=base,
+        target=loaded.meta.target,
+        list_offenders=args.verbose,
+        no_headers=args.no_headers,
+    )
+    # A display command is not a gate: `compare --fail-on-regression` is
+    # where gating on a run's contents lives, not `show`.
     return 0
 
 

@@ -23,6 +23,9 @@ _RAN_STATUSES = ('passed', 'failed', 'timeout')
 # Stands in for a percentage that has no meaning, rather than one that is zero.
 _NOT_APPLICABLE = '—'
 _NOT_APPLICABLE_ASCII = '-'
+# Version of the `hyrum show --format json` payload, independent of the
+# results-file schema version.
+JSON_FORMAT_VERSION = 1
 
 _RESET = _ansi.RESET
 _BOLD = _ansi.BOLD
@@ -110,6 +113,14 @@ def _format_table(
     return '\n'.join(lines)
 
 
+def _counts(outcomes: list[pool.Outcome]) -> tuple[collections.Counter[str], int, int]:
+    """Return (status counts, total outcomes, number that actually ran)."""
+    counts = collections.Counter(o.status for o in outcomes)
+    total = len(outcomes)
+    ran = sum(counts.get(s, 0) for s in _RAN_STATUSES)
+    return counts, total, ran
+
+
 def render(
     outcomes: Iterable[pool.Outcome],
     *,
@@ -127,9 +138,7 @@ def render(
     use_colour = _ansi.use_colour(stream)
     not_applicable = _em_dash(stream)
 
-    counts = collections.Counter(o.status for o in outcomes)
-    total = len(outcomes)
-    ran = sum(counts.get(s, 0) for s in _RAN_STATUSES)
+    counts, total, ran = _counts(outcomes)
 
     title = f'hyrum: {target}'
     print(f'{_BOLD}{title}{_RESET}' if use_colour else title, file=stream)
@@ -204,3 +213,69 @@ def render(
             for outcome in sorted(skipped, key=lambda o: str(o.repo)):
                 reason = outcome.skip_reason or ''
                 print(f'  {_relative(outcome.repo, base)} {not_applicable} {reason}', file=stream)
+
+
+def render_markdown(
+    outcomes: Iterable[pool.Outcome],
+    *,
+    base: pathlib.Path,
+    target: str,
+    list_offenders: bool = False,
+    no_headers: bool = False,
+    stream: TextIO | None = None,
+) -> None:
+    """Print a markdown tally of ``outcomes``, mirroring :func:`render`'s text table."""
+    outcomes = list(outcomes)
+    out: TextIO = stream if stream is not None else sys.stdout
+
+    counts, total, ran = _counts(outcomes)
+
+    print(f'# hyrum: {target}' if target else '# hyrum run', file=out)
+    print(file=out)
+
+    if not no_headers:
+        print('| Status | Count | % of all | % of runs |', file=out)
+        print('| --- | --- | --- | --- |', file=out)
+    for status in pool.OUTCOME_STATUSES:
+        count = counts.get(status, 0)
+        of_all = _percent.format_pct(count / total) if total else _NOT_APPLICABLE
+        # Only the statuses that come from a charm actually being run have a
+        # share of the runs; for the others the cell would be a category error
+        # rather than a zero.
+        of_runs = (
+            _percent.format_pct(count / ran)
+            if status in _RAN_STATUSES and ran
+            else _NOT_APPLICABLE
+        )
+        print(f'| {status} | {count} | {of_all} | {of_runs} |', file=out)
+
+    print(file=out)
+    if ran:
+        passed_n = counts.get('passed', 0)
+        pct = _percent.format_pct(passed_n / ran)
+        not_run = total - ran
+        print(f'**{passed_n}** of **{ran}** runs passed (**{pct}**); {not_run} not run.', file=out)
+    else:
+        print('No runs executed.', file=out)
+
+    if list_offenders:
+        for status in ('failed', 'runner_error', 'patcher_error', 'timeout'):
+            offenders = [o for o in outcomes if o.status == status]
+            if not offenders:
+                continue
+            print(file=out)
+            print(f'## {status}', file=out)
+            print(file=out)
+            for outcome in sorted(offenders, key=lambda o: str(o.repo)):
+                detail = outcome.error or outcome.skip_reason or ''
+                trailer = f' — {detail}' if detail else ''
+                print(f'- {_relative(outcome.repo, base)}{trailer}', file=out)
+
+        skipped = [o for o in outcomes if o.status == 'skipped']
+        if skipped:
+            print(file=out)
+            print('## skipped', file=out)
+            print(file=out)
+            for outcome in sorted(skipped, key=lambda o: str(o.repo)):
+                reason = outcome.skip_reason or ''
+                print(f'- {_relative(outcome.repo, base)} — {reason}', file=out)
