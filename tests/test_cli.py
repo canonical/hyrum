@@ -1787,3 +1787,207 @@ def test_from_results_survives_the_auto_save_it_feeds(
     assert calls == ['beta']
     assert auto_path.exists()
     assert (save_dir / 'unit.auto.prev.json').exists()
+
+
+# ---- prune-charms -------------------------------------------------------------
+
+
+def test_prune_charms_without_yes_lists_and_deletes_nothing(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = _cache_with_alpha_beta(tmp_path)
+    run1 = tmp_path / 'run.json'
+    results.save(
+        [
+            pool.Outcome(repo=cache / 'alpha', status='passed'),
+            pool.Outcome(repo=cache / 'beta', status='failed'),
+        ],
+        run1,
+        base=cache,
+    )
+
+    rc = _run([
+        'prune-charms',
+        '--charms-dir',
+        str(cache),
+        '--from-results',
+        str(run1),
+        '--status',
+        'failed',
+    ])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'beta' in captured.out
+    assert (cache / 'alpha').exists()
+    assert (cache / 'beta').exists()
+
+
+def test_prune_charms_with_yes_deletes_matched_charms(tmp_path: pathlib.Path):
+    cache = _cache_with_alpha_beta(tmp_path)
+    run1 = tmp_path / 'run.json'
+    results.save(
+        [
+            pool.Outcome(repo=cache / 'alpha', status='passed'),
+            pool.Outcome(repo=cache / 'beta', status='failed'),
+        ],
+        run1,
+        base=cache,
+    )
+
+    rc = _run([
+        'prune-charms',
+        '--charms-dir',
+        str(cache),
+        '--from-results',
+        str(run1),
+        '--status',
+        'failed',
+        '--yes',
+    ])
+    assert rc == 0
+    assert (cache / 'alpha').exists()
+    assert not (cache / 'beta').exists()
+
+
+def test_prune_charms_status_is_required(tmp_path: pathlib.Path):
+    cache = _cache_with_alpha_beta(tmp_path)
+    run1 = tmp_path / 'run.json'
+    results.save([pool.Outcome(repo=cache / 'alpha', status='passed')], run1, base=cache)
+
+    rc = _run(['prune-charms', '--charms-dir', str(cache), '--from-results', str(run1)])
+    assert rc != 0
+
+
+def test_prune_charms_from_results_is_required(tmp_path: pathlib.Path):
+    cache = _cache_with_alpha_beta(tmp_path)
+
+    rc = _run(['prune-charms', '--charms-dir', str(cache), '--status', 'failed'])
+    assert rc != 0
+
+
+def test_prune_charms_rejects_a_missing_charms_dir(tmp_path: pathlib.Path):
+    rc = _run([
+        'prune-charms',
+        '--charms-dir',
+        str(tmp_path / 'does-not-exist'),
+        '--from-results',
+        str(tmp_path / 'run.json'),
+        '--status',
+        'failed',
+    ])
+    assert rc != 0
+
+
+def test_prune_charms_has_no_default_status(tmp_path: pathlib.Path):
+    """Unlike check --from-results, prune-charms has no default: it is destructive."""
+    cache = _cache_with_alpha_beta(tmp_path)
+    run1 = tmp_path / 'run.json'
+    results.save(
+        [
+            pool.Outcome(repo=cache / 'alpha', status='passed'),
+            pool.Outcome(repo=cache / 'beta', status='failed'),
+        ],
+        run1,
+        base=cache,
+    )
+
+    rc = _run(['prune-charms', '--charms-dir', str(cache), '--from-results', str(run1)])
+    assert rc != 0
+
+
+def test_prune_charms_bad_results_file_exits_2(tmp_path: pathlib.Path):
+    cache = _cache_with_alpha_beta(tmp_path)
+    bad = tmp_path / 'bad.json'
+    bad.write_text('not json')
+
+    rc = _run([
+        'prune-charms',
+        '--charms-dir',
+        str(cache),
+        '--from-results',
+        str(bad),
+        '--status',
+        'failed',
+    ])
+    assert rc == 2
+
+
+def test_prune_charms_disjoint_exits_2(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
+    cache = _cache_with_alpha_beta(tmp_path)
+    other = tmp_path / 'run.json'
+    results.save([pool.Outcome(repo=pathlib.Path('someone-else/bar'), status='failed')], other)
+
+    rc = _run([
+        'prune-charms',
+        '--charms-dir',
+        str(cache),
+        '--from-results',
+        str(other),
+        '--status',
+        'failed',
+    ])
+    assert rc == 2
+    assert 'no charms in common' in capsys.readouterr().err
+
+
+def test_prune_charms_status_group_not_passing(tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha')
+    make_charm(cache / 'beta')
+    make_charm(cache / 'gamma')
+    run1 = tmp_path / 'run.json'
+    results.save(
+        [
+            pool.Outcome(repo=cache / 'alpha', status='passed'),
+            pool.Outcome(repo=cache / 'beta', status='failed'),
+            pool.Outcome(repo=cache / 'gamma', status='no_target'),
+        ],
+        run1,
+        base=cache,
+    )
+
+    rc = _run([
+        'prune-charms',
+        '--charms-dir',
+        str(cache),
+        '--from-results',
+        str(run1),
+        '--status',
+        'not-passing',
+        '--yes',
+    ])
+    assert rc == 0
+    assert (cache / 'alpha').exists()
+    assert not (cache / 'beta').exists()
+    assert not (cache / 'gamma').exists()
+
+
+def test_prune_charms_no_matches_exits_0(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = _cache_with_alpha_beta(tmp_path)
+    run1 = tmp_path / 'run.json'
+    results.save(
+        [
+            pool.Outcome(repo=cache / 'alpha', status='passed'),
+            pool.Outcome(repo=cache / 'beta', status='passed'),
+        ],
+        run1,
+        base=cache,
+    )
+
+    rc = _run([
+        'prune-charms',
+        '--charms-dir',
+        str(cache),
+        '--from-results',
+        str(run1),
+        '--status',
+        'failed',
+    ])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert (cache / 'alpha').exists()
+    assert (cache / 'beta').exists()
+    assert 'no charms matched' in captured.out
