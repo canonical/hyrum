@@ -30,6 +30,7 @@ from hyrum import _patchers as patchers
 from hyrum import _pool as pool
 from hyrum import _report as report
 from hyrum import _runners as runners
+from hyrum import _selection as selection
 from hyrum._runners import make_runner, tox
 
 logger = logging.getLogger('hyrum')
@@ -589,6 +590,7 @@ def _select_repos(
     repo_re: str,
     limit: int,
     framework: str | None,
+    from_results: filt.Filter | None = None,
 ) -> tuple[list[pathlib.Path], list[tuple[pathlib.Path, str]]]:
     """Return (repos to run, list of (repo, skip-reason) pairs).
 
@@ -598,6 +600,10 @@ def _select_repos(
     cap applied before filtering makes small values select nothing at all.
     Charms passed over on the way to the cap still land in ``skipped``, so
     the summary stays honest about what was looked at.
+
+    ``from_results`` (built by :func:`hyrum._selection.load_selection`) is
+    one more link in the chain, intersecting with every other filter here
+    and applied before ``limit`` like the rest of them.
     """
     chain: list[filt.Filter] = [
         filt.not_legacy,
@@ -614,6 +620,8 @@ def _select_repos(
             )
 
         chain.append(framework_filter)
+    if from_results is not None:
+        chain.append(from_results)
 
     repos: list[pathlib.Path] = []
     skipped: list[tuple[pathlib.Path, str]] = []
@@ -648,6 +656,19 @@ def _non_negative_int(value: str) -> int:
     if number < 0:
         raise argparse.ArgumentTypeError(f'{value!r} is not a non-negative integer')
     return number
+
+
+def _parse_status_arg(value: str) -> tuple[str, ...]:
+    """Parse one ``--status`` occurrence: a comma-separated list of status/group names."""
+    tokens = tuple(part.strip() for part in value.split(',') if part.strip())
+    if not tokens:
+        raise argparse.ArgumentTypeError('--status: empty value')
+    valid = selection.known_selectors()
+    for token in tokens:
+        if token not in valid:
+            choices = ', '.join(sorted(valid))
+            raise argparse.ArgumentTypeError(f'--status: {token!r} is not one of: {choices}')
+    return tokens
 
 
 def _default_charms_dir() -> pathlib.Path:
@@ -906,6 +927,32 @@ def _add_check_subparser(
         choices=list(frameworks.supported_frameworks()),
         default=None,
         help='Only run for charms using this testing framework.',
+    )
+    parser.add_argument(
+        '--from-results',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'Only run charms named in this saved results file (for example, one written '
+            'by --save/--auto-save). Always a filesystem path: no default location, run id, '
+            'or target-name lookup. Intersects with --repo, --framework and [ignore] like '
+            'every other filter, and is applied before --limit. Defaults --status to failing.'
+        ),
+    )
+    parser.add_argument(
+        '--status',
+        dest='status',
+        action='append',
+        type=_parse_status_arg,
+        default=[],
+        help=(
+            'With --from-results, only select charms whose saved outcome is one of these. '
+            'Repeatable and comma-separated; repeats and commas union together. Accepts the '
+            'outcome statuses (passed, failed, no_target, timeout, runner_error, '
+            'patcher_error, skipped) plus two groups: failing (reached the runner or the '
+            'patcher and did not come out clean) and not-passing (everything but passed). '
+            'Requires --from-results. [default with --from-results: failing]'
+        ),
     )
     parser.add_argument(
         '--workers',
@@ -1177,6 +1224,58 @@ def _add_get_charms_subparser(
     return parser
 
 
+def _add_prune_charms_subparser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    parser = subparsers.add_parser(
+        'prune-charms',
+        help='Delete charms from the cache by their outcome in a saved run.',
+        description=(
+            'Delete charms from the charms directory whose outcome in a saved results '
+            'file matches --status. Without --yes, lists what would be removed and exits 0.'
+        ),
+    )
+    parser.add_argument(
+        '--charms-dir',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'Directory containing pre-cloned charm repositories. '
+            '[env: HYRUM_CHARMS] [default: ~/.cache/hyrum/charms]'
+        ),
+    )
+    # PATH is always a filesystem path, like `check --from-results`: no
+    # default location, run id, or target-name lookup.
+    parser.add_argument(
+        '--from-results',
+        type=pathlib.Path,
+        required=True,
+        help='Saved results file naming which charms to consider.',
+    )
+    parser.add_argument(
+        '--status',
+        dest='status',
+        action='append',
+        type=_parse_status_arg,
+        required=True,
+        help=(
+            'Only remove charms whose saved outcome is one of these. Repeatable and '
+            'comma-separated; repeats and commas union together. Accepts the outcome '
+            'statuses (passed, failed, no_target, timeout, runner_error, patcher_error, '
+            'skipped) plus two groups: failing (reached the runner or the patcher and did '
+            'not come out clean) and not-passing (everything but passed). Required -- '
+            'unlike check --from-results, there is no default here.'
+        ),
+    )
+    parser.add_argument(
+        '--yes',
+        action='store_true',
+        help='Actually delete the matched charms. Without this, list them and exit 0.',
+    )
+    parser.set_defaults(func=_run_prune_charms)
+    return parser
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     description = 'Bulk-run a check across many charm repositories with a dependency swapped out.'
     parser = argparse.ArgumentParser(prog='hyrum', description=description)
@@ -1185,6 +1284,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     _add_check_subparser(subparsers)
     _add_compare_subparser(subparsers)
     _add_get_charms_subparser(subparsers)
+    _add_prune_charms_subparser(subparsers)
     return parser
 
 
@@ -1212,12 +1312,23 @@ def _run_check(args: argparse.Namespace) -> int:
     if args.host_env_defaults:
         _apply_host_env_defaults(args.target)
 
+    status_tokens = [token for group in args.status for token in group]
+    if status_tokens and args.from_results is None:
+        raise SystemExit('--status requires --from-results')
+    from_results_filter: filt.Filter | None = None
+    if args.from_results is not None:
+        statuses = selection.expand_statuses(status_tokens or ['failing'])
+        from_results_filter = selection.load_selection(
+            args.from_results, statuses, cache=charms_dir
+        )
+
     repos, skipped = _select_repos(
         charms_dir,
         config=cfg,
         repo_re=args.repo,
         limit=args.limit,
         framework=args.framework,
+        from_results=from_results_filter,
     )
     logger.info('Selected %d charm(s); skipping %d up-front.', len(repos), len(skipped))
 
@@ -1347,6 +1458,40 @@ def _run_get_charms(args: argparse.Namespace) -> int:
     with source.open(newline='', encoding='utf-8') as f:
         rows: list[get_charms.CharmRow] = list(csv.DictReader(f))  # type: ignore[arg-type]
     asyncio.run(get_charms.process_rows(rows, dest, workers=args.workers, timeout=args.timeout))
+    return 0
+
+
+def _run_prune_charms(args: argparse.Namespace) -> int:
+    charms_dir: pathlib.Path = args.charms_dir or _default_charms_dir()
+    if not charms_dir.is_dir():
+        sys.exit(f'hyrum: error: --charms-dir: {charms_dir} is not a directory.')
+
+    _configure_logging(logging.INFO)
+
+    status_tokens = [token for group in args.status for token in group]
+    statuses = selection.expand_statuses(status_tokens)
+    matches = selection.load_selection(args.from_results, statuses, cache=charms_dir)
+
+    # matches(repo) is None for a charm the selector keeps -- the same
+    # "selected to run" meaning check gives it, here read as "selected to
+    # remove".
+    matched = [repo for repo in _enumerate.iter_charm_repos(charms_dir) if matches(repo) is None]
+
+    if not matched:
+        print('hyrum: no charms matched --from-results / --status.')
+        return 0
+
+    if not args.yes:
+        print(f'Would remove {len(matched)} charm(s):')
+        for repo in sorted(matched, key=lambda r: _results._identity(r, charms_dir)):
+            print(f'  {_results._identity(repo, charms_dir)}')
+        return 0
+
+    for repo in matched:
+        identity = _results._identity(repo, charms_dir)
+        shutil.rmtree(repo)
+        logger.info('Removed %s', identity)
+    print(f'hyrum: removed {len(matched)} charm(s).')
     return 0
 
 
