@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import pathlib
 import shutil
@@ -1067,6 +1068,14 @@ def test_cli_compare_new_charm_does_not_trip_the_gate(tmp_path: pathlib.Path):
     assert rc == 0
 
 
+def test_quiet_logs_only_errors():
+    """--quiet promises "no output except errors", and get-charms already agrees."""
+    assert cli._resolve_log_level(quiet=True, verbosity=None) == logging.ERROR
+    assert cli._resolve_log_level(quiet=False, verbosity=None) == logging.INFO
+    assert cli._resolve_log_level(quiet=False, verbosity='debug') == logging.DEBUG
+    assert cli._resolve_log_level(quiet=False, verbosity='trace') == logging.DEBUG
+
+
 # ---- preflight: runner executables -------------------------------------------
 
 
@@ -1082,6 +1091,16 @@ def test_available_backends_drops_uninstalled_backend_under_auto(monkeypatch):
         runners.RunnerChoice.AUTO, tox_executable='tox', make_executable='make'
     )
     assert backends == ('tox',)
+
+
+def test_available_backends_reports_a_dropped_backend_as_an_error(monkeypatch, caplog):
+    """A missing tool is a host problem, and has to survive --quiet."""
+    monkeypatch.setattr(shutil, 'which', _installed('tox'))
+    with caplog.at_level(logging.ERROR):
+        cli._available_backends(
+            runners.RunnerChoice.AUTO, tox_executable='tox', make_executable='make'
+        )
+    assert 'make is not installed' in caplog.text
 
 
 def test_available_backends_exits_when_explicit_choice_is_missing(monkeypatch):
@@ -1288,3 +1307,115 @@ def test_limit_above_the_number_available_selects_everything(charm_cache: pathli
         framework=None,
     )
     assert [p.name for p in repos] == ['c-modern', 'd-modern']
+
+
+def _help(capsys: pytest.CaptureFixture[str], *argv: str) -> str:
+    with pytest.raises(SystemExit):
+        cli.main([*argv, '--help'])
+    return capsys.readouterr().out
+
+
+def test_top_level_help_does_not_use_an_undefined_target(capsys: pytest.CaptureFixture[str]):
+    # `TARGET` has no referent until you run `hyrum check --help`, so the
+    # top-level line has to stand on its own.
+    text = _help(capsys)
+    assert 'TARGET' not in text
+    # argparse wraps the line to the terminal, so compare without the breaks.
+    assert 'Run a tox environment or make target (for example, unit or lint)' in ' '.join(
+        text.split()
+    )
+
+
+def test_help_text_carries_no_rest_markup(capsys: pytest.CaptureFixture[str]):
+    for command in ((), ('check',), ('compare',), ('get-charms',)):
+        text = _help(capsys, *command)
+        assert '``' not in text
+
+
+def test_patch_help_puts_each_form_on_its_own_line(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv('COLUMNS', '80')
+    lines = _help(capsys, 'check').splitlines()
+    for form in ('version pin', 'git source', 'local checkout', 'owner:branch', 'vendored swap'):
+        assert sum(1 for line in lines if line.strip().startswith(form)) == 1
+    # A form long enough to wrap must not spill past the terminal it is
+    # wrapped for: the formatter has to keep the indent inside the width.
+    assert max(len(line) for line in lines) <= 80
+
+
+def test_patch_help_keeps_its_examples_copy_pasteable(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    """A narrow terminal must not split a token someone is going to copy.
+
+    The default textwrap behaviour breaks `git+https://...@main` across three
+    lines at 60 columns, and `--no-patch` after its hyphen, both of which are
+    worse than a line that overruns the width.
+    """
+    monkeypatch.setenv('COLUMNS', '60')
+    lines = [line.strip() for line in _help(capsys, 'check').splitlines()]
+    assert any('git+https://github.com/psf/requests@main`' in line for line in lines)
+    assert any(line.endswith('--no-patch. [default: `ops @') for line in lines)
+
+
+def test_patch_help_lists_the_forms_the_parser_accepts(capsys: pytest.CaptureFixture[str]):
+    """Documented as a closed list ("One of these forms"), so it has to be one.
+
+    A local checkout is a supported way to point at an operator tree, and
+    _parse_patch's own error message advertises it.
+    """
+    text = ' '.join(_help(capsys, 'check').split())
+    assert 'One of these forms:' in text
+    assert '`mylib @ ~/src/mylib`' in text
+    assert 'with the `git+` optional' in text
+
+
+def test_patch_help_states_its_default_like_every_other_flag(capsys: pytest.CaptureFixture[str]):
+    text = _help(capsys, 'check')
+    assert '[default: `ops @ canonical:main`]' in text
+    assert 'defaults to' not in text
+
+
+@pytest.mark.parametrize('verbosity', ['debug', 'trace'])
+def test_cli_verbosity_includes_offender_list(
+    verbosity: str, monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--verbosity',
+        verbosity,
+    ])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert 'alpha' in captured.out
+
+
+def test_cli_brief_is_the_default_rung(
+    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """--brief names the rung the run is already on, so it changes no output."""
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
+
+    argv = ['check', 'unit', '--charms-dir', str(cache), '--no-patch']
+    assert _run(argv) == 1
+    without = capsys.readouterr().out
+    assert _run([*argv, '--brief']) == 1
+    with_brief = capsys.readouterr().out
+
+    assert with_brief == without
+    assert 'alpha' not in with_brief
