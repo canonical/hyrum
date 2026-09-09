@@ -204,9 +204,10 @@ def _short(repo: str) -> str:
     """Shorten a charm key for the table.
 
     Keys saved by current hyrum are already charms-dir-relative
-    (``owner/charm``) and pass through unchanged. Absolute paths from older
-    results files keep their last two segments so different owners' charms
-    of the same name stay distinguishable.
+    (``owner/charm``, or deeper for a charm inside a monorepo) and pass
+    through unchanged. Absolute paths from older results files keep their
+    last two segments so different owners' charms of the same name stay
+    distinguishable.
     """
     path = pathlib.PurePosixPath(repo)
     if not path.is_absolute():

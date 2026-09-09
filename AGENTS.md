@@ -61,6 +61,12 @@ above.
 - `enumerate` / `filters` / `frameworks` / `config` — repo selection. The
   `hyrum check` subcommand does not curate the charm collection; it
   expects a pre-populated cache folder. `hyrum get-charms` populates it.
+  The cache is `<charms-dir>/<owner>/<leaf>`, so a repository is the
+  *second* level down: the depth budget for finding charms in a monorepo,
+  and the "no charm found" warning, are both counted per repository rather
+  than per owner. Counting from the top level instead spends a level of
+  the budget before the repo root, and attributes the warning to an owner,
+  which never fires because some repo under it has charms.
 - `get_charms` — distributed cache-population subcommand: shallow-clones
   or pulls every repository in the CSV concurrently via `asyncio`.
 - `patchers/` — `Patcher` protocol, `NullPatcher`, `PatcherStack`,
