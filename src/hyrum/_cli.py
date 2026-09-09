@@ -30,6 +30,7 @@ from hyrum import _patchers as patchers
 from hyrum import _pool as pool
 from hyrum import _report as report
 from hyrum import _runners as runners
+from hyrum import _selection as selection
 from hyrum._runners import make_runner, tox
 
 logger = logging.getLogger('hyrum')
@@ -589,6 +590,7 @@ def _select_repos(
     repo_re: str,
     limit: int,
     framework: str | None,
+    from_results: filt.Filter | None = None,
 ) -> tuple[list[pathlib.Path], list[tuple[pathlib.Path, str]]]:
     """Return (repos to run, list of (repo, skip-reason) pairs).
 
@@ -598,6 +600,10 @@ def _select_repos(
     cap applied before filtering makes small values select nothing at all.
     Charms passed over on the way to the cap still land in ``skipped``, so
     the summary stays honest about what was looked at.
+
+    ``from_results`` (built by :func:`hyrum._selection.load_selection`) is
+    one more link in the chain, intersecting with every other filter here
+    and applied before ``limit`` like the rest of them.
     """
     chain: list[filt.Filter] = [
         filt.not_legacy,
@@ -614,6 +620,8 @@ def _select_repos(
             )
 
         chain.append(framework_filter)
+    if from_results is not None:
+        chain.append(from_results)
 
     repos: list[pathlib.Path] = []
     skipped: list[tuple[pathlib.Path, str]] = []
@@ -648,6 +656,19 @@ def _non_negative_int(value: str) -> int:
     if number < 0:
         raise argparse.ArgumentTypeError(f'{value!r} is not a non-negative integer')
     return number
+
+
+def _parse_status_arg(value: str) -> tuple[str, ...]:
+    """Parse one ``--status`` occurrence: a comma-separated list of status/group names."""
+    tokens = tuple(part.strip() for part in value.split(',') if part.strip())
+    if not tokens:
+        raise argparse.ArgumentTypeError('--status: empty value')
+    valid = selection.known_selectors()
+    for token in tokens:
+        if token not in valid:
+            choices = ', '.join(sorted(valid))
+            raise argparse.ArgumentTypeError(f'--status: {token!r} is not one of: {choices}')
+    return tokens
 
 
 def _default_charms_dir() -> pathlib.Path:
@@ -906,6 +927,32 @@ def _add_check_subparser(
         choices=list(frameworks.supported_frameworks()),
         default=None,
         help='Only run for charms using this testing framework.',
+    )
+    parser.add_argument(
+        '--from-results',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'Only run charms named in this saved results file (for example, one written '
+            'by --save/--auto-save). Always a filesystem path: no default location, run id, '
+            'or target-name lookup. Intersects with --repo, --framework and [ignore] like '
+            'every other filter, and is applied before --limit. Defaults --status to failing.'
+        ),
+    )
+    parser.add_argument(
+        '--status',
+        dest='status',
+        action='append',
+        type=_parse_status_arg,
+        default=[],
+        help=(
+            'With --from-results, only select charms whose saved outcome is one of these. '
+            'Repeatable and comma-separated; repeats and commas union together. Accepts the '
+            'outcome statuses (passed, failed, no_target, timeout, runner_error, '
+            'patcher_error, skipped) plus two groups: failing (reached the runner or the '
+            'patcher and did not come out clean) and not-passing (everything but passed). '
+            'Requires --from-results. [default with --from-results: failing]'
+        ),
     )
     parser.add_argument(
         '--workers',
@@ -1212,12 +1259,23 @@ def _run_check(args: argparse.Namespace) -> int:
     if args.host_env_defaults:
         _apply_host_env_defaults(args.target)
 
+    status_tokens = [token for group in args.status for token in group]
+    if status_tokens and args.from_results is None:
+        raise SystemExit('--status requires --from-results')
+    from_results_filter: filt.Filter | None = None
+    if args.from_results is not None:
+        statuses = selection.expand_statuses(status_tokens or ['failing'])
+        from_results_filter = selection.load_selection(
+            args.from_results, statuses, cache=charms_dir
+        )
+
     repos, skipped = _select_repos(
         charms_dir,
         config=cfg,
         repo_re=args.repo,
         limit=args.limit,
         framework=args.framework,
+        from_results=from_results_filter,
     )
     logger.info('Selected %d charm(s); skipping %d up-front.', len(repos), len(skipped))
 
