@@ -59,8 +59,13 @@ def _configure_logging(level: int) -> None:
 
 
 def _resolve_log_level(*, quiet: bool, verbosity: str | None) -> int:
+    # ``--quiet`` is ERROR, not WARNING: its help promises "no output except
+    # errors", the spec's quiet rung is "only errors for failed operations",
+    # and ``get-charms`` already reads the same flag that way. At WARNING a
+    # quiet fleet run buries its one summary line under per-charm lock and
+    # patcher warnings.
     if quiet:
-        return logging.WARNING
+        return logging.ERROR
     if verbosity in ('debug', 'trace'):
         return logging.DEBUG
     return logging.INFO
@@ -491,9 +496,14 @@ def _available_backends(
 
     A backend that isn't installed would otherwise fail identically in every
     charm, producing one ``runner_error`` per charm for a single host problem.
-    Under ``--runner auto`` the missing backend is dropped with a warning (a
-    fleet with no make-driven charms shouldn't need make); if nothing is left,
-    that's fatal and we say so once, before any charm runs.
+    Under ``--runner auto`` the missing backend is dropped (a fleet with no
+    make-driven charms shouldn't need make); if nothing is left, that's fatal
+    and we say so once, before any charm runs.
+
+    Dropping a backend is logged at ERROR rather than WARNING: it is a problem
+    with the host rather than a result from a charm, it is one line per run
+    rather than per charm, and it has to survive ``--quiet`` — otherwise a run
+    that silently skipped every make charm exits 0 saying nothing.
     """
     commands = {'tox': tox_executable, 'make': make_executable}
     available: list[str] = []
@@ -504,7 +514,7 @@ def _available_backends(
             available.append(name)
         else:
             missing.append(missing_program)
-            logger.warning('%s is not installed; %s charms cannot be run', missing_program, name)
+            logger.error('%s is not installed; %s charms cannot be run', missing_program, name)
     if not available:
         sys.exit(f'hyrum: error: no runner available: {", ".join(missing)} not found on PATH.')
     return tuple(available)
@@ -989,10 +999,11 @@ def _add_check_subparser(
         ),
     )
     verbosity_group = parser.add_mutually_exclusive_group()
+    verbosity_group.add_argument('--quiet', action='store_true', help='No output except errors.')
     verbosity_group.add_argument(
-        '--quiet',
+        '--brief',
         action='store_true',
-        help='No output except errors. Exit code still reflects pass/fail.',
+        help='The summary tally, without the per-charm offender list. [default: enabled]',
     )
     verbosity_group.add_argument(
         '--verbose',
@@ -1005,8 +1016,9 @@ def _add_check_subparser(
         choices=['debug', 'trace'],
         default=None,
         help=(
-            'Developer-level detail. Use debug for execution detail; trace reserved for '
-            'future code-level detail (currently aliased to debug).'
+            'Developer-level detail, including everything --verbose adds. Use debug for '
+            'execution detail; trace reserved for future code-level detail (currently '
+            'aliased to debug).'
         ),
     )
     parser.add_argument(
@@ -1286,7 +1298,9 @@ def _run_check(args: argparse.Namespace) -> int:
             results,
             base=charms_dir,
             target=args.target,
-            verbose=args.verbose,
+            # --verbosity debug/trace implies --verbose: the rungs are
+            # cumulative, so climbing to trace mustn't lose the offender list.
+            list_offenders=args.verbose or args.verbosity is not None,
             no_headers=args.no_headers,
         )
     elif not pool.passed(results):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import pathlib
 import shutil
@@ -1067,6 +1068,14 @@ def test_cli_compare_new_charm_does_not_trip_the_gate(tmp_path: pathlib.Path):
     assert rc == 0
 
 
+def test_quiet_logs_only_errors():
+    """--quiet promises "no output except errors", and get-charms already agrees."""
+    assert cli._resolve_log_level(quiet=True, verbosity=None) == logging.ERROR
+    assert cli._resolve_log_level(quiet=False, verbosity=None) == logging.INFO
+    assert cli._resolve_log_level(quiet=False, verbosity='debug') == logging.DEBUG
+    assert cli._resolve_log_level(quiet=False, verbosity='trace') == logging.DEBUG
+
+
 # ---- preflight: runner executables -------------------------------------------
 
 
@@ -1082,6 +1091,16 @@ def test_available_backends_drops_uninstalled_backend_under_auto(monkeypatch):
         runners.RunnerChoice.AUTO, tox_executable='tox', make_executable='make'
     )
     assert backends == ('tox',)
+
+
+def test_available_backends_reports_a_dropped_backend_as_an_error(monkeypatch, caplog):
+    """A missing tool is a host problem, and has to survive --quiet."""
+    monkeypatch.setattr(shutil, 'which', _installed('tox'))
+    with caplog.at_level(logging.ERROR):
+        cli._available_backends(
+            runners.RunnerChoice.AUTO, tox_executable='tox', make_executable='make'
+        )
+    assert 'make is not installed' in caplog.text
 
 
 def test_available_backends_exits_when_explicit_choice_is_missing(monkeypatch):
@@ -1356,3 +1375,47 @@ def test_patch_help_states_its_default_like_every_other_flag(capsys: pytest.Capt
     text = _help(capsys, 'check')
     assert '[default: `ops @ canonical:main`]' in text
     assert 'defaults to' not in text
+
+
+@pytest.mark.parametrize('verbosity', ['debug', 'trace'])
+def test_cli_verbosity_includes_offender_list(
+    verbosity: str, monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--verbosity',
+        verbosity,
+    ])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert 'alpha' in captured.out
+
+
+def test_cli_brief_is_the_default_rung(
+    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """--brief names the rung the run is already on, so it changes no output."""
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
+
+    argv = ['check', 'unit', '--charms-dir', str(cache), '--no-patch']
+    assert _run(argv) == 1
+    without = capsys.readouterr().out
+    assert _run([*argv, '--brief']) == 1
+    with_brief = capsys.readouterr().out
+
+    assert with_brief == without
+    assert 'alpha' not in with_brief
