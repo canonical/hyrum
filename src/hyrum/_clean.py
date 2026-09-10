@@ -92,7 +92,12 @@ def looks_like_a_cache(base: pathlib.Path) -> bool:
     anything else — a home directory, a downloads folder, a monorepo — which
     is the shape the mistake usually takes.
     """
-    children = [p for p in base.iterdir() if p.is_dir() and not p.name.startswith('.')]
+    try:
+        children = [p for p in base.iterdir() if p.is_dir() and not p.name.startswith('.')]
+    except OSError as exc:
+        # Same reasoning as _holds_a_checkout: cannot tell, so answer no.
+        logger.error('Could not read %s: %s', base, exc)
+        return False
     if not children:
         return False
     return all(_holds_a_checkout(child) for child in children)
@@ -108,7 +113,12 @@ def _holds_a_checkout(path: pathlib.Path) -> bool:
         return True
     try:
         return any((child / '.git').exists() for child in path.iterdir() if child.is_dir())
-    except OSError:
+    except OSError as exc:
+        # Cannot tell, so answer no: the guard refuses, which is the safe
+        # direction. Say why, or the refusal claims the contents are not
+        # checkouts when the truth is that they could not be read. Logged at
+        # ERROR so --quiet ("Suppress non-error output") keeps it.
+        logger.error('Could not check %s for a git checkout: %s', path, exc)
         return False
 
 

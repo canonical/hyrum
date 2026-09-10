@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import pathlib
 
 import pytest
@@ -157,3 +158,41 @@ def test_a_source_tree_does_not_look_like_a_cache(tmp_path: pathlib.Path):
 
 def test_an_empty_directory_does_not_look_like_a_cache(tmp_path: pathlib.Path):
     assert not clean.looks_like_a_cache(tmp_path)
+
+
+def _unreadable(target: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make ``target.iterdir()`` raise, the way an unreadable directory does.
+
+    Monkeypatched rather than chmodded, because a test running as root can
+    read a directory whose mode says otherwise.
+    """
+    real = pathlib.Path.iterdir
+
+    def fake(self: pathlib.Path):
+        if self == target:
+            raise PermissionError(13, 'Permission denied')
+        return real(self)
+
+    monkeypatch.setattr(pathlib.Path, 'iterdir', fake)
+
+
+def test_an_unreadable_cache_does_not_look_like_a_cache(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    _charm(tmp_path, 'a-charm')
+    _unreadable(tmp_path, monkeypatch)
+    with caplog.at_level(logging.ERROR, logger=clean.logger.name):
+        assert not clean.looks_like_a_cache(tmp_path)
+    assert any('Could not read' in m for m in caplog.messages)
+
+
+def test_an_unreadable_owner_does_not_look_like_a_cache(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    """The refusal has to say it could not look, not that the contents are not checkouts."""
+    owner = tmp_path / 'canonical'
+    _charm(owner, 'a-charm')
+    _unreadable(owner, monkeypatch)
+    with caplog.at_level(logging.ERROR, logger=clean.logger.name):
+        assert not clean.looks_like_a_cache(tmp_path)
+    assert any('Could not check' in m for m in caplog.messages)
