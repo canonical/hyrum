@@ -21,7 +21,7 @@ from collections.abc import Sequence
 
 import packaging.requirements
 
-from hyrum import _compare, _enumerate, _results, _version
+from hyrum import _clean, _compare, _enumerate, _results, _version
 from hyrum import _config as config_loader
 from hyrum import _filters as filt
 from hyrum import _frameworks as frameworks
@@ -1189,6 +1189,42 @@ def _add_get_charms_subparser(
     return parser
 
 
+def _add_clean_subparser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    parser = subparsers.add_parser(
+        'clean',
+        help='Remove build artefacts from the charms directory, keeping the checkouts.',
+        description=(
+            'Remove the build artefacts a check run leaves in each charm (.tox, .venv, '
+            'tool caches, __pycache__) while leaving the git checkouts in place, so the '
+            'next run does not have to clone everything again.'
+        ),
+    )
+    parser.add_argument(
+        '--charms-dir',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'Directory containing the cloned charm repositories. '
+            '[env: HYRUM_CHARMS] [default: ~/.cache/hyrum/charms]'
+        ),
+    )
+    parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Report what would be removed and how much it holds, without removing it.',
+    )
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Clean a directory that does not look like a charms directory.',
+    )
+    parser.add_argument('--quiet', action='store_true', help='Suppress non-error output.')
+    parser.set_defaults(func=_run_clean)
+    return parser
+
+
 def _add_show_subparser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> argparse.ArgumentParser:
@@ -1236,6 +1272,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--version', action='version', version=f'hyrum {_version.__version__}')
     subparsers = parser.add_subparsers(dest='command', metavar='COMMAND', required=True)
     _add_check_subparser(subparsers)
+    _add_clean_subparser(subparsers)
     _add_compare_subparser(subparsers)
     _add_get_charms_subparser(subparsers)
     _add_show_subparser(subparsers)
@@ -1406,6 +1443,55 @@ def _run_get_charms(args: argparse.Namespace) -> int:
         return 0
     asyncio.run(get_charms.process_rows(rows, dest, workers=args.workers, timeout=args.timeout))
     return 0
+
+
+def _run_clean(args: argparse.Namespace) -> int:
+    level = logging.ERROR if args.quiet else logging.INFO
+    _configure_logging(level)
+
+    charms_dir: pathlib.Path = args.charms_dir or _default_charms_dir()
+    if not charms_dir.is_dir():
+        sys.exit(f'hyrum: error: --charms-dir: {charms_dir} is not a directory.')
+    if not args.force and not _clean.looks_like_a_cache(charms_dir):
+        # Removal reaches .venv, which is the one artefact a person might have
+        # built by hand, so being pointed at a source tree rather than the
+        # cache costs more than a re-run.
+        sys.exit(
+            f'hyrum: error: --charms-dir: {charms_dir} does not look like a charms '
+            f'directory (its contents are not git checkouts). Pass --force to clean it '
+            f'anyway.'
+        )
+    try:
+        artefacts = list(_clean.find_artefacts(charms_dir))
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        sys.exit(f'hyrum: error: --charms-dir: {exc}')
+
+    removed = 0
+    reclaimed = 0
+    failed = 0
+    for artefact in artefacts:
+        relative = report.relative(artefact.path, charms_dir)
+        if args.dry_run:
+            logger.info('Would remove %s (%s)', relative, _clean.format_size(artefact.size))
+            removed += 1
+            reclaimed += artefact.size
+            continue
+        logger.debug('Removing %s (%s)', relative, _clean.format_size(artefact.size))
+        if _clean.remove(artefact):
+            removed += 1
+            reclaimed += artefact.size
+        else:
+            failed += 1
+
+    if not args.quiet:
+        verb = 'Would reclaim' if args.dry_run else 'Reclaimed'
+        noun = 'artefact' if removed == 1 else 'artefacts'
+        print(f'{verb} {_clean.format_size(reclaimed)} from {removed} {noun}.')
+    # A reclaim that did not happen has to say so: `hyrum clean && hyrum check`
+    # would otherwise carry on believing the disk came back, which is the
+    # situation this subcommand exists to prevent. `_clean.remove` logs each
+    # one at ERROR, so --quiet ("Suppress non-error output") keeps them.
+    return 1 if failed else 0
 
 
 def _describe_run(label: str, path: pathlib.Path, meta: _results.RunMeta) -> str:

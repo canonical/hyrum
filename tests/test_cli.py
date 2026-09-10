@@ -1327,7 +1327,7 @@ def test_top_level_help_does_not_use_an_undefined_target(capsys: pytest.CaptureF
 
 
 def test_help_text_carries_no_rest_markup(capsys: pytest.CaptureFixture[str]):
-    for command in ((), ('check',), ('compare',), ('get-charms',)):
+    for command in ((), ('check',), ('clean',), ('compare',), ('get-charms',)):
         text = _help(capsys, *command)
         assert '``' not in text
 
@@ -1556,3 +1556,78 @@ def test_show_is_always_a_path_no_shorthand_resolution(
 def test_show_help_carries_no_rest_markup(capsys: pytest.CaptureFixture[str]):
     text = _help(capsys, 'show')
     assert '``' not in text
+
+
+def _cache_with_artefacts(tmp_path: pathlib.Path) -> pathlib.Path:
+    cache = tmp_path / 'charms'
+    repo = cache / 'a-charm'
+    (repo / '.git').mkdir(parents=True)
+    (repo / 'charmcraft.yaml').write_text('type: charm\n')
+    (repo / '.tox').mkdir()
+    (repo / '.tox' / 'big').write_bytes(b'x' * 2048)
+    return cache
+
+
+def test_clean_removes_artefacts_and_reports_what_it_reclaimed(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = _cache_with_artefacts(tmp_path)
+    assert _run(['clean', '--charms-dir', str(cache)]) == 0
+    assert 'Reclaimed 2.0 KiB from 1 artefact.' in capsys.readouterr().out
+    assert not (cache / 'a-charm' / '.tox').exists()
+    assert (cache / 'a-charm' / 'charmcraft.yaml').exists()
+
+
+def test_clean_dry_run_removes_nothing(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
+    cache = _cache_with_artefacts(tmp_path)
+    assert _run(['clean', '--charms-dir', str(cache), '--dry-run']) == 0
+    assert 'Would reclaim 2.0 KiB from 1 artefact.' in capsys.readouterr().out
+    assert (cache / 'a-charm' / '.tox' / 'big').exists()
+
+
+def test_clean_reports_a_failed_removal_rather_than_swallowing_it(
+    tmp_path: pathlib.Path, monkeypatch, capsys: pytest.CaptureFixture[str]
+):
+    """A reclaim that did not happen must not exit 0.
+
+    `hyrum clean --quiet && hyrum check unit` would otherwise carry on
+    believing the disk came back. The log goes at ERROR so --quiet, whose help
+    promises "no output except errors", keeps it.
+    """
+    cache = _cache_with_artefacts(tmp_path)
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise PermissionError(13, 'Permission denied')
+
+    monkeypatch.setattr(shutil, 'rmtree', refuse)
+    assert _run(['clean', '--charms-dir', str(cache), '--quiet']) == 1
+    assert 'Could not remove' in capsys.readouterr().err
+
+
+def test_clean_refuses_a_directory_that_is_not_a_charms_dir(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """Removal reaches .venv, which is the one artefact built by hand.
+
+    Being pointed at a source tree by a stray HYRUM_CHARMS costs more than a
+    re-run, so it takes --force.
+    """
+    tree = tmp_path / 'src'
+    (tree / 'myproj' / '.venv').mkdir(parents=True)
+    assert _run(['clean', '--charms-dir', str(tree), '--dry-run']) == 1
+    assert 'does not look like a charms directory' in capsys.readouterr().err
+    assert (tree / 'myproj' / '.venv').exists()
+
+
+def test_clean_force_cleans_a_directory_that_is_not_a_charms_dir(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    tree = tmp_path / 'src'
+    (tree / 'myproj' / '.venv').mkdir(parents=True)
+    assert _run(['clean', '--charms-dir', str(tree), '--force']) == 0
+    assert not (tree / 'myproj' / '.venv').exists()
+    assert 'Reclaimed' in capsys.readouterr().out
+
+
+def test_clean_on_a_missing_charms_dir_is_an_error(tmp_path: pathlib.Path):
+    assert _run(['clean', '--charms-dir', str(tmp_path / 'nope')]) != 0
