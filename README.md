@@ -119,8 +119,8 @@ curl -sSfL -o charm-list/charms.csv \
 # Populate the local cache with every charm in the CSV:
 hyrum get-charms
 
-# --repo and --limit narrow that down, with the same meaning they have on
-# `check`, for populating the cache a slice at a time:
+# --repo and --limit narrow that down, for populating the cache
+# a slice at a time:
 hyrum get-charms --repo '^ubuntu-' --limit 50
 
 # Run `tox -e unit` across every charm in the default cache

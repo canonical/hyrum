@@ -91,15 +91,14 @@ def select_rows(
     """Return the subset of ``rows`` to clone or pull.
 
     ``repo`` is a case-insensitive regex matched against the checkout's
-    folder name -- the same string ``hyrum check --repo`` matches, so a
-    pattern selects the same charms in both subcommands. ``limit`` caps how
-    many rows are selected, counted after ``repo`` has been applied so that
-    it bounds the work done rather than the rows looked at; ``0`` selects
-    every match.
+    folder name. ``limit`` caps how many rows are selected, counted after
+    ``repo`` has been applied so that it bounds the work done rather than
+    the rows looked at; ``0`` selects every match.
 
     Rows with no ``Repository`` cannot be named, so they are dropped here
-    rather than counted against ``limit``. ``process_rows`` keeps its own
-    guard for callers that do not come through this function.
+    rather than counted against ``limit``. ``process_rows`` guards against
+    them too, for callers that build a row list without this function; the
+    warning is not emitted twice, because such rows never reach it.
     """
     pattern = re.compile(repo, re.IGNORECASE)
     selected: list[CharmRow] = []

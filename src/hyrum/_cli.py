@@ -1176,7 +1176,7 @@ def _add_get_charms_subparser(
     parser.add_argument(
         '--repo',
         default='.*',
-        help='Regex on the repo name, as for check. [default: .*]',
+        help='Regex on the repo name. [default: .*]',
     )
     parser.add_argument(
         '--limit',
