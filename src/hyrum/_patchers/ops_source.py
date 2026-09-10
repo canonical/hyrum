@@ -34,6 +34,7 @@ from typing import Any
 import packaging.requirements
 import packaging.specifiers
 
+from hyrum import _python_version
 from hyrum._patchers import _common, base
 from hyrum._patchers._common import (
     detect_pyproject_flavour,
@@ -293,15 +294,23 @@ class OpsSourcePatcher:
             py_version: tuple[int, int] | None = None
             if self.ops.auto_python:
                 try:
-                    py_version = _min_python_from_pyproject(tomllib.loads(new_text))
+                    py_version = _python_version.min_python_from_pyproject(tomllib.loads(new_text))
                 except tomllib.TOMLDecodeError:
-                    py_version = _min_python_from_pyproject(parsed)
+                    py_version = _python_version.min_python_from_pyproject(parsed)
 
             if flavour == 'poetry':
                 base_cmd = (*shlex.split(' '.join(self.ops.poetry_executable)), 'lock')
+                # No ``with_packages`` here: installing poetry per charm is a
+                # cost we don't want at patch time, so this wrap only takes
+                # effect for a ``--poetry-executable`` that names an
+                # interpreter. Poetry 2.x finds a compatible interpreter for
+                # itself when the project rejects the running one, which is
+                # the case this was reaching for.
                 run_lock(
                     repo,
-                    _wrap_with_uv_python(base_cmd, py_version, self.ops.uv_executable),
+                    _python_version.wrap_with_uv_python(
+                        base_cmd, py_version, self.ops.uv_executable
+                    ),
                     self.ops.lock_timeout,
                     on_failure_remove=poetry_lock,
                 )
@@ -891,72 +900,3 @@ def _pyproject_declares_poetry_pkg(content: str, pkg_name: str) -> bool:
         if _line_declares_poetry_pkg(stripped, pkg_name, pep_re):
             return True
     return False
-
-
-_PYTHON_BOUND_RE = re.compile(r'(>=|>|==|~=|~|\^)\s*(\d+)\.(\d+)')
-
-
-def _min_python_from_constraint(constraint: str) -> tuple[int, int] | None:
-    """Return the lowest ``(major, minor)`` Python that satisfies ``constraint``.
-
-    Accepts PEP 440 specifiers (``>=3.12,<4.0``) and Poetry shorthand
-    (``^3.10``, ``~3.10``). Only lower-bound operators are considered;
-    upper bounds (``<``, ``<=``) are ignored because they don't widen the
-    set of acceptable interpreters.
-
-    Returns ``None`` if no lower bound is present.
-    """
-    bounds: list[tuple[int, int]] = []
-    for op, major_s, minor_s in _PYTHON_BOUND_RE.findall(constraint):
-        major, minor = int(major_s), int(minor_s)
-        if op == '>':
-            minor += 1
-        bounds.append((major, minor))
-    if not bounds:
-        return None
-    return max(bounds)
-
-
-def _min_python_from_pyproject(parsed: dict[str, Any]) -> tuple[int, int] | None:
-    """Extract the project's minimum Python from a parsed pyproject.toml."""
-    project: dict[str, Any] = parsed.get('project', {})
-    requires_python = project.get('requires-python')
-    if isinstance(requires_python, str):
-        bound = _min_python_from_constraint(requires_python)
-        if bound is not None:
-            return bound
-    poetry: dict[str, Any] = parsed.get('tool', {}).get('poetry', {})
-    python_dep: Any = poetry.get('dependencies', {}).get('python')
-    if isinstance(python_dep, str):
-        return _min_python_from_constraint(python_dep)
-    if isinstance(python_dep, dict):
-        version = python_dep.get('version')
-        if isinstance(version, str):
-            return _min_python_from_constraint(version)
-    return None
-
-
-def _wrap_with_uv_python(
-    cmd: Sequence[str],
-    py_version: tuple[int, int] | None,
-    uv_executable: Sequence[str],
-) -> tuple[str, ...]:
-    """Prefix ``cmd`` with ``uv run --no-project --python X.Y --`` when ``py_version`` is set.
-
-    ``--no-project`` keeps uv from interpreting the charm's ``pyproject.toml``
-    as a uv project: some charms have a ``[project]`` table without a
-    ``version`` (legal under Poetry's ``package-mode = false``, rejected by
-    uv), which would otherwise abort ``uv run`` before it ever gets to
-    invoke poetry.
-    """
-    if py_version is None:
-        return tuple(cmd)
-    return (
-        *uv_executable,
-        'run',
-        '--no-project',
-        '--python',
-        f'{py_version[0]}.{py_version[1]}',
-        '--',
-        *cmd,
-    )
