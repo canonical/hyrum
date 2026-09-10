@@ -1419,3 +1419,140 @@ def test_cli_brief_is_the_default_rung(
 
     assert with_brief == without
     assert 'alpha' not in with_brief
+
+
+# ---- show ---------------------------------------------------------------------
+
+
+def test_show_prints_metadata_header_then_the_check_report(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    outcomes = [
+        pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='passed'),
+        pool.Outcome(repo=pathlib.Path('canonical/beta'), status='failed'),
+    ]
+    path = tmp_path / 'unit.auto.json'
+    results.save(outcomes, path, target='unit', patcher='ops @ canonical:main')
+
+    rc = _run(['show', str(path)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert f'{path} — saved ' in captured.out
+    assert 'target unit' in captured.out
+    assert 'patch ops @ canonical:main' in captured.out
+    assert 'hyrum: unit' in captured.out
+    assert 'STATUS' in captured.out
+    assert '1 of 2 runs passed' in captured.out
+
+
+def test_show_exits_0_even_when_the_run_had_failures(tmp_path: pathlib.Path):
+    """A display command is not a gate; `compare --fail-on-regression` is."""
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='failed')]
+    path = tmp_path / 'run.json'
+    results.save(outcomes, path, target='unit')
+
+    rc = _run(['show', str(path)])
+    assert rc == 0
+
+
+def test_show_exits_2_on_malformed_file(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    bad = tmp_path / 'bad.json'
+    bad.write_text('not json')
+
+    rc = _run(['show', str(bad)])
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert str(bad) in captured.err
+
+
+def test_show_verbose_lists_offenders(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
+    outcomes = [
+        pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='passed'),
+        pool.Outcome(repo=pathlib.Path('canonical/beta'), status='failed', error='boom'),
+    ]
+    path = tmp_path / 'run.json'
+    results.save(outcomes, path, target='unit')
+
+    rc = _run(['show', str(path), '--verbose'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'canonical/beta' in captured.out
+    assert 'boom' in captured.out
+
+
+def test_show_no_headers_suppresses_header_row(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='passed')]
+    path = tmp_path / 'run.json'
+    results.save(outcomes, path, target='unit')
+
+    rc = _run(['show', str(path), '--no-headers'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'STATUS' not in captured.out
+
+
+def test_show_format_json_includes_meta_and_outcomes(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='failed', error='boom')]
+    path = tmp_path / 'run.json'
+    results.save(outcomes, path, target='unit', patcher='ops @ canonical:main')
+
+    rc = _run(['show', str(path), '--format', 'json'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    payload = json.loads(captured.out)
+    assert payload['path'] == str(path)
+    assert payload['meta']['target'] == 'unit'
+    assert payload['outcomes'][0]['repo'] == 'canonical/alpha'
+    assert payload['outcomes'][0]['status'] == 'failed'
+    assert payload['outcomes'][0]['error'] == 'boom'
+
+
+def test_show_format_markdown_outputs_a_table(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    outcomes = [
+        pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='passed'),
+        pool.Outcome(repo=pathlib.Path('canonical/beta'), status='failed'),
+    ]
+    path = tmp_path / 'run.json'
+    results.save(outcomes, path, target='unit')
+
+    rc = _run(['show', str(path), '--format', 'markdown'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert '# hyrum: unit' in captured.out
+    assert '| Status | Count | % of all |' in captured.out
+    assert '| passed | 1 |' in captured.out
+
+
+def test_show_is_always_a_path_no_shorthand_resolution(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """`show`'s positional only ever takes a filesystem path.
+
+    A bare word with no directory or extension — exactly what a future
+    ``hyrum show unit`` shorthand might expand to
+    ``<auto-save-dir>/unit.auto.json`` — is read as a literal file in the
+    current directory today, and must keep being read that way once a
+    shorthand exists: the existing-path check has to come first.
+    """
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='passed')]
+    bare = tmp_path / 'unit'
+    results.save(outcomes, bare, target='unit')
+
+    monkeypatch.chdir(tmp_path)
+    rc = _run(['show', 'unit'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'hyrum: unit' in captured.out
+
+
+def test_show_help_carries_no_rest_markup(capsys: pytest.CaptureFixture[str]):
+    text = _help(capsys, 'show')
+    assert '``' not in text

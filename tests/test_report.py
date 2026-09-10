@@ -210,9 +210,96 @@ def test_render_falls_back_to_ascii_when_the_stream_cannot_encode(tmp_path: path
         pool.Outcome(repo=tmp_path / 'skip', status='skipped', skip_reason='legacy charm'),
     ]
     buf = io.TextIOWrapper(io.BytesIO(), encoding='ascii', errors='strict', newline='')
-    report.render(outcomes, base=tmp_path, target='unit', verbose=True, stream=buf)
+    report.render(outcomes, base=tmp_path, target='unit', list_offenders=True, stream=buf)
     buf.flush()
     out = buf.buffer.getvalue().decode('ascii')  # pyright: ignore[reportAttributeAccessIssue]
     skipped_row = next(line for line in out.splitlines() if line.startswith('skipped'))
     assert skipped_row.split() == ['skipped', '1', '50%', '-']
     assert '\u2014' not in out
+
+
+def _render_markdown(
+    outcomes,
+    *,
+    base: pathlib.Path,
+    target: str = 'unit',
+    verbose: bool = False,
+    no_headers: bool = False,
+):
+    buf = io.StringIO()
+    report.render_markdown(
+        outcomes,
+        base=base,
+        target=target,
+        list_offenders=verbose,
+        no_headers=no_headers,
+        stream=buf,
+    )
+    return buf.getvalue()
+
+
+def test_render_markdown_titles_with_the_target(tmp_path: pathlib.Path):
+    out = _render_markdown([], base=tmp_path, target='lint')
+    assert out.startswith('# hyrum: lint')
+
+
+def test_render_markdown_falls_back_without_a_target(tmp_path: pathlib.Path):
+    out = _render_markdown([], base=tmp_path, target='')
+    assert out.startswith('# hyrum run')
+
+
+def test_render_markdown_table_has_one_row_per_status(tmp_path: pathlib.Path):
+    outcomes = [pool.Outcome(repo=tmp_path / 'a', status='passed')]
+    out = _render_markdown(outcomes, base=tmp_path)
+    assert '| Status | Count | % of all | % of runs |' in out
+    assert '| passed | 1 |' in out
+    assert '| failed | 0 |' in out
+
+
+def test_render_markdown_no_headers_suppresses_header_row(tmp_path: pathlib.Path):
+    out = _render_markdown([], base=tmp_path, no_headers=True)
+    assert '| Status | Count | % of all | % of runs |' not in out
+    assert '| passed | 0 |' in out
+
+
+def test_render_markdown_reports_no_runs_executed(tmp_path: pathlib.Path):
+    out = _render_markdown([], base=tmp_path)
+    assert 'No runs executed.' in out
+
+
+def test_render_markdown_summary_line(tmp_path: pathlib.Path):
+    outcomes = [
+        pool.Outcome(repo=tmp_path / 'a', status='passed'),
+        pool.Outcome(repo=tmp_path / 'b', status='failed'),
+    ]
+    out = _render_markdown(outcomes, base=tmp_path)
+    assert '**1** of **2** runs passed' in out
+    assert '0 not run.' in out
+
+
+def test_render_markdown_verbose_lists_offenders_by_status(tmp_path: pathlib.Path):
+    outcomes = [
+        pool.Outcome(repo=tmp_path / 'broken', status='failed', error='boom'),
+        pool.Outcome(repo=tmp_path / 'slow', status='timeout'),
+        pool.Outcome(repo=tmp_path / 'ok', status='passed'),
+    ]
+    out = _render_markdown(outcomes, base=tmp_path, verbose=True)
+    assert '## failed' in out
+    assert '- broken — boom' in out
+    assert '## timeout' in out
+    assert '- slow' in out
+
+
+def test_render_markdown_verbose_lists_skipped(tmp_path: pathlib.Path):
+    outcomes = [
+        pool.Outcome(repo=tmp_path / 'x', status='skipped', skip_reason='ignored (manual)'),
+    ]
+    out = _render_markdown(outcomes, base=tmp_path, verbose=True)
+    assert '## skipped' in out
+    assert '- x — ignored (manual)' in out
+
+
+def test_render_markdown_not_verbose_omits_offender_sections(tmp_path: pathlib.Path):
+    outcomes = [pool.Outcome(repo=tmp_path / 'broken', status='failed')]
+    out = _render_markdown(outcomes, base=tmp_path, verbose=False)
+    assert '## failed' not in out
