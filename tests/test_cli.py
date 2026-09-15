@@ -2138,8 +2138,10 @@ def test_from_results_with_an_empty_file_exits_2(
     assert 'nothing to run' in capsys.readouterr().err
 
 
-def test_status_without_from_results_exits_2(capsys: pytest.CaptureFixture[str]):
+def test_status_without_from_results_exits_2(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
     """Bad input is exit 2, the same as a bad --from-results file."""
-    rc = _run(['check', 'unit', '--status', 'failed'])
+    rc = _run(['check', 'unit', '--charms-dir', str(tmp_path), '--no-patch', '--status', 'failed'])
     assert rc == 2
     assert '--status requires --from-results' in capsys.readouterr().err
