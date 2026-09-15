@@ -78,9 +78,11 @@ def _identity(repo: pathlib.Path, base: pathlib.Path | None) -> str:
     """Return a host-independent identity for *repo*: its path under *base*.
 
     The cache layout is ``<charms-dir>/<owner>/<leaf>``, so relative to the
-    charms dir the identity is ``owner/leaf`` — stable across hosts,
-    checkouts, and however the user spelled ``--charms-dir``. Falls back to
-    the raw path when *repo* is not under *base*.
+    charms dir the identity starts ``owner/leaf`` — stable across hosts,
+    checkouts, and however the user spelled ``--charms-dir``. A charm in a
+    monorepo keeps the rest of its path too (``owner/leaf/charms/foo``),
+    which is what keeps two charms of the same repository apart. Falls back
+    to the raw path when *repo* is not under *base*.
     """
     if base is None:
         return str(repo)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import pathlib
 import shutil
@@ -1067,6 +1068,14 @@ def test_cli_compare_new_charm_does_not_trip_the_gate(tmp_path: pathlib.Path):
     assert rc == 0
 
 
+def test_quiet_logs_only_errors():
+    """--quiet promises "no output except errors", and get-charms already agrees."""
+    assert cli._resolve_log_level(quiet=True, verbosity=None) == logging.ERROR
+    assert cli._resolve_log_level(quiet=False, verbosity=None) == logging.INFO
+    assert cli._resolve_log_level(quiet=False, verbosity='debug') == logging.DEBUG
+    assert cli._resolve_log_level(quiet=False, verbosity='trace') == logging.DEBUG
+
+
 # ---- preflight: runner executables -------------------------------------------
 
 
@@ -1082,6 +1091,16 @@ def test_available_backends_drops_uninstalled_backend_under_auto(monkeypatch):
         runners.RunnerChoice.AUTO, tox_executable='tox', make_executable='make'
     )
     assert backends == ('tox',)
+
+
+def test_available_backends_reports_a_dropped_backend_as_an_error(monkeypatch, caplog):
+    """A missing tool is a host problem, and has to survive --quiet."""
+    monkeypatch.setattr(shutil, 'which', _installed('tox'))
+    with caplog.at_level(logging.ERROR):
+        cli._available_backends(
+            runners.RunnerChoice.AUTO, tox_executable='tox', make_executable='make'
+        )
+    assert 'make is not installed' in caplog.text
 
 
 def test_available_backends_exits_when_explicit_choice_is_missing(monkeypatch):
@@ -1288,3 +1307,327 @@ def test_limit_above_the_number_available_selects_everything(charm_cache: pathli
         framework=None,
     )
     assert [p.name for p in repos] == ['c-modern', 'd-modern']
+
+
+def _help(capsys: pytest.CaptureFixture[str], *argv: str) -> str:
+    with pytest.raises(SystemExit):
+        cli.main([*argv, '--help'])
+    return capsys.readouterr().out
+
+
+def test_top_level_help_does_not_use_an_undefined_target(capsys: pytest.CaptureFixture[str]):
+    # `TARGET` has no referent until you run `hyrum check --help`, so the
+    # top-level line has to stand on its own.
+    text = _help(capsys)
+    assert 'TARGET' not in text
+    # argparse wraps the line to the terminal, so compare without the breaks.
+    assert 'Run a tox environment or make target (for example, unit or lint)' in ' '.join(
+        text.split()
+    )
+
+
+def test_help_text_carries_no_rest_markup(capsys: pytest.CaptureFixture[str]):
+    for command in ((), ('check',), ('clean',), ('compare',), ('get-charms',)):
+        text = _help(capsys, *command)
+        assert '``' not in text
+
+
+def test_patch_help_puts_each_form_on_its_own_line(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv('COLUMNS', '80')
+    lines = _help(capsys, 'check').splitlines()
+    for form in ('version pin', 'git source', 'local checkout', 'owner:branch', 'vendored swap'):
+        assert sum(1 for line in lines if line.strip().startswith(form)) == 1
+    # A form long enough to wrap must not spill past the terminal it is
+    # wrapped for: the formatter has to keep the indent inside the width.
+    assert max(len(line) for line in lines) <= 80
+
+
+def test_patch_help_keeps_its_examples_copy_pasteable(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    """A narrow terminal must not split a token someone is going to copy.
+
+    The default textwrap behaviour breaks `git+https://...@main` across three
+    lines at 60 columns, and `--no-patch` after its hyphen, both of which are
+    worse than a line that overruns the width.
+    """
+    monkeypatch.setenv('COLUMNS', '60')
+    lines = [line.strip() for line in _help(capsys, 'check').splitlines()]
+    assert any('git+https://github.com/psf/requests@main`' in line for line in lines)
+    assert any(line.endswith('--no-patch. [default: `ops @') for line in lines)
+
+
+def test_patch_help_lists_the_forms_the_parser_accepts(capsys: pytest.CaptureFixture[str]):
+    """Documented as a closed list ("One of these forms"), so it has to be one.
+
+    A local checkout is a supported way to point at an operator tree, and
+    _parse_patch's own error message advertises it.
+    """
+    text = ' '.join(_help(capsys, 'check').split())
+    assert 'One of these forms:' in text
+    assert '`mylib @ ~/src/mylib`' in text
+    assert 'with the `git+` optional' in text
+
+
+def test_patch_help_states_its_default_like_every_other_flag(capsys: pytest.CaptureFixture[str]):
+    text = _help(capsys, 'check')
+    assert '[default: `ops @ canonical:main`]' in text
+    assert 'defaults to' not in text
+
+
+@pytest.mark.parametrize('verbosity', ['debug', 'trace'])
+def test_cli_verbosity_includes_offender_list(
+    verbosity: str, monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--verbosity',
+        verbosity,
+    ])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert 'alpha' in captured.out
+
+
+def test_cli_brief_is_the_default_rung(
+    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """--brief names the rung the run is already on, so it changes no output."""
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', _fail_run)
+
+    argv = ['check', 'unit', '--charms-dir', str(cache), '--no-patch']
+    assert _run(argv) == 1
+    without = capsys.readouterr().out
+    assert _run([*argv, '--brief']) == 1
+    with_brief = capsys.readouterr().out
+
+    assert with_brief == without
+    assert 'alpha' not in with_brief
+
+
+# ---- show ---------------------------------------------------------------------
+
+
+def test_show_prints_metadata_header_then_the_check_report(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    outcomes = [
+        pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='passed'),
+        pool.Outcome(repo=pathlib.Path('canonical/beta'), status='failed'),
+    ]
+    path = tmp_path / 'unit.auto.json'
+    results.save(outcomes, path, target='unit', patcher='ops @ canonical:main')
+
+    rc = _run(['show', str(path)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert f'{path} — saved ' in captured.out
+    assert 'target unit' in captured.out
+    assert 'patch ops @ canonical:main' in captured.out
+    assert 'hyrum: unit' in captured.out
+    assert 'STATUS' in captured.out
+    assert '1 of 2 runs passed' in captured.out
+
+
+def test_show_exits_0_even_when_the_run_had_failures(tmp_path: pathlib.Path):
+    """A display command is not a gate; `compare --fail-on-regression` is."""
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='failed')]
+    path = tmp_path / 'run.json'
+    results.save(outcomes, path, target='unit')
+
+    rc = _run(['show', str(path)])
+    assert rc == 0
+
+
+def test_show_exits_2_on_malformed_file(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    bad = tmp_path / 'bad.json'
+    bad.write_text('not json')
+
+    rc = _run(['show', str(bad)])
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert str(bad) in captured.err
+
+
+def test_show_verbose_lists_offenders(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
+    outcomes = [
+        pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='passed'),
+        pool.Outcome(repo=pathlib.Path('canonical/beta'), status='failed', error='boom'),
+    ]
+    path = tmp_path / 'run.json'
+    results.save(outcomes, path, target='unit')
+
+    rc = _run(['show', str(path), '--verbose'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'canonical/beta' in captured.out
+    assert 'boom' in captured.out
+
+
+def test_show_no_headers_suppresses_header_row(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='passed')]
+    path = tmp_path / 'run.json'
+    results.save(outcomes, path, target='unit')
+
+    rc = _run(['show', str(path), '--no-headers'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'STATUS' not in captured.out
+
+
+def test_show_format_json_includes_meta_and_outcomes(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='failed', error='boom')]
+    path = tmp_path / 'run.json'
+    results.save(outcomes, path, target='unit', patcher='ops @ canonical:main')
+
+    rc = _run(['show', str(path), '--format', 'json'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    payload = json.loads(captured.out)
+    assert payload['path'] == str(path)
+    assert payload['meta']['target'] == 'unit'
+    assert payload['outcomes'][0]['repo'] == 'canonical/alpha'
+    assert payload['outcomes'][0]['status'] == 'failed'
+    assert payload['outcomes'][0]['error'] == 'boom'
+
+
+def test_show_format_markdown_outputs_a_table(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    outcomes = [
+        pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='passed'),
+        pool.Outcome(repo=pathlib.Path('canonical/beta'), status='failed'),
+    ]
+    path = tmp_path / 'run.json'
+    results.save(outcomes, path, target='unit')
+
+    rc = _run(['show', str(path), '--format', 'markdown'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert '# hyrum: unit' in captured.out
+    assert '| Status | Count | % of all |' in captured.out
+    assert '| passed | 1 |' in captured.out
+
+
+def test_show_is_always_a_path_no_shorthand_resolution(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """`show`'s positional only ever takes a filesystem path.
+
+    A bare word with no directory or extension — exactly what a future
+    ``hyrum show unit`` shorthand might expand to
+    ``<auto-save-dir>/unit.auto.json`` — is read as a literal file in the
+    current directory today, and must keep being read that way once a
+    shorthand exists: the existing-path check has to come first.
+    """
+    outcomes = [pool.Outcome(repo=pathlib.Path('canonical/alpha'), status='passed')]
+    bare = tmp_path / 'unit'
+    results.save(outcomes, bare, target='unit')
+
+    monkeypatch.chdir(tmp_path)
+    rc = _run(['show', 'unit'])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert 'hyrum: unit' in captured.out
+
+
+def test_show_help_carries_no_rest_markup(capsys: pytest.CaptureFixture[str]):
+    text = _help(capsys, 'show')
+    assert '``' not in text
+
+
+def _cache_with_artefacts(tmp_path: pathlib.Path) -> pathlib.Path:
+    cache = tmp_path / 'charms'
+    repo = cache / 'a-charm'
+    (repo / '.git').mkdir(parents=True)
+    (repo / 'charmcraft.yaml').write_text('type: charm\n')
+    (repo / '.tox').mkdir()
+    (repo / '.tox' / 'big').write_bytes(b'x' * 2048)
+    return cache
+
+
+def test_clean_removes_artefacts_and_reports_what_it_reclaimed(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = _cache_with_artefacts(tmp_path)
+    assert _run(['clean', '--charms-dir', str(cache)]) == 0
+    assert 'Reclaimed 2.0 KiB from 1 artefact.' in capsys.readouterr().out
+    assert not (cache / 'a-charm' / '.tox').exists()
+    assert (cache / 'a-charm' / 'charmcraft.yaml').exists()
+
+
+def test_clean_dry_run_removes_nothing(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]):
+    cache = _cache_with_artefacts(tmp_path)
+    assert _run(['clean', '--charms-dir', str(cache), '--dry-run']) == 0
+    assert 'Would reclaim 2.0 KiB from 1 artefact.' in capsys.readouterr().out
+    assert (cache / 'a-charm' / '.tox' / 'big').exists()
+
+
+def test_clean_reports_a_failed_removal_rather_than_swallowing_it(
+    tmp_path: pathlib.Path, monkeypatch, capsys: pytest.CaptureFixture[str]
+):
+    """A reclaim that did not happen must not exit 0.
+
+    `hyrum clean --quiet && hyrum check unit` would otherwise carry on
+    believing the disk came back. The log goes at ERROR so --quiet, whose help
+    promises "no output except errors", keeps it.
+    """
+    cache = _cache_with_artefacts(tmp_path)
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise PermissionError(13, 'Permission denied')
+
+    monkeypatch.setattr(shutil, 'rmtree', refuse)
+    assert _run(['clean', '--charms-dir', str(cache), '--quiet']) == 1
+    assert 'Could not remove' in capsys.readouterr().err
+
+
+def test_clean_refuses_a_directory_that_is_not_a_charms_dir(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """Removal reaches .venv, which is the one artefact built by hand.
+
+    Being pointed at a source tree by a stray HYRUM_CHARMS costs more than a
+    re-run, so it takes --force.
+    """
+    tree = tmp_path / 'src'
+    (tree / 'myproj' / '.venv').mkdir(parents=True)
+    assert _run(['clean', '--charms-dir', str(tree), '--dry-run']) == 1
+    assert 'does not look like a charms directory' in capsys.readouterr().err
+    assert (tree / 'myproj' / '.venv').exists()
+
+
+def test_clean_force_cleans_a_directory_that_is_not_a_charms_dir(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    tree = tmp_path / 'src'
+    (tree / 'myproj' / '.venv').mkdir(parents=True)
+    assert _run(['clean', '--charms-dir', str(tree), '--force']) == 0
+    assert not (tree / 'myproj' / '.venv').exists()
+    assert 'Reclaimed' in capsys.readouterr().out
+
+
+def test_clean_on_a_missing_charms_dir_is_an_error(tmp_path: pathlib.Path):
+    assert _run(['clean', '--charms-dir', str(tmp_path / 'nope')]) != 0

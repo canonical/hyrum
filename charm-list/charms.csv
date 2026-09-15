@@ -582,3 +582,4 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/webteam-webbot,,auto-discover
 ,https://git.launchpad.net/landscape-charm,,auto
 ,https://github.com/canonical/loki-operators,,auto
+,https://github.com/canonical/mimir-operators,,auto

@@ -15,12 +15,13 @@ import shlex
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] — subprocess is core to the git ls-remote preflight
 import sys
+import textwrap
 import time
 from collections.abc import Sequence
 
 import packaging.requirements
 
-from hyrum import _compare, _enumerate, _results, _version
+from hyrum import _clean, _compare, _enumerate, _results, _version
 from hyrum import _config as config_loader
 from hyrum import _filters as filt
 from hyrum import _frameworks as frameworks
@@ -58,8 +59,13 @@ def _configure_logging(level: int) -> None:
 
 
 def _resolve_log_level(*, quiet: bool, verbosity: str | None) -> int:
+    # ``--quiet`` is ERROR, not WARNING: its help promises "no output except
+    # errors", the spec's quiet rung is "only errors for failed operations",
+    # and ``get-charms`` already reads the same flag that way. At WARNING a
+    # quiet fleet run buries its one summary line under per-charm lock and
+    # patcher warnings.
     if quiet:
-        return logging.WARNING
+        return logging.ERROR
     if verbosity in ('debug', 'trace'):
         return logging.DEBUG
     return logging.INFO
@@ -235,7 +241,7 @@ def _parse_patch(arg: str) -> PatchSpec:
         if not m:
             raise argparse.ArgumentTypeError(
                 f'--patch: left of "->" must be a vendored dotted form '
-                f'``charms.<author>.v<n>.<lib>``, got {lhs!r}'
+                f'`charms.<author>.v<n>.<lib>`, got {lhs!r}'
             )
         rhs_spec = rhs.strip()
         if not rhs_spec:
@@ -268,7 +274,7 @@ def _parse_patch(arg: str) -> PatchSpec:
     if not str(req.specifier):
         raise argparse.ArgumentTypeError(
             f'--patch: {arg!r} must include a version specifier (==X.Y.Z), '
-            f'a ``@`` source (git+URL, file:// path, owner:branch shorthand), '
+            f'a `@` source (git+URL, file:// path, owner:branch shorthand), '
             f'or a bare path'
         )
     return PatchSpec(pkg_name=req.name, version=str(req.specifier))
@@ -490,9 +496,14 @@ def _available_backends(
 
     A backend that isn't installed would otherwise fail identically in every
     charm, producing one ``runner_error`` per charm for a single host problem.
-    Under ``--runner auto`` the missing backend is dropped with a warning (a
-    fleet with no make-driven charms shouldn't need make); if nothing is left,
-    that's fatal and we say so once, before any charm runs.
+    Under ``--runner auto`` the missing backend is dropped (a fleet with no
+    make-driven charms shouldn't need make); if nothing is left, that's fatal
+    and we say so once, before any charm runs.
+
+    Dropping a backend is logged at ERROR rather than WARNING: it is a problem
+    with the host rather than a result from a charm, it is one line per run
+    rather than per charm, and it has to survive ``--quiet`` — otherwise a run
+    that silently skipped every make charm exits 0 saying nothing.
     """
     commands = {'tox': tox_executable, 'make': make_executable}
     available: list[str] = []
@@ -503,7 +514,7 @@ def _available_backends(
             available.append(name)
         else:
             missing.append(missing_program)
-            logger.warning('%s is not installed; %s charms cannot be run', missing_program, name)
+            logger.error('%s is not installed; %s charms cannot be run', missing_program, name)
     if not available:
         sys.exit(f'hyrum: error: no runner available: {", ".join(missing)} not found on PATH.')
     return tuple(available)
@@ -808,21 +819,60 @@ def _plan_from_config(save_config: config_loader.SaveConfig) -> _SavePlan:
     return _PathSavePlan(save_config.path)
 
 
+class _HelpFormatter(argparse.HelpFormatter):
+    """Wrap each line of a help string on its own, so explicit newlines survive.
+
+    argparse's default formatter reflows help text into a single block, which
+    runs --patch's list of accepted forms together into one paragraph.
+    """
+
+    def _split_lines(self, text: str, width: int) -> list[str]:
+        lines: list[str] = []
+        for line in text.splitlines():
+            body = line.lstrip()
+            if not body:
+                lines.append('')
+                continue
+            indent = ' ' * (len(line) - len(body))
+            # Only an already-indented line is part of a list, and only there
+            # does a hanging indent help; unindented prose stays flush so the
+            # other flags look exactly as they did.
+            lines.extend(
+                textwrap.wrap(
+                    body,
+                    width,
+                    initial_indent=indent,
+                    subsequent_indent=indent + '  ' if indent else '',
+                    # A help string made of examples is one someone copies. A
+                    # narrow terminal splitting `git+https://...@main` across
+                    # three lines, or `--no-patch` after its hyphen, costs more
+                    # than a line that overruns the width.
+                    break_long_words=False,
+                    break_on_hyphens=False,
+                )
+            )
+        return lines
+
+
 def _add_check_subparser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> argparse.ArgumentParser:
     parser = subparsers.add_parser(
         'check',
-        help='Run TARGET across many charm repos.',
+        formatter_class=_HelpFormatter,
+        help=(
+            'Run a tox environment or make target (for example, unit or lint) '
+            'across many charm repos.'
+        ),
         description=(
-            'Run TARGET (a tox environment or make target, e.g. unit, lint) '
+            'Run TARGET (a tox environment or make target, for example unit or lint) '
             'across many charm repos.'
         ),
     )
     parser.add_argument(
         'target',
         metavar='TARGET',
-        help='Tox environment or make target to run (e.g. unit, lint).',
+        help='Tox environment or make target to run (for example, unit or lint).',
     )
     parser.add_argument(
         '--charms-dir',
@@ -893,20 +943,21 @@ def _add_check_subparser(
         type=_parse_patch,
         default=[],
         help=(
-            'Swap a dependency. PEP 508 form, such as ``ops==2.17.0``, '
-            '``ops @ canonical:fix/X`` (``owner:branch`` shorthand for ops or '
-            'charmlibs-*), ``requests==2.31.0``, ``requests>=1.2,<2``, '
-            '``requests @ git+https://github.com/psf/requests@main``, '
-            '``mylib @ file:///abs/path``, or '
-            '``charmlibs-nginx_k8s @ canonical:main`` to point a charmlib at '
-            'a branch of canonical/charmlibs (type the package name with the '
-            'same separators as the on-disk directory), or '
-            '``charms.<author>.v<n>.<lib> -> <spec>`` to swap a vendored '
-            'lib/charms/<author>/v<n>/<lib>.py file for a PyPI package '
-            "(``<spec>`` accepts the same forms as above; for canonical's "
-            'monorepo include ``#subdirectory=<lib>``). May be given multiple times. '
-            'If not given (and ``--no-patch`` is not set), defaults to '
-            '``ops @ canonical:main``. Mutually exclusive with ``--no-patch``.'
+            'Swap a dependency, in PEP 508 form. May be given multiple times. '
+            'Mutually exclusive with --no-patch. [default: `ops @ canonical:main`]\n'
+            'One of these forms:\n'
+            '  version pin: `requests==2.31.0`, `requests>=1.2,<2`\n'
+            '  git source: `requests @ git+https://github.com/psf/requests@main`, '
+            'with the `git+` optional\n'
+            '  local checkout: `mylib @ ~/src/mylib`, `mylib @ ./rel`, `mylib @ /abs`, '
+            'or `mylib @ file:///abs`\n'
+            '  owner:branch: `ops @ canonical:fix/X` (ops and charmlibs-* only)\n'
+            '  charmlib branch: `charmlibs-nginx_k8s @ canonical:main`, pointing a '
+            'charmlib at a branch of canonical/charmlibs; type the package name with '
+            'the same separators as the on-disk directory\n'
+            '  vendored swap: `charms.<author>.v<n>.<lib> -> <spec>`, replacing '
+            'lib/charms/<author>/v<n>/<lib>.py with a PyPI package; <spec> takes any '
+            "form above, and for canonical's monorepo include #subdirectory=<lib>"
         ),
     )
     parser.add_argument(
@@ -948,10 +999,11 @@ def _add_check_subparser(
         ),
     )
     verbosity_group = parser.add_mutually_exclusive_group()
+    verbosity_group.add_argument('--quiet', action='store_true', help='No output except errors.')
     verbosity_group.add_argument(
-        '--quiet',
+        '--brief',
         action='store_true',
-        help='No output except errors. Exit code still reflects pass/fail.',
+        help='The summary tally, without the per-charm offender list. [default: enabled]',
     )
     verbosity_group.add_argument(
         '--verbose',
@@ -964,8 +1016,9 @@ def _add_check_subparser(
         choices=['debug', 'trace'],
         default=None,
         help=(
-            'Developer-level detail. Use debug for execution detail; trace reserved for '
-            'future code-level detail (currently aliased to debug).'
+            'Developer-level detail, including everything --verbose adds. Use debug for '
+            'execution detail; trace reserved for future code-level detail (currently '
+            'aliased to debug).'
         ),
     )
     parser.add_argument(
@@ -975,7 +1028,7 @@ def _add_check_subparser(
         help=(
             "Write each charm's runner stdout/stderr to a per-charm file under "
             'this directory. Useful for triaging failures without rerunning. '
-            'File names use the repo path with ``/`` flattened to ``__``.'
+            'File names use the repo path with `/` flattened to `__`.'
         ),
     )
     parser.add_argument(
@@ -995,7 +1048,8 @@ def _add_check_subparser(
         action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            'Inject sensible default env vars (e.g. PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1) '
+            'Inject sensible default env vars (for example, '
+            'PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1) '
             'plus matching TOX_OVERRIDE pass_env entries so common host build issues '
             'do not get mis-attributed to the charm. [default: enabled]'
         ),
@@ -1085,7 +1139,8 @@ def _add_get_charms_subparser(
         'get-charms',
         help='Populate the charms directory by cloning or pulling every charm in the CSV.',
         description=(
-            'Populate the charms directory by cloning or pulling every charm listed in the CSV.'
+            'Populate the charms directory by cloning or pulling every charm listed in the CSV. '
+            'Use --repo and --limit to populate part of it at a time.'
         ),
     )
     parser.add_argument(
@@ -1118,8 +1173,96 @@ def _add_get_charms_subparser(
             f'[default: {get_charms.DEFAULT_TIMEOUT:g}]'
         ),
     )
+    parser.add_argument(
+        '--repo',
+        default='.*',
+        help='Regex on the repo name. [default: .*]',
+    )
+    parser.add_argument(
+        '--limit',
+        type=_non_negative_int,
+        default=0,
+        help='Stop after selecting this many charms to clone or pull (0 = all).',
+    )
     parser.add_argument('--quiet', action='store_true', help='Suppress non-error output.')
     parser.set_defaults(func=_run_get_charms)
+    return parser
+
+
+def _add_clean_subparser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    parser = subparsers.add_parser(
+        'clean',
+        help='Remove build artefacts from the charms directory, keeping the checkouts.',
+        description=(
+            'Remove the build artefacts a check run leaves in each charm (.tox, .venv, '
+            'tool caches, __pycache__) while leaving the git checkouts in place, so the '
+            'next run does not have to clone everything again.'
+        ),
+    )
+    parser.add_argument(
+        '--charms-dir',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'Directory containing the cloned charm repositories. '
+            '[env: HYRUM_CHARMS] [default: ~/.cache/hyrum/charms]'
+        ),
+    )
+    parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Report what would be removed and how much it holds, without removing it.',
+    )
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Clean a directory that does not look like a charms directory.',
+    )
+    parser.add_argument('--quiet', action='store_true', help='Suppress non-error output.')
+    parser.set_defaults(func=_run_clean)
+    return parser
+
+
+def _add_show_subparser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    parser = subparsers.add_parser(
+        'show',
+        help='Print the status summary of a saved hyrum run.',
+        description=(
+            'Print a saved hyrum run: its metadata, then the same status table '
+            '`check` prints at the end of a run.'
+        ),
+    )
+    # PATH is always a filesystem path: no default location, run id, or
+    # target-name lookup (same contract `compare`'s positionals already have).
+    # If a bare-word shorthand is ever added, check for an existing path
+    # first, so this never turns a currently-working invocation into a
+    # different one.
+    parser.add_argument('path', type=pathlib.Path, help='Path to a saved results JSON file.')
+    parser.add_argument(
+        '--verbose',
+        action='store_true',
+        help='Include the per-charm offender list.',
+    )
+    parser.add_argument(
+        '--no-headers',
+        action='store_true',
+        help='Suppress header row in the summary table.',
+    )
+    parser.add_argument(
+        '--format',
+        dest='output_format',
+        choices=['text', 'markdown', 'json'],
+        default='text',
+        help=(
+            'text: the colourised status-level summary. markdown: the same table in '
+            'markdown. json: the same outcomes as a machine-readable object. [default: text]'
+        ),
+    )
+    parser.set_defaults(func=_run_show)
     return parser
 
 
@@ -1129,8 +1272,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--version', action='version', version=f'hyrum {_version.__version__}')
     subparsers = parser.add_subparsers(dest='command', metavar='COMMAND', required=True)
     _add_check_subparser(subparsers)
+    _add_clean_subparser(subparsers)
     _add_compare_subparser(subparsers)
     _add_get_charms_subparser(subparsers)
+    _add_show_subparser(subparsers)
     return parser
 
 
@@ -1244,7 +1389,9 @@ def _run_check(args: argparse.Namespace) -> int:
             results,
             base=charms_dir,
             target=args.target,
-            verbose=args.verbose,
+            # --verbosity debug/trace implies --verbose: the rungs are
+            # cumulative, so climbing to trace mustn't lose the offender list.
+            list_offenders=args.verbose or args.verbosity is not None,
             no_headers=args.no_headers,
         )
     elif not pool.passed(results):
@@ -1290,8 +1437,61 @@ def _run_get_charms(args: argparse.Namespace) -> int:
 
     with source.open(newline='', encoding='utf-8') as f:
         rows: list[get_charms.CharmRow] = list(csv.DictReader(f))  # type: ignore[arg-type]
+    rows = get_charms.select_rows(rows, repo=args.repo, limit=args.limit)
+    if not rows:
+        logger.warning('No charms in %s match --repo %r; nothing to do.', source, args.repo)
+        return 0
     asyncio.run(get_charms.process_rows(rows, dest, workers=args.workers, timeout=args.timeout))
     return 0
+
+
+def _run_clean(args: argparse.Namespace) -> int:
+    level = logging.ERROR if args.quiet else logging.INFO
+    _configure_logging(level)
+
+    charms_dir: pathlib.Path = args.charms_dir or _default_charms_dir()
+    if not charms_dir.is_dir():
+        sys.exit(f'hyrum: error: --charms-dir: {charms_dir} is not a directory.')
+    if not args.force and not _clean.looks_like_a_cache(charms_dir):
+        # Removal reaches .venv, which is the one artefact a person might have
+        # built by hand, so being pointed at a source tree rather than the
+        # cache costs more than a re-run.
+        sys.exit(
+            f'hyrum: error: --charms-dir: {charms_dir} does not look like a charms '
+            f'directory (its contents are not git checkouts). Pass --force to clean it '
+            f'anyway.'
+        )
+    try:
+        artefacts = list(_clean.find_artefacts(charms_dir))
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        sys.exit(f'hyrum: error: --charms-dir: {exc}')
+
+    removed = 0
+    reclaimed = 0
+    failed = 0
+    for artefact in artefacts:
+        relative = report.relative(artefact.path, charms_dir)
+        if args.dry_run:
+            logger.info('Would remove %s (%s)', relative, _clean.format_size(artefact.size))
+            removed += 1
+            reclaimed += artefact.size
+            continue
+        logger.debug('Removing %s (%s)', relative, _clean.format_size(artefact.size))
+        if _clean.remove(artefact):
+            removed += 1
+            reclaimed += artefact.size
+        else:
+            failed += 1
+
+    if not args.quiet:
+        verb = 'Would reclaim' if args.dry_run else 'Reclaimed'
+        noun = 'artefact' if removed == 1 else 'artefacts'
+        print(f'{verb} {_clean.format_size(reclaimed)} from {removed} {noun}.')
+    # A reclaim that did not happen has to say so: `hyrum clean && hyrum check`
+    # would otherwise carry on believing the disk came back, which is the
+    # situation this subcommand exists to prevent. `_clean.remove` logs each
+    # one at ERROR, so --quiet ("Suppress non-error output") keeps them.
+    return 1 if failed else 0
 
 
 def _describe_run(label: str, path: pathlib.Path, meta: _results.RunMeta) -> str:
@@ -1363,6 +1563,51 @@ def _run_compare(args: argparse.Namespace) -> int:
             return 2
         if result.new_failures or result.new_errors:
             return 1
+    return 0
+
+
+def _outcome_json(outcome: pool.Outcome) -> dict[str, object]:
+    """Turn one Outcome into a JSON-safe record, matching how `_results.save` writes them."""
+    record = dataclasses.asdict(outcome)
+    record['repo'] = str(outcome.repo)
+    kind = outcome.skip_reason_kind
+    record['skip_reason_kind'] = kind.value if kind is not None else None
+    return record
+
+
+def _run_show(args: argparse.Namespace) -> int:
+    try:
+        loaded = _results.load(args.path)
+    except ValueError as exc:
+        print(f'hyrum: error: {exc}', file=sys.stderr)
+        # 2 = bad input, matching `compare`'s convention for the same failure.
+        return 2
+
+    if args.output_format == 'json':
+        payload = {
+            'version': report.JSON_FORMAT_VERSION,
+            'path': str(args.path),
+            'meta': dataclasses.asdict(loaded.meta),
+            'outcomes': [_outcome_json(o) for o in loaded.outcomes],
+        }
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    summary = loaded.meta.summary()
+    print(f'{args.path} — {summary}' if summary else str(args.path))
+    # A run's own charms dir travels with it, so verbose paths are relative to
+    # where the run was made, not wherever `show` happens to be invoked from.
+    base = pathlib.Path(loaded.meta.charms_dir) if loaded.meta.charms_dir else pathlib.Path()
+    renderer = report.render_markdown if args.output_format == 'markdown' else report.render
+    renderer(
+        loaded.outcomes,
+        base=base,
+        target=loaded.meta.target,
+        list_offenders=args.verbose,
+        no_headers=args.no_headers,
+    )
+    # A display command is not a gate: `compare --fail-on-regression` is
+    # where gating on a run's contents lives, not `show`.
     return 0
 
 

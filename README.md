@@ -119,6 +119,10 @@ curl -sSfL -o charm-list/charms.csv \
 # Populate the local cache with every charm in the CSV:
 hyrum get-charms
 
+# --repo and --limit narrow that down, for populating the cache
+# a slice at a time:
+hyrum get-charms --repo '^ubuntu-' --limit 50
+
 # Run `tox -e unit` across every charm in the default cache
 # (~/.cache/hyrum/charms), with ops swapped to the `fix/X` branch of
 # canonical/operator. Override the charms directory with --charms-dir or
@@ -184,6 +188,12 @@ hyrum compare baseline.json current.json --fail-on-regression
 # one-line failure summaries), or as machine-readable JSON:
 hyrum compare baseline.json current.json --format markdown
 hyrum compare baseline.json current.json --format json
+
+# Runs leave a .tox (and tool caches, and __pycache__) in every charm
+# they touch, which reaches tens of GB across the collection. Reclaim
+# that space without throwing away the clones:
+hyrum clean --dry-run
+hyrum clean
 ```
 
 Output statuses:
