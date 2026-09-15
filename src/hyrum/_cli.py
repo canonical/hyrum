@@ -796,17 +796,34 @@ class _RollingSavePlan(_DirectorySavePlan):
 _SavePlan = _NoSavePlan | _PathSavePlan | _TimestampedSavePlan | _RollingSavePlan
 
 
+_NARROWED_ROLLING_WARNING = (
+    'hyrum: warning: this run is narrowed by --from-results, so the rolling '
+    'results it saves are not a fleet baseline: every charm it did not run is '
+    'recorded as `skipped`, and a later `hyrum compare` against it reads those '
+    'charms as never having passed.'
+)
+
+
 def _resolve_save_plan(
     *,
     no_save: bool,
     save: pathlib.Path | None,
     auto_save: pathlib.Path | None,
     save_config: config_loader.SaveConfig | None,
+    narrowed: bool = False,
 ) -> _SavePlan:
     """Fold the CLI flags and config default into a single :class:`_SavePlan`.
 
     Precedence: explicit CLI flag > config file > built-in default (auto-save
     to ``~/.cache/hyrum/results/``).
+
+    ``narrowed`` says the run only looks at some of the cache (``--from-results``).
+    Such a run must not silently become the rolling baseline the next comparison
+    trusts, because the charms it skipped are saved as `skipped` and
+    ``passed -> skipped`` is not a regression to ``compare``. So the *built-in*
+    rolling default is dropped for a narrowed run; a rolling save the user asked
+    for, by flag or by config, still happens, with a warning saying what the
+    file is and is not.
     """
     if no_save:
         return _NoSavePlan()
@@ -815,10 +832,26 @@ def _resolve_save_plan(
             return _TimestampedSavePlan(save)
         return _PathSavePlan(save)
     if auto_save is not None:
+        if narrowed:
+            print(_NARROWED_ROLLING_WARNING, file=sys.stderr)
         return _RollingSavePlan(auto_save)
     # No CLI save flag: consult the config file, else fall back to auto-save.
     if save_config is not None:
-        return _plan_from_config(save_config)
+        plan = _plan_from_config(save_config)
+        if narrowed and isinstance(plan, _RollingSavePlan):
+            print(_NARROWED_ROLLING_WARNING, file=sys.stderr)
+        return plan
+    if narrowed:
+        # The built-in default only: nobody asked for this file, so a narrowed
+        # run writes nothing rather than overwriting the fleet's baseline.
+        # `--auto-save`, `--save` or `[save]` all still do what they say.
+        print(
+            'hyrum: warning: --from-results narrows the run, so the default rolling '
+            'save is off (it would record every charm this run skipped as `skipped`, '
+            'replacing the fleet baseline). Pass --save or --auto-save to save anyway.',
+            file=sys.stderr,
+        )
+        return _NoSavePlan()
     return _RollingSavePlan(_default_auto_save_dir())
 
 
@@ -1341,6 +1374,7 @@ def _run_check(args: argparse.Namespace) -> int:
         save=args.save_path,
         auto_save=auto_save_dir,
         save_config=cfg.save,
+        narrowed=args.from_results is not None,
     )
     # Reject an unusable save target now, not after a multi-hour run.
     if not save_plan.validate():
@@ -1352,13 +1386,18 @@ def _run_check(args: argparse.Namespace) -> int:
 
     status_tokens = [token for group in args.status for token in group]
     if status_tokens and args.from_results is None:
-        raise SystemExit('--status requires --from-results')
-    from_results_filter: filt.Filter | None = None
+        # Exit 2 rather than 1: this is bad input, like a malformed
+        # --from-results file, and `hyrum compare` already spells that 2.
+        print('hyrum: error: --status requires --from-results', file=sys.stderr)
+        return 2
+    from_results: selection.Selection | None = None
     if args.from_results is not None:
         statuses = selection.expand_statuses(status_tokens or ['failing'])
-        from_results_filter = selection.load_selection(
-            args.from_results, statuses, cache=charms_dir
-        )
+        try:
+            from_results = selection.load_selection(args.from_results, statuses, cache=charms_dir)
+        except ValueError as exc:
+            print(f'hyrum: error: {exc}', file=sys.stderr)
+            return 2
 
     repos, skipped = _select_repos(
         charms_dir,
@@ -1366,9 +1405,34 @@ def _run_check(args: argparse.Namespace) -> int:
         repo_re=args.repo,
         limit=args.limit,
         framework=args.framework,
-        from_results=from_results_filter,
+        from_results=from_results.filter if from_results is not None else None,
     )
     logger.info('Selected %d charm(s); skipping %d up-front.', len(repos), len(skipped))
+
+    if from_results is not None:
+        missing = selection.unmatched(
+            from_results, [*repos, *(repo for repo, _ in skipped)], base=charms_dir
+        )
+        if missing:
+            logger.info(
+                '%d charm(s) named in %s are not present in %s '
+                '(not cloned; see `hyrum get-charms`).',
+                len(missing),
+                args.from_results,
+                charms_dir,
+            )
+        if not repos:
+            # Every way of selecting nothing lands here: a file naming charms
+            # this cache doesn't have, a file with no charm in a wanted status,
+            # an empty file. Running zero charms would otherwise be reported as
+            # a clean run.
+            print(
+                f'hyrum: error: no charm in {charms_dir} matched --from-results '
+                f'{args.from_results} with --status '
+                f'{", ".join(sorted(from_results.statuses))}; nothing to run.',
+                file=sys.stderr,
+            )
+            return 2
 
     if args.no_patch and args.patches:
         raise SystemExit('--no-patch is mutually exclusive with --patch')

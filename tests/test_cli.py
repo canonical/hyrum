@@ -1840,7 +1840,7 @@ def test_from_results_bad_file_exits_2(tmp_path: pathlib.Path):
     assert rc == 2
 
 
-def test_from_results_disjoint_with_the_cache_exits_2(
+def test_from_results_selecting_nothing_exits_2(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):
     cache = tmp_path / 'cache'
@@ -1859,7 +1859,7 @@ def test_from_results_disjoint_with_the_cache_exits_2(
         str(other),
     ])
     assert rc == 2
-    assert 'no charms in common' in capsys.readouterr().err
+    assert 'nothing to run' in capsys.readouterr().err
 
 
 def test_from_results_intersects_with_repo(
@@ -1919,7 +1919,7 @@ def test_from_results_is_applied_before_limit(charm_cache: pathlib.Path, tmp_pat
         repo_re='.*',
         limit=1,
         framework=None,
-        from_results=from_results,
+        from_results=from_results.filter,
     )
     assert [p.name for p in repos] == ['beta']
     assert [p.name for p, _ in skipped] == ['alpha']
@@ -1998,4 +1998,148 @@ def test_from_results_survives_the_auto_save_it_feeds(
     assert rc == 1
     assert calls == ['beta']
     assert auto_path.exists()
-    assert (save_dir / 'unit.auto.prev.json').exists()
+    # The point is not that the file survives, but what is now in it: alpha
+    # ran in the first pass and did not in this one, so it is recorded as
+    # `skipped` and the file is no longer a fleet baseline. The warning is
+    # what tells the user that.
+    saved = results.load(auto_path)
+    assert {str(o.repo): o.status for o in saved.outcomes} == {
+        'alpha': 'skipped',
+        'beta': 'failed',
+    }
+
+
+def test_a_narrowed_run_does_not_write_the_default_rolling_save(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """--from-results plus the built-in default save would replace the baseline.
+
+    Every charm the selection excludes is saved as `skipped`, and
+    `passed -> skipped` is not a regression to `compare`, so a narrowed run
+    that silently became the rolling file would hide a later real failure.
+    Nobody asked for that file, so a narrowed run writes nothing instead.
+    """
+    cache = _cache_with_alpha_beta(tmp_path)
+    default_dir = tmp_path / 'default-results'
+    monkeypatch.setattr(cli, '_default_auto_save_dir', lambda: default_dir)
+    _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch'])
+    assert rc == 1
+    baseline = default_dir / 'unit.auto.json'
+    assert {str(o.repo): o.status for o in results.load(baseline).outcomes} == {
+        'alpha': 'passed',
+        'beta': 'failed',
+    }
+
+    _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(baseline),
+    ])
+
+    assert rc == 1
+    assert 'the default rolling save is off' in capsys.readouterr().err
+    # Untouched: still the fleet-wide run.
+    assert {str(o.repo): o.status for o in results.load(baseline).outcomes} == {
+        'alpha': 'passed',
+        'beta': 'failed',
+    }
+
+
+def test_a_narrowed_run_warns_when_it_does_write_a_rolling_save(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """An explicit --auto-save is still honoured, but says what the file is not."""
+    cache = _cache_with_alpha_beta(tmp_path)
+    save_dir = tmp_path / 'auto'
+    _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    assert (
+        _run([
+            'check',
+            'unit',
+            '--charms-dir',
+            str(cache),
+            '--no-patch',
+            '--auto-save',
+            str(save_dir),
+        ])
+        == 1
+    )
+    auto_path = save_dir / 'unit.auto.json'
+
+    _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(auto_path),
+        '--auto-save',
+        str(save_dir),
+    ])
+
+    assert 'not a fleet baseline' in capsys.readouterr().err
+
+
+def test_from_results_with_no_matching_status_exits_2(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """Asking for a status nothing carries selects nothing, like a disjoint file."""
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    alpha = make_charm(cache / 'alpha', requirements=True)
+    run = tmp_path / 'run.json'
+    results.save([pool.Outcome(repo=alpha, status='failed')], run, base=cache)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(run),
+        '--status',
+        'timeout',
+    ])
+
+    assert rc == 2
+    assert 'nothing to run' in capsys.readouterr().err
+
+
+def test_from_results_with_an_empty_file_exits_2(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """A file that names no charm at all is the same 'nothing ran' case."""
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    run = tmp_path / 'run.json'
+    results.save([], run, base=cache)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(run),
+    ])
+
+    assert rc == 2
+    assert 'nothing to run' in capsys.readouterr().err
+
+
+def test_status_without_from_results_exits_2(capsys: pytest.CaptureFixture[str]):
+    """Bad input is exit 2, the same as a bad --from-results file."""
+    rc = _run(['check', 'unit', '--status', 'failed'])
+    assert rc == 2
+    assert '--status requires --from-results' in capsys.readouterr().err

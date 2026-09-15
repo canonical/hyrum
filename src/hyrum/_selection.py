@@ -12,12 +12,11 @@ correctly.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import pathlib
-import sys
 from collections.abc import Iterable
 
-from hyrum import _enumerate as enumerate_mod
 from hyrum import _filters as filt
 from hyrum import _pool as pool
 from hyrum import _results as results
@@ -27,12 +26,9 @@ logger = logging.getLogger(__name__)
 STATUS_GROUPS: tuple[str, ...] = ('failing', 'not-passing')
 """``--status`` group names, in addition to the ``pool.OUTCOME_STATUSES`` themselves."""
 
-# The statuses pool.passed() treats as not broken: filtered out before the
-# patcher/runner ever ran, or run with nothing to check. "failing" below is
-# defined as the complement of this set, not as an enumerated list, so a
-# status added to OUTCOME_STATUSES later lands in the right group with no
-# second decision.
-_BENIGN_STATUSES = frozenset({'passed', 'no_target', 'skipped'})
+# "failing" is the complement of pool.BENIGN_STATUSES rather than an
+# enumerated list, and reads the same set pool.passed() does, so a status added
+# to OUTCOME_STATUSES lands in the right group by being put in that set or not.
 
 
 def known_selectors() -> frozenset[str]:
@@ -50,12 +46,29 @@ def expand_statuses(tokens: Iterable[str]) -> frozenset[str]:
     selected: set[str] = set()
     for name in tokens:
         if name == 'failing':
-            selected |= frozenset(pool.OUTCOME_STATUSES) - _BENIGN_STATUSES
+            selected |= frozenset(pool.OUTCOME_STATUSES) - pool.BENIGN_STATUSES
         elif name == 'not-passing':
             selected |= frozenset(pool.OUTCOME_STATUSES) - {'passed'}
         else:
             selected.add(name)
     return frozenset(selected)
+
+
+@dataclasses.dataclass(frozen=True)
+class Selection:
+    """A results-file selection: the filter, plus what the file named."""
+
+    filter: filt.Filter
+    """Excludes any charm the file does not name with a wanted status."""
+
+    keys: frozenset[str]
+    """Every ``owner/name`` identity the file names, whatever its status."""
+
+    statuses: frozenset[str]
+    """The statuses that were asked for, expanded from ``--status``."""
+
+    source: pathlib.Path
+    """The file it all came from, for error messages."""
 
 
 def from_results_filter(
@@ -88,37 +101,39 @@ def load_selection(
     statuses: frozenset[str],
     *,
     cache: pathlib.Path,
-) -> filt.Filter:
-    """Load *path* and return a from-results :class:`~hyrum._filters.Filter` over *cache*.
+) -> Selection:
+    """Load *path* and return a :class:`Selection` over *cache*.
 
-    Exits with an error (code 2, matching ``hyrum compare``'s "bad input"
-    convention) if *path* is unreadable or malformed, or if *path* and
-    *cache* share no charms at all — the disjoint case ``hyrum compare``
-    already warns about; here, running (or pruning) zero charms would
-    otherwise look like success.
+    Raises ``ValueError`` if *path* is unreadable or malformed, with
+    :func:`hyrum._results.load`'s message naming the file: this is a library
+    function, so reporting and the exit code belong to the caller, the way
+    ``hyrum compare`` already does it.
+
+    Selecting nothing is not detected here. A file can name charms the cache
+    does not have, or carry no charm with a wanted status, or be empty, and
+    all three are the same thing to the caller - no charm ran - so the check
+    belongs where the filtered list exists. See :func:`unmatched`.
     """
-    try:
-        loaded = results.load(path)
-    except ValueError as exc:
-        print(f'hyrum: error: {exc}', file=sys.stderr)
-        sys.exit(2)
+    loaded = results.load(path)
     outcomes_by_key = {str(o.repo): o for o in loaded.outcomes}
-    cache_keys = {results._identity(r, cache) for r in enumerate_mod.iter_charm_repos(cache)}
-    file_keys = set(outcomes_by_key)
-    if cache_keys and file_keys and not (cache_keys & file_keys):
-        print(
-            f'hyrum: warning: --from-results {path} and the charms cached in {cache} have no '
-            f'charms in common — different charm collections, or a run saved by a hyrum '
-            f'version that stored absolute paths?',
-            file=sys.stderr,
-        )
-        sys.exit(2)
-    missing = file_keys - cache_keys
-    if missing:
-        logger.info(
-            '%d charm(s) named in %s are not present in %s (not cloned; see `hyrum get-charms`).',
-            len(missing),
-            path,
-            cache,
-        )
-    return from_results_filter(outcomes_by_key, statuses, base=cache, source=path)
+    return Selection(
+        filter=from_results_filter(outcomes_by_key, statuses, base=cache, source=path),
+        keys=frozenset(outcomes_by_key),
+        statuses=statuses,
+        source=path,
+    )
+
+
+def unmatched(
+    selection: Selection,
+    cached: Iterable[pathlib.Path],
+    *,
+    base: pathlib.Path,
+) -> frozenset[str]:
+    """Return the identities *selection* names that are not in *cached*.
+
+    ``cached`` is every charm the cache holds, run and skipped alike, so the
+    caller can pass what it already enumerated rather than walking the cache a
+    second time.
+    """
+    return selection.keys - {results._identity(repo, base) for repo in cached}

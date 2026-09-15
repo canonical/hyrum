@@ -100,21 +100,22 @@ def test_from_results_filter_matches_across_charms_dir_spellings(tmp_path: pathl
     assert f(repo) is None
 
 
-def test_load_selection_exits_2_on_malformed_file(
+def test_load_selection_raises_value_error_on_malformed_file(
     tmp_path: pathlib.Path, charm_cache: pathlib.Path
 ):
+    """The caller decides what a bad file means; the message names the file."""
     bad = tmp_path / 'bad.json'
     bad.write_text('not json')
-    with pytest.raises(SystemExit) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         selection.load_selection(bad, frozenset({'failed'}), cache=charm_cache)
-    assert exc_info.value.code == 2
+    assert str(bad) in str(exc_info.value)
 
 
-def test_load_selection_logs_charms_named_but_missing_from_the_cache(
+def test_unmatched_names_the_charms_the_cache_does_not_have(
     tmp_path: pathlib.Path,
     charm_cache: pathlib.Path,
-    caplog: pytest.LogCaptureFixture,
 ):
+    """The caller reports these, from the charms it has already enumerated."""
     present = make_charm(charm_cache / 'canonical' / 'foo')
     path = tmp_path / 'run.json'
     results.save(
@@ -126,28 +127,27 @@ def test_load_selection_logs_charms_named_but_missing_from_the_cache(
         base=charm_cache,
     )
 
-    with caplog.at_level('INFO', logger='hyrum._selection'):
-        f = selection.load_selection(path, frozenset({'failed'}), cache=charm_cache)
-    assert f(present) is None
-    messages = [record.getMessage() for record in caplog.records]
-    assert any('1 charm(s)' in message for message in messages)
-    assert any(str(path) in message for message in messages)
+    sel = selection.load_selection(path, frozenset({'failed'}), cache=charm_cache)
+
+    assert sel.filter(present) is None
+    assert selection.unmatched(sel, [present], base=charm_cache) == frozenset({
+        'canonical/not-cloned'
+    })
 
 
-def test_load_selection_exits_2_when_disjoint(
-    tmp_path: pathlib.Path, charm_cache: pathlib.Path, capsys: pytest.CaptureFixture[str]
-):
-    make_charm(charm_cache / 'canonical' / 'foo')
+def test_a_disjoint_file_selects_no_charm(tmp_path: pathlib.Path, charm_cache: pathlib.Path):
+    """Disjoint is not special: it is one of the ways to select nothing."""
+    cached = make_charm(charm_cache / 'canonical' / 'foo')
     path = tmp_path / 'run.json'
     results.save(
         [pool.Outcome(repo=pathlib.Path('someone-else/bar'), status='failed')],
         path,
     )
 
-    with pytest.raises(SystemExit) as exc_info:
-        selection.load_selection(path, frozenset({'failed'}), cache=charm_cache)
-    assert exc_info.value.code == 2
-    assert 'no charms in common' in capsys.readouterr().err
+    sel = selection.load_selection(path, frozenset({'failed'}), cache=charm_cache)
+
+    assert sel.filter(cached) is not None
+    assert selection.unmatched(sel, [cached], base=charm_cache) == frozenset({'someone-else/bar'})
 
 
 def test_load_selection_reading_the_file_a_run_is_about_to_overwrite_is_safe(
@@ -158,11 +158,11 @@ def test_load_selection_reading_the_file_a_run_is_about_to_overwrite_is_safe(
     path = tmp_path / 'unit.auto.json'
     results.save([pool.Outcome(repo=repo, status='failed')], path, base=charm_cache, target='unit')
 
-    f = selection.load_selection(path, frozenset({'failed'}), cache=charm_cache)
-    assert f(repo) is None
+    sel = selection.load_selection(path, frozenset({'failed'}), cache=charm_cache)
+    assert sel.filter(repo) is None
 
     # Simulate the rolling save rotating the just-read file away mid-run.
     path.replace(charm_cache.parent / 'unit.auto.prev.json')
     assert not path.exists()
     # The filter already captured the outcomes in memory; it does not re-read.
-    assert f(repo) is None
+    assert sel.filter(repo) is None

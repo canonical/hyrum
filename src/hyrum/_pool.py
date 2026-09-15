@@ -42,6 +42,19 @@ OUTCOME_STATUSES: Final[tuple[str, ...]] = (
 """The full set of statuses an Outcome may carry, in display order."""
 
 
+BENIGN_STATUSES: Final[frozenset[str]] = frozenset({
+    runners.RunStatus.PASSED.value,
+    runners.RunStatus.NO_TARGET.value,
+    'skipped',
+})
+"""The statuses that are not a charm being broken.
+
+Passed, nothing to run, or filtered out before the runner saw it. :func:`passed`
+is "everything is in here", and ``--status failing`` is the complement, so a new
+status is benign or failing by being added here or not, in one place.
+"""
+
+
 @dataclasses.dataclass(frozen=True)
 class Outcome:
     """One charm's result, normalised across run / skip / error paths."""
@@ -276,5 +289,4 @@ def add_skipped(
 
 def passed(results: Iterable[Outcome]) -> bool:
     """Did every non-skipped charm pass?"""
-    benign = {runners.RunStatus.PASSED.value, runners.RunStatus.NO_TARGET.value, 'skipped'}
-    return all(outcome.status in benign for outcome in results)
+    return all(outcome.status in BENIGN_STATUSES for outcome in results)
