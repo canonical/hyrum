@@ -1595,13 +1595,15 @@ def _run_show(args: argparse.Namespace) -> int:
 
     summary = loaded.meta.summary()
     print(f'{args.path} — {summary}' if summary else str(args.path))
-    # A run's own charms dir travels with it, so verbose paths are relative to
-    # where the run was made, not wherever `show` happens to be invoked from.
-    base = pathlib.Path(loaded.meta.charms_dir) if loaded.meta.charms_dir else pathlib.Path()
     renderer = report.render_markdown if args.output_format == 'markdown' else report.render
     renderer(
         loaded.outcomes,
-        base=base,
+        # `_results.save` stores each repo as an `owner/name` identity already,
+        # so there is no prefix left to strip and nothing for a base to do.
+        # Passing `meta.charms_dir` here looked like it made verbose paths
+        # relative to the run's own cache; it never matched, and every path came
+        # out of `_relative`'s fallback.
+        base=pathlib.Path(),
         target=loaded.meta.target,
         list_offenders=args.verbose,
         no_headers=args.no_headers,
