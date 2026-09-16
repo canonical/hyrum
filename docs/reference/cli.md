@@ -12,11 +12,13 @@ myst:
 hyrum [--version] COMMAND ...
 ```
 
-Hyrum exposes three subcommands:
+Hyrum exposes five subcommands:
 
 - `hyrum check TARGET [OPTIONS]` — run `TARGET` (a tox environment name or make target, for example `unit`, `lint`) across many charm repos.
+- `hyrum clean [OPTIONS]` — remove the build artefacts a run leaves behind, keeping the checkouts.
 - `hyrum compare BASELINE CURRENT [OPTIONS]` — diff two saved runs.
 - `hyrum get-charms [OPTIONS]` — clone or update every charm listed in a CSV into the charms directory.
+- `hyrum show PATH [OPTIONS]` — print the status summary of a saved run.
 
 ## `hyrum check`
 
@@ -133,6 +135,9 @@ hyrum check [OPTIONS] TARGET
 : Suppress all output except errors. The exit code still reflects pass/fail. Mutually exclusive with `--verbose` and `--verbosity`.
 : Default: off
 
+`--brief`
+: The summary tally, without the per-charm offender list. This is what a run does by default; the flag exists to ask for it back after a config file or an alias has turned something else on. Mutually exclusive with `--quiet`, `--verbose` and `--verbosity`.
+
 `--verbose`
 : Include the per-charm offender list in the report (failed, timed-out, and errored charms with their error messages, plus all skipped charms with their reasons). Mutually exclusive with `--quiet` and `--verbosity`.
 : Default: off
@@ -167,6 +172,30 @@ The three save options are mutually exclusive. When none of them is given, hyrum
 `--no-save`
 : Do not persist results.
 : Default: off
+
+## `hyrum clean`
+
+```text
+hyrum clean [OPTIONS]
+```
+
+Remove the build artefacts a `check` run leaves in each charm — `.tox`, `.venv`, tool caches, `__pycache__` — while leaving the git checkouts in place, so the next run does not have to clone everything again. Across the whole collection these reach tens of gigabytes.
+
+### Options
+
+`--charms-dir PATH`
+: Directory containing the cloned charm repositories.
+: Default: `~/.cache/hyrum/charms`
+: Environment variable: `HYRUM_CHARMS`
+
+`--dry-run`
+: Report what would be removed, and how much it holds, without removing it.
+
+`--force`
+: Clean a directory that does not look like a charms directory. Without this, hyrum refuses, so that a mistyped `--charms-dir` cannot recursively delete something else.
+
+`--quiet`
+: Suppress non-error output.
 
 ## `hyrum compare`
 
@@ -214,8 +243,44 @@ Each repository is cloned to `<dest>/<owner>/<name>`, where `<owner>` and `<name
 : Maximum number of concurrent `git` subprocesses. The cap keeps a large charm list from exhausting the process file-descriptor limit.
 : Default: `16`
 
+`--timeout SECONDS`
+: Seconds before a single `git` clone or pull is abandoned; `0` waits forever.
+: Default: `300`
+
+`--repo REGEX`
+: Regex matched against the checkout's folder name, so only the charms it matches are cloned or pulled.
+: Default: `.*`
+
+`--limit N`
+: Stop after selecting this many charms; `0` selects every match. With `--repo`, the limit applies after the pattern.
+: Default: `0`
+
 `--quiet`
 : Suppress non-error output.
+
+## `hyrum show`
+
+```text
+hyrum show [OPTIONS] PATH
+```
+
+Print a saved run: its metadata, then the same status table `check` prints at the end of a run. `PATH` is always a filesystem path to a results JSON file — there is no run-id or target-name lookup.
+
+Exits `0` whatever the run contained: `show` displays a run, it does not gate on one. Gating lives in `hyrum compare --fail-on-regression`.
+
+### Options
+
+`--verbose`
+: Include the per-charm offender list.
+
+`--no-headers`
+: Suppress the header row of the summary table.
+
+`--format {text,markdown,json}`
+: `text`: the colourised status-level summary.
+: `markdown`: the same table in markdown.
+: `json`: the same outcomes as a machine-readable object.
+: Default: `text`
 
 ## Top-level options
 
@@ -230,8 +295,8 @@ Each repository is cloned to `<dest>/<owner>/<name>`, where `<owner>` and `<name
 | Code | Meaning |
 |------|---------|
 | `0`  | All non-skipped charms passed (or `--no-fail` was set, or `hyrum get-charms` succeeded, or `hyrum compare` found no regressions) |
-| `1`  | At least one charm resulted in `failed`, `timeout`, `runner_error`, or `patcher_error`; or the results file could not be written; or `hyrum compare` could not read a results file, or found a regression under `--fail-on-regression` |
-| `2`  | The save target given to `hyrum check` is unusable (a missing or unwritable directory, or a path that is a directory when a file is expected). Checked before the run starts. |
+| `1`  | At least one charm resulted in `failed`, `timeout`, `runner_error`, or `patcher_error`; or the results file could not be written; or `hyrum compare` found a regression under `--fail-on-regression` |
+| `2`  | Bad input, reported before or instead of a run: the save target given to `hyrum check` is unusable (a missing or unwritable directory, or a path that is a directory when a file is expected, checked before the run starts); or `hyrum compare` or `hyrum show` could not read a results file; or the two runs given to `hyrum compare` have no charms in common, so there is nothing to compare |
 
 ## Environment variables
 

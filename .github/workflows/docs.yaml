@@ -32,7 +32,7 @@ jobs:
         run: make -C docs html
 
       - name: Upload pages artifact
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.repository_owner != 'canonical')
+        if: github.event_name == 'push' && github.repository_owner != 'canonical'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
         with:
           path: docs/_build
@@ -74,10 +74,14 @@ jobs:
     # GitHub Pages is not enabled for the canonical organisation, so the site is
     # published from a fork instead: any push to a 'docs/**' branch on a fork
     # replaces the preview, which reviewers can read alongside the pull request.
-    # Once Pages is enabled upstream, drop the repository_owner conditions here
-    # and in the build job so that main publishes the real site again.
+    # Until Pages is enabled upstream, this must not run on canonical/hyrum at
+    # all: `configure-pages` with `enablement: true` asks the API to turn Pages
+    # on, which the organisation does not allow, so a push to main would fail
+    # the Docs workflow rather than publish anything. Drop the
+    # repository_owner conditions here and in the build job once Pages is
+    # enabled upstream.
     name: Deploy to GitHub Pages
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.repository_owner != 'canonical')
+    if: github.event_name == 'push' && github.repository_owner != 'canonical'
     needs: build
     runs-on: ubuntu-latest
     permissions:

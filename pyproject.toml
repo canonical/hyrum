@@ -132,7 +132,7 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D", "assert", "hardcoded-password-string", "hardcoded-password-func-arg"]
-"docs/conf.py" = ["A001", "D"]  # copyright is a standard Sphinx variable name
+"docs/conf.py" = ["builtin-variable-shadowing", "D"]  # copyright is a standard Sphinx variable name
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
