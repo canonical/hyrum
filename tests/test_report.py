@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import pathlib
+import re
 
 from hyrum import _patchers as patchers
 from hyrum import _pool as pool
@@ -277,6 +278,24 @@ def test_render_markdown_breaks_down_the_skips_like_the_text_table(tmp_path: pat
     out = _render_markdown(outcomes, base=tmp_path)
     assert f'| &nbsp;&nbsp;{kind.value} | 2 |' in out
     assert '2 not run (2 skipped).' in out
+
+
+def test_skip_sub_rows_sum_to_the_skipped_row(tmp_path: pathlib.Path):
+    """Only the patchers attach a kind, so a filter reject has none; if those
+    aren't counted the sub-rows quietly come up short of the row above them."""
+    kind = patchers.PatcherSkipReason.NO_PYPROJECT
+    outcomes = [
+        pool.Outcome(repo=tmp_path / 'a', status='skipped', skip_reason_kind=kind),
+        pool.Outcome(repo=tmp_path / 'b', status='skipped', skip_reason_kind=kind),
+    ]
+    pool.add_skipped(outcomes, [(tmp_path / 'c', 'filtered out')])
+    assert report._skip_kinds(outcomes) == {kind.value: 2, 'filtered': 1}
+    text = _render(outcomes, base=tmp_path)
+    assert re.search(rf'^\s+{kind.value}\s+2\b', text, re.MULTILINE)
+    assert re.search(r'^\s+filtered\s+1\b', text, re.MULTILINE)
+    markdown = _render_markdown(outcomes, base=tmp_path)
+    assert f'| &nbsp;&nbsp;{kind.value} | 2 |' in markdown
+    assert '| &nbsp;&nbsp;filtered | 1 |' in markdown
 
 
 def test_render_without_a_target_says_hyrum_run(tmp_path: pathlib.Path):

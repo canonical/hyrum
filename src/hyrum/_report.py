@@ -122,9 +122,17 @@ def _counts(outcomes: list[pool.Outcome]) -> tuple[collections.Counter[str], int
 
 
 def _skip_kinds(outcomes: list[pool.Outcome]) -> collections.Counter[str]:
-    """Count the skipped outcomes by the kind of skip, for the sub-rows."""
+    """Count the skipped outcomes by the kind of skip, for the sub-rows.
+
+    Only the patchers attach a kind: the filter rejects that
+    :func:`pool.add_skipped` folds in carry none. Count those as ``filtered``
+    rather than dropping them, so the sub-rows always sum to the ``skipped``
+    row they sit under.
+    """
     return collections.Counter(
-        o.skip_reason_kind.value for o in outcomes if o.skip_reason_kind is not None
+        o.skip_reason_kind.value if o.skip_reason_kind is not None else 'filtered'
+        for o in outcomes
+        if o.status == 'skipped'
     )
 
 
@@ -244,6 +252,9 @@ def render_markdown(
     """Print a markdown tally of ``outcomes``, mirroring :func:`render`'s text table."""
     outcomes = list(outcomes)
     out: TextIO = stream if stream is not None else sys.stdout
+    # Same reason as the text renderer: markdown goes to the same stdout, and a
+    # stream that can't encode an em dash shouldn't blow up mid-table.
+    not_applicable = _em_dash(out)
 
     counts, total, ran = _counts(outcomes)
 
@@ -260,7 +271,7 @@ def render_markdown(
     print('| --- | --- | --- | --- |', file=out)
 
     def _of_all(count: int) -> str:
-        return _percent.format_pct(count / total) if total else _NOT_APPLICABLE
+        return _percent.format_pct(count / total) if total else not_applicable
 
     for status in pool.OUTCOME_STATUSES:
         count = counts.get(status, 0)
@@ -268,16 +279,16 @@ def render_markdown(
         # share of the runs; for the others the cell would be a category error
         # rather than a zero.
         of_runs = (
-            _percent.format_pct(count / ran)
-            if status in _RAN_STATUSES and ran
-            else _NOT_APPLICABLE
+            _percent.format_pct(count / ran) if status in _RAN_STATUSES and ran else not_applicable
         )
         print(f'| {status} | {count} | {_of_all(count)} | {of_runs} |', file=out)
         if status == 'skipped' and count:
+            # The text table indents its sub-rows with two literal spaces;
+            # GFM collapses those inside a cell, so this needs the entity.
             for kind, kind_count in sorted(_skip_kinds(outcomes).items()):
                 print(
                     f'| &nbsp;&nbsp;{kind} | {kind_count} | {_of_all(kind_count)} '
-                    f'| {_NOT_APPLICABLE} |',
+                    f'| {not_applicable} |',
                     file=out,
                 )
 
@@ -304,7 +315,7 @@ def render_markdown(
             print(file=out)
             for outcome in sorted(offenders, key=lambda o: str(o.repo)):
                 detail = outcome.error or outcome.skip_reason or ''
-                trailer = f' — {detail}' if detail else ''
+                trailer = f' {not_applicable} {detail}' if detail else ''
                 print(f'- {relative(outcome.repo, base)}{trailer}', file=out)
 
         skipped = [o for o in outcomes if o.status == 'skipped']
@@ -314,4 +325,4 @@ def render_markdown(
             print(file=out)
             for outcome in sorted(skipped, key=lambda o: str(o.repo)):
                 reason = outcome.skip_reason or ''
-                print(f'- {relative(outcome.repo, base)} — {reason}', file=out)
+                print(f'- {relative(outcome.repo, base)} {not_applicable} {reason}', file=out)
