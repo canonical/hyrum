@@ -63,13 +63,9 @@ Most of this is enforced by CI checks.
 
 # Releases
 
-Releases are published to PyPI by the `publish` workflow, which runs on any
-`v*` tag pushed to `canonical/hyrum`. PyPI trusted publishing is configured
-for that repository, so a tag pushed to a fork cannot publish.
+Releases are published to PyPI by the `publish` workflow, which runs on any `v*` tag pushed to `canonical/hyrum`. PyPI trusted publishing is configured for that repository, so a tag pushed to a fork cannot publish.
 
-1. Open a pull request that sets `version` in `pyproject.toml` to the new
-   version, with the `uv.lock` update that `uv lock` produces, and get it
-   merged.
+1. Open a pull request that sets `version` in `pyproject.toml` to the new version, with the `uv.lock` update that `uv lock` produces, and get it merged.
 2. Tag the resulting commit on `main` and push the tag:
 
    ```bash
@@ -78,11 +74,6 @@ for that repository, so a tag pushed to a fork cannot publish.
    git push origin v1.2.3
    ```
 
-3. Watch the `publish` workflow run, then check that the release appears on
-   [PyPI](https://pypi.org/p/hyrum). The upload starts as soon as the tag is
-   pushed, so make sure the version is the one you want before pushing.
+3. Watch the `publish` workflow run, then check that the release appears on [PyPI](https://pypi.org/p/hyrum). The upload starts as soon as the tag is pushed, so make sure the version is the one you want before pushing.
 
-To rehearse a release, run the `publish-test-pypi` workflow manually from the
-Actions tab: it builds from the current `main` and publishes to
-[Test PyPI](https://test.pypi.org/p/hyrum). Note that a version can only be
-uploaded once, so bump the version before re-running it.
+To rehearse a release, run the `publish-test-pypi` workflow manually from the Actions tab: it builds from the current `main` and publishes to [Test PyPI](https://test.pypi.org/p/hyrum). Note that a version can only be uploaded once, so bump the version before re-running it.
