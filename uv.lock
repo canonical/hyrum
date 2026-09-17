@@ -136,7 +136,7 @@ wheels = [
 
 [[package]]
 name = "hyrum"
-version = "1.0.0a1"
+version = "1.0.0b1"
 source = { editable = "." }
 dependencies = [
     { name = "packaging" },
