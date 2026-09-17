@@ -63,7 +63,7 @@ Most of this is enforced by CI checks.
 
 # Releases
 
-Releases are published to PyPI by the `publish` workflow, which runs on any `v*` tag pushed to `canonical/hyrum`. PyPI trusted publishing is configured for that repository, so a tag pushed to a fork cannot publish.
+Releases are published to PyPI by the `publish` workflow, which runs on any `v*` tag.
 
 1. Open a pull request that sets `version` in `pyproject.toml` to the new version, with the `uv.lock` update that `uv lock` produces, and get it merged.
 2. Tag the resulting commit on `main` and push the tag:
