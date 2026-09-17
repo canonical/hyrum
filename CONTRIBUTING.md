@@ -60,3 +60,27 @@ We follow the Charm Tech team style guides:
 - [Python style](https://github.com/canonical/charm-tech/blob/main/python/STYLE.md)
 
 Most of this is enforced by CI checks.
+
+# Releases
+
+Releases are published to PyPI by the `publish` workflow, which runs on any
+`v*` tag pushed to the repository.
+
+1. Open a pull request that sets `version` in `pyproject.toml` to the new
+   version, and get it merged.
+2. Tag the resulting commit on `main` and push the tag:
+
+   ```bash
+   git switch main && git pull
+   git tag v1.2.3
+   git push origin v1.2.3
+   ```
+
+3. Approve the deployment to the `publish-pypi` environment when GitHub asks
+   for it, then check that the release appears on
+   [PyPI](https://pypi.org/p/hyrum).
+
+To rehearse a release, run the `publish-test-pypi` workflow manually from the
+Actions tab: it builds from the current `main` and publishes to
+[Test PyPI](https://test.pypi.org/p/hyrum). Note that a version can only be
+uploaded once, so bump the version before re-running it.
