@@ -14,7 +14,7 @@ import logging
 import os
 import pathlib
 import shutil
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +162,40 @@ def find_artefacts(base: pathlib.Path) -> Iterator[Artefact]:
             except OSError:
                 continue
             yield Artefact(path=path, size=size, is_dir=False)
+
+
+def group_by_charm(
+    artefacts: Iterable[Artefact], charms: Iterable[pathlib.Path]
+) -> tuple[list[tuple[pathlib.Path, list[Artefact]]], list[Artefact]]:
+    """Split ``artefacts`` into per-charm groups, plus the ones no charm owns.
+
+    The grouping exists so that removal can take the same per-charm lock a
+    run takes, and it has to agree with that run about what a charm *is*:
+    the key is the charm directory ``_enumerate`` yields, not the git
+    checkout it sits in. A monorepo's subcharms lock separately, so grouping
+    by checkout would name a lock no run ever holds and exclude nothing.
+    Hence the longest match wins — the innermost charm owns the artefact.
+
+    Groups keep ``find_artefacts``'s outermost-first order, so removing a
+    directory still happens before anything inside it.
+
+    Returns:
+        ``(groups, unowned)``, where ``groups`` pairs each charm that owns at
+        least one artefact with its artefacts, and ``unowned`` holds the rest
+        — artefacts above every charm, or in a directory that holds none.
+    """
+    # Longest first, so the first containing charm found is the innermost.
+    ordered = sorted(charms, key=lambda c: len(c.parts), reverse=True)
+    grouped: dict[pathlib.Path, list[Artefact]] = {}
+    unowned: list[Artefact] = []
+    for artefact in artefacts:
+        for charm in ordered:
+            if artefact.path.is_relative_to(charm):
+                grouped.setdefault(charm, []).append(artefact)
+                break
+        else:
+            unowned.append(artefact)
+    return list(grouped.items()), unowned
 
 
 def remove(artefact: Artefact) -> bool:

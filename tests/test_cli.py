@@ -7,12 +7,14 @@ import pathlib
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] — the git ls-remote preflight is what's under test
 import sys
+import threading
 
 import pytest
 
 from hyrum import _cli as cli
 from hyrum import _compare as compare
 from hyrum import _config as config_loader
+from hyrum import _locks as locks
 from hyrum import _pool as pool
 from hyrum import _results as results
 from hyrum import _runners as runners
@@ -1631,3 +1633,101 @@ def test_clean_force_cleans_a_directory_that_is_not_a_charms_dir(
 
 def test_clean_on_a_missing_charms_dir_is_an_error(tmp_path: pathlib.Path):
     assert _run(['clean', '--charms-dir', str(tmp_path / 'nope')]) != 0
+
+
+def _record_locks(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
+    """Record every repo `clean` takes a lock on, without taking one."""
+    taken: list[pathlib.Path] = []
+    real = locks.charm_lock
+
+    def spy(repo, *, lock_root, base=None):
+        if lock_root is not None:
+            taken.append(repo)
+        return real(repo, lock_root=lock_root, base=base)
+
+    monkeypatch.setattr(locks, 'charm_lock', spy)
+    return taken
+
+
+def test_clean_locks_each_charm_before_removing_its_artefacts(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`clean` deletes .tox and .venv — exactly what a concurrent run is using."""
+    cache = _cache_with_artefacts(tmp_path)
+    taken = _record_locks(monkeypatch)
+
+    assert _run(['clean', '--charms-dir', str(cache)]) == 0
+
+    assert taken == [cache / 'a-charm']
+    assert not (cache / 'a-charm' / '.tox').exists()
+
+
+def test_clean_lock_files_are_the_ones_a_run_would_wait_on(tmp_path: pathlib.Path):
+    """The key has to match `check`'s, or the exclusion is in name only."""
+    cache = _cache_with_artefacts(tmp_path)
+
+    assert _run(['clean', '--charms-dir', str(cache)]) == 0
+
+    root = locks.lock_root_for(cache)
+    assert locks.lock_path(cache / 'a-charm', lock_root=root, base=cache).exists()
+
+
+def test_clean_dry_run_does_not_wait_on_a_lock(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A read-only report blocking behind a live run would be the surprise."""
+    cache = _cache_with_artefacts(tmp_path)
+    taken = _record_locks(monkeypatch)
+
+    assert _run(['clean', '--charms-dir', str(cache), '--dry-run']) == 0
+
+    assert taken == []
+    assert not locks.lock_root_for(cache).exists()
+
+
+def test_clean_no_lock_removes_without_locking(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    cache = _cache_with_artefacts(tmp_path)
+    taken = _record_locks(monkeypatch)
+
+    assert _run(['clean', '--charms-dir', str(cache), '--no-lock']) == 0
+
+    assert taken == []
+    assert not (cache / 'a-charm' / '.tox').exists()
+
+
+def test_clean_waits_for_a_run_holding_the_charm(tmp_path: pathlib.Path):
+    """The lock is exclusive against a real holder, not just recorded."""
+    cache = _cache_with_artefacts(tmp_path)
+    repo = cache / 'a-charm'
+    root = locks.lock_root_for(cache)
+    released = threading.Event()
+    entered = threading.Event()
+
+    def hold():
+        with locks.charm_lock(repo, lock_root=root, base=cache):
+            entered.set()
+            released.wait(timeout=10)
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    assert entered.wait(timeout=10)
+
+    done = threading.Event()
+
+    def clean():
+        _run(['clean', '--charms-dir', str(cache)])
+        done.set()
+
+    cleaner = threading.Thread(target=clean)
+    cleaner.start()
+    # Still held, so the artefact is still there.
+    assert not done.wait(timeout=0.5)
+    assert (repo / '.tox').exists()
+
+    released.set()
+    holder.join(timeout=10)
+    assert done.wait(timeout=10)
+    cleaner.join(timeout=10)
+    assert not (repo / '.tox').exists()

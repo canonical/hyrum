@@ -23,9 +23,9 @@ import pathlib
 from collections.abc import Iterable
 from typing import Final
 
+from hyrum import _locks, _summary
 from hyrum import _patchers as patchers
 from hyrum import _runners as runners
-from hyrum import _summary
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +181,7 @@ async def run_one(
     runner: runners.Runner,
     log_dir: pathlib.Path | None = None,
     log_base: pathlib.Path | None = None,
+    lock_root: pathlib.Path | None = None,
 ) -> Outcome:
     """Apply ``patcher`` to ``repo`` and invoke ``runner`` once.
 
@@ -189,7 +190,33 @@ async def run_one(
     which would otherwise block the event loop and serialise every worker.
     Enter and exit in a thread so concurrent workers can overlap their lock
     subprocesses; the runner call is already asyncio-native.
+
+    ``lock_root`` names the directory holding the per-charm locks that keep a
+    concurrent run out of this charm's tree between the patch and the restore;
+    ``None`` disables that.
     """
+    charm_lock = _locks.charm_lock(repo, lock_root=lock_root, base=log_base)
+    # Blocking on another run's lock would stall every other worker, so wait
+    # in a thread, as with the patcher below.
+    await asyncio.to_thread(charm_lock.__enter__)
+    try:
+        return await _run_one_locked(
+            repo, target, patcher=patcher, runner=runner, log_dir=log_dir, log_base=log_base
+        )
+    finally:
+        await asyncio.to_thread(charm_lock.__exit__, None, None, None)
+
+
+async def _run_one_locked(
+    repo: pathlib.Path,
+    target: str,
+    *,
+    patcher: patchers.Patcher,
+    runner: runners.Runner,
+    log_dir: pathlib.Path | None,
+    log_base: pathlib.Path | None,
+) -> Outcome:
+    """Patch, run and restore one charm, with its lock already held."""
     try:
         cm = patcher.apply(repo)
         await asyncio.to_thread(cm.__enter__)
@@ -219,6 +246,7 @@ async def run_pool(
     workers: int,
     log_dir: pathlib.Path | None = None,
     log_base: pathlib.Path | None = None,
+    lock_root: pathlib.Path | None = None,
 ) -> list[Outcome]:
     """Run ``target`` across ``repos`` concurrently with ``workers`` workers."""
     queue: asyncio.Queue[pathlib.Path] = asyncio.Queue()
@@ -240,6 +268,7 @@ async def run_pool(
                     runner=runner,
                     log_dir=log_dir,
                     log_base=log_base,
+                    lock_root=lock_root,
                 )
             except Exception as exc:
                 # Neither the patcher nor the runner claimed this: both signal
