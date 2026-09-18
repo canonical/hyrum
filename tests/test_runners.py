@@ -303,3 +303,14 @@ async def test_auto_prefer_order_respected(tmp_path: pathlib.Path, spawner):
     spawner(FakeProc(returncode=0), FakeProc(returncode=0))
     result = await runners.auto(prefer=('make', 'tox')).run(tmp_path, 'unit')
     assert result.runner == 'make'
+
+
+async def test_auto_prefers_tox_when_a_charm_has_both(tmp_path: pathlib.Path, spawner):
+    # The common real layout: a Makefile that mostly delegates, and a tox.ini
+    # that holds the actual environments.
+    (tmp_path / 'tox.ini').write_text('[testenv:unit]\n')
+    (tmp_path / 'Makefile').write_text('unit:\n\ttrue\n')
+    spawner(FakeProc(returncode=0))
+    result = await runners.auto().run(tmp_path, 'unit')
+    assert result.runner == 'tox'
+    assert result.status is runners.RunStatus.PASSED
