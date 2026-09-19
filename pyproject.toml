@@ -137,3 +137,6 @@ asyncio_mode = "auto"
 # Promote warnings to errors so deprecations and resource-cleanup bugs surface
 # in CI rather than leaking into the charm baselines hyrum produces.
 filterwarnings = ["error"]
+markers = [
+    "uv_integration: drives a real uv/tox subprocess; opt in with HYRUM_UV_INTEGRATION=1",
+]
