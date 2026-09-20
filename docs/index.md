@@ -10,7 +10,7 @@ reference/index
 explanation/index
 ```
 
-Hyrum bulk-runs a check (typically lint or unit tests) across many charm repositories, optionally swapping out one of their dependencies first.
+Hyrum bulk-runs a check (typically lint or unit tests) across many charm repositories, optionally patching one of their dependencies first.
 
 The primary use case is pointing every charm's `ops` dependency at a development branch of the [operator](https://github.com/canonical/operator) repository to find out which charms break before shipping the change. Named after [Hyrum's Law](https://www.hyrumslaw.com/): once you have enough users, every observable behaviour of your code is depended on by somebody.
 
@@ -32,13 +32,13 @@ uv tool install --prerelease=allow hyrum
 # Populate ~/.cache/hyrum/charms from a charm-list CSV:
 hyrum get-charms
 
-# Run tox -e unit across every charm, with ops swapped to a development branch:
+# Run tox -e unit across every charm, with ops patched to a development branch:
 hyrum check unit --patch 'ops @ canonical:fix/my-change' --workers 8
 
-# Run without any dependency swap (test charms as they are pinned):
+# Run without patching any dependency (test charms as they are pinned):
 hyrum check unit --no-patch
 
-# Diff the last two runs to see what the swap changed:
+# Diff the last two runs to see what the patch changed:
 hyrum compare ~/.cache/hyrum/results/unit.auto.prev.json \
               ~/.cache/hyrum/results/unit.auto.json
 ```
@@ -52,7 +52,7 @@ A hands-on walkthrough: populate a charms directory, run hyrum, and read the rep
 :::
 
 :::{grid-item-card} [How-to guides](howto/index)
-Task-focused guides: install, filter runs, swap a dependency, and triage results.
+Task-focused guides: install, filter runs, patch a dependency, and triage results.
 :::
 
 :::{grid-item-card} [Reference](reference/index)

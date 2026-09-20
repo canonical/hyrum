@@ -1,12 +1,12 @@
 ---
 myst:
   html_meta:
-    description: Use --patch to swap a non-ops dependency across the charm fleet, from a PyPI pin, a git source, or a local checkout.
+    description: Use --patch to patch a non-ops dependency across the charm fleet, from a PyPI pin, a git source, or a local checkout.
 ---
 
-# How to swap a non-ops dependency
+# How to patch a non-ops dependency
 
-`--patch` is not limited to `ops`. Any package the charm declares can be swapped, using the same PEP 508 grammar. Use this to:
+`--patch` is not limited to `ops`. Any package the charm declares can be patched, using the same PEP 508 grammar. Use this to:
 
 - Pin a transitive dependency to a candidate release.
 - Point a library at a fork or a development branch.
@@ -24,7 +24,7 @@ Specifiers other than `==` are accepted too:
 hyrum check unit --patch 'requests>=1.2,<2'
 ```
 
-If no patch is given hyrum defaults to swapping `ops` to `canonical:main`. As soon as one `--patch` is given, the default goes away — only the packages you list are patched. To run with both `ops` and another dependency patched, pass `--patch` for each:
+If no patch is given hyrum defaults to patching `ops` to `canonical:main`. As soon as one `--patch` is given, the default goes away — only the packages you list are patched. To run with both `ops` and another dependency patched, pass `--patch` for each:
 
 ```text
 hyrum check unit \
@@ -34,7 +34,7 @@ hyrum check unit \
 
 `--patch` and `--no-patch` are mutually exclusive. Pass `--patch` once per package; specifying it twice for the same package is an error.
 
-## Swap from a git source
+## Patch from a git source
 
 ```text
 hyrum check unit --patch 'requests @ git+https://github.com/psf/requests@main'
@@ -54,7 +54,7 @@ hyrum check unit --patch 'mylib @ git+https://github.com/me/monorepo@main#subdir
 
 The `owner:branch` shorthand (`canonical:fix/X`) is accepted only for `ops` and for `charmlibs-*` packages. For any other package, pass an explicit `git+<url>` or bare `https://…` URL.
 
-## Swap from a local checkout
+## Patch from a local checkout
 
 ```text
 hyrum check unit --patch 'mylib @ ~/code/mylib'
@@ -62,7 +62,7 @@ hyrum check unit --patch 'mylib @ /abs/path/mylib'
 hyrum check unit --patch 'mylib @ file:///abs/path/mylib'
 ```
 
-## Swap a charm library from canonical/charmlibs
+## Patch a charm library from canonical/charmlibs
 
 Packages named `charmlibs-*` get their own shorthand, pointing the dependency at a branch of the [charmlibs](https://github.com/canonical/charmlibs) monorepo:
 
@@ -111,7 +111,7 @@ For each charm, hyrum:
 
 Charms that do not vendor that library are reported as `skipped` with the reason `vendored_lib_absent`.
 
-## Combine with an ops swap
+## Combine with an ops patch
 
 `--patch` may be repeated, with one occurrence per package:
 
@@ -132,4 +132,4 @@ The generic dependency patcher behaves like the ops-source patcher except that t
 - `pyproject.toml` under `[project.dependencies]`, `[project.optional-dependencies]`, `[dependency-groups]` (PEP 735), `[tool.poetry.dependencies]`, and `[tool.uv.sources]`
 - The corresponding lockfile (`poetry.lock` or `uv.lock`) is regenerated when present
 
-Charms whose declarations cannot be parsed are reported as `patcher_error` rather than `failed`, so an infrastructure problem is not mis-attributed to a charm regression. Charms that do not declare the package at all are reported as `skipped`, since there was nothing to swap. See [How to interpret results](interpret-results).
+Charms whose declarations cannot be parsed are reported as `patcher_error` rather than `failed`, so an infrastructure problem is not mis-attributed to a charm regression. Charms that do not declare the package at all are reported as `skipped`, since there was nothing to patch. See [How to interpret results](interpret-results).

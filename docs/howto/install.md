@@ -45,7 +45,7 @@ When `--patch` points at a git URL or local checkout, you also need:
 - `poetry` on your PATH if any charms in your charms directory use Poetry
 - `uv` on your PATH if any charms use uv
 
-See [How to swap ops to a development branch](swap-ops-branch) for details.
+See [How to patch ops to a development branch](patch-ops-branch) for details.
 
 ## Host prerequisites for fleet runs
 

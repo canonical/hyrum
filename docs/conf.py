@@ -110,7 +110,7 @@ rediraffe_dir_only = True
 
 llms_txt_description = (
     'This is the documentation for hyrum, a tool that bulk-runs a check such as '
-    'lint or unit tests across many charm repositories, optionally swapping out one '
+    'lint or unit tests across many charm repositories, optionally patching one '
     'of their dependencies first.'
 )
 

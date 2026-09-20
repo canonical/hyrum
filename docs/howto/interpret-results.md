@@ -47,7 +47,7 @@ Indented rows under `skipped` show why a patcher skipped a charm, when it was a 
 : The runner itself could not be launched — for example, `make` is not installed on the host. This is a host problem, not a charm result, so it is reported separately from `failed`. `--preflight` (on by default) catches a missing runner before the run starts, so this status usually means the executable disappeared mid-run or is not executable.
 
 `patcher_error`
-: The dependency swap could not be applied. For example, the charm's `pyproject.toml` could not be parsed, or `poetry lock` failed in a way hyrum could not recover from. This is an infrastructure problem, not a charm failure. Use `--verbose` to see the error message.
+: The patch could not be applied. For example, the charm's `pyproject.toml` could not be parsed, or `poetry lock` failed in a way hyrum could not recover from. This is an infrastructure problem, not a charm failure. Use `--verbose` to see the error message.
 
 `skipped`
 : The charm was excluded before the run began. Common skip reasons:
@@ -57,7 +57,7 @@ Indented rows under `skipped` show why a patcher skipped a charm, when it was a 
 : - Is a reactive or classic hooks-based charm (has `src/reactive/` with `src/layer.yaml`, or a `hooks/` directory).
 : - Has neither `tox.ini` nor `Makefile`.
 : - Did not match the `--framework` filter.
-: A charm is also skipped when the patcher has nothing to do — it does not declare the package you are patching (`dep_not_declared`), has no `pyproject.toml` at all (`no_pyproject`), or does not vendor the library you asked to swap (`vendored_lib_absent`). These are expected, not errors: patching `charmlibs-apt` across the fleet will skip most of it. The exception is `malformed_pyproject`, which means the charm's `pyproject.toml` has a dependency section of the wrong shape.
+: A charm is also skipped when the patcher has nothing to do — it does not declare the package you are patching (`dep_not_declared`), has no `pyproject.toml` at all (`no_pyproject`), or does not vendor the library you asked to patch (`vendored_lib_absent`). These are expected, not errors: patching `charmlibs-apt` across the fleet will skip most of it. The exception is `malformed_pyproject`, which means the charm's `pyproject.toml` has a dependency section of the wrong shape.
 
 ## Get more detail
 

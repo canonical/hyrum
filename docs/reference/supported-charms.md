@@ -1,12 +1,12 @@
 ---
 myst:
   html_meta:
-    description: The dependency declarations, swap subjects, testing frameworks, and runner backends that hyrum supports.
+    description: The dependency declarations, patch subjects, testing frameworks, and runner backends that hyrum supports.
 ---
 
 # Supported charms
 
-Whether hyrum can run a charm depends on three things: how the charm declares its dependencies, what it can be asked to swap, and whether the repository has a target hyrum can run.
+Whether hyrum can run a charm depends on three things: how the charm declares its dependencies, what it can be asked to patch, and whether the repository has a target hyrum can run.
 
 ## Dependency declarations
 
@@ -20,7 +20,7 @@ Whether hyrum can run a charm depends on three things: how the charm declares it
 
 The `ops[testing]` and `ops[tracing]` extras are handled, including the companion packages they pull from subdirectories of the operator monorepo.
 
-## What can be swapped
+## What can be patched
 
 | Subject | Patcher | Form |
 |---|---|---|

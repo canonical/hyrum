@@ -59,7 +59,7 @@ For a fleet-scale run, use `hyrum get-charms` to clone every entry in a charm-li
 
 ## Run the check
 
-Run the `unit` tox environment across every charm in the charms directory, without swapping any dependencies:
+Run the `unit` tox environment across every charm in the charms directory, without patching any dependencies:
 
 ```text
 hyrum check unit --no-patch
@@ -127,7 +127,7 @@ hyrum compare ~/.cache/hyrum/results/unit.auto.prev.json \
               ~/.cache/hyrum/results/unit.auto.json
 ```
 
-Nothing changed between the two runs, so hyrum reports the pass rate and `No changes between runs.` When you start swapping dependencies, the same comparison is what tells you which charms your change broke.
+Nothing changed between the two runs, so hyrum reports the pass rate and `No changes between runs.` When you start patching dependencies, the same comparison is what tells you which charms your change broke.
 
 ## Save per-charm logs
 
@@ -142,7 +142,7 @@ After the run you will find files like `~/hyrum-logs/charm-apt-mirror.log` conta
 ## Next steps
 
 - [How to run hyrum against the full charm list](../howto/run-charm-list)
-- [How to swap ops to a development branch](../howto/swap-ops-branch)
+- [How to patch ops to a development branch](../howto/patch-ops-branch)
 - [How to interpret the results](../howto/interpret-results)
 - [How to compare two runs](../howto/compare-runs)
 - [CLI reference](../reference/cli)

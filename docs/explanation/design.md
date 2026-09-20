@@ -33,7 +33,7 @@ The pool deliberately does not use `asyncio.Semaphore` or structured concurrency
 - A patcher failure: `status='patcher_error'` with the error message in `outcome.error`.
 - A runner result (pass, fail, no-target, timeout, or a runner that could not be launched): status from `RunStatus`.
 
-The distinction between the infrastructure statuses and `failed` is important: `patcher_error` means hyrum could not apply the dependency swap, and `runner_error` means tox or make itself could not be launched. A `failed` outcome means the charm's own tests reported failure. Mixing these together would make the "N charms broke" count misleading.
+The distinction between the infrastructure statuses and `failed` is important: `patcher_error` means hyrum could not apply the patch, and `runner_error` means tox or make itself could not be launched. A `failed` outcome means the charm's own tests reported failure. Mixing these together would make the "N charms broke" count misleading.
 
 Attribution only works if each layer reports its own faults, so the runners catch `OSError` on launch and return a `runner_error` result rather than letting the exception escape into the pool, where it would have been recorded against the patcher. The pool's catch-all therefore blames neither layer: it says only that the error was unexpected.
 
@@ -43,7 +43,7 @@ Each non-passing outcome also carries a one-line `summary`, extracted heuristica
 
 ## Skips versus errors
 
-Patchers signal two different kinds of "this did not happen": `PatcherError`, meaning the swap should have applied but could not, and `PatcherSkip`, meaning there was nothing to swap. The second is not a failure — a charm that never depended on the library you are testing tells you nothing about your change, and reporting it as an error would inflate the numbers exactly where the fleet is largest. Skips carry a machine-readable reason, so the tally can separate the ordinary cases (`dep_not_declared`, `vendored_lib_absent`) from the one that deserves attention (`malformed_pyproject`).
+Patchers signal two different kinds of "this did not happen": `PatcherError`, meaning the patch should have applied but could not, and `PatcherSkip`, meaning there was nothing to patch. The second is not a failure — a charm that never depended on the library you are testing tells you nothing about your change, and reporting it as an error would inflate the numbers exactly where the fleet is largest. Skips carry a machine-readable reason, so the tally can separate the ordinary cases (`dep_not_declared`, `vendored_lib_absent`) from the one that deserves attention (`malformed_pyproject`).
 
 ## Signal vs noise
 

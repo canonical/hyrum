@@ -17,19 +17,19 @@ Each charm produces exactly one outcome. The possible statuses are:
 | `no_target`     | The requested tox environment or make target does not exist in this charm. Not counted as a failure. |
 | `timeout`       | The runner was killed after `--timeout` seconds. |
 | `runner_error`  | The runner itself could not be launched — for example, `make` is not installed. This is a host problem, not a charm result. |
-| `patcher_error` | The dependency swap could not be applied. This is distinct from a runner failure: it points to an infrastructure problem, not a charm test failure. |
+| `patcher_error` | The patch could not be applied. This is distinct from a runner failure: it points to an infrastructure problem, not a charm test failure. |
 | `skipped`       | Excluded before the run began (by `--repo`, `--framework`, `[ignore]` in `hyrum.toml`, no Python source, a legacy reactive/hooks layout, or no `tox.ini`/`Makefile`), or skipped by a patcher that had nothing to do. |
 
 (patcher-skip-reasons)=
 ### Patcher skip reasons
 
-A patcher skips a charm, rather than reporting `patcher_error`, when the charm simply does not use the thing being swapped. These skips carry a machine-readable category, which appears as an indented row under `skipped` in the summary table:
+A patcher skips a charm, rather than reporting `patcher_error`, when the charm simply does not use the thing being patched. These skips carry a machine-readable category, which appears as an indented row under `skipped` in the summary table:
 
 | Category | Meaning |
 |----------|---------|
 | `no_pyproject` | The charm has no `pyproject.toml`, so the patched package cannot be one of its declared dependencies. |
 | `dep_not_declared` | The charm has a `pyproject.toml`, but does not declare the patched package. |
-| `vendored_lib_absent` | A vendored-library swap was requested, but the charm does not vendor that library. |
+| `vendored_lib_absent` | A vendored-library patch was requested, but the charm does not vendor that library. |
 | `malformed_pyproject` | The charm's `pyproject.toml` has a dependency section of the wrong shape (for example, `[dependency-groups].dev` is not an array). |
 
 ## Summary table

@@ -46,6 +46,23 @@ Rows that resolve to a checkout directory an earlier row already claimed are ski
 
 The default destination is `~/.cache/hyrum/charms`, overridable by `HYRUM_CHARMS` or `--dest`. The same default and override apply to `hyrum check --charms-dir`.
 
+## Use a different charms directory
+
+The default charms directory is `~/.cache/hyrum/charms`. To run against charms somewhere else, point hyrum at the directory containing them:
+
+```text
+hyrum check unit --no-patch --charms-dir /path/to/my/charms
+```
+
+Or set the `HYRUM_CHARMS` environment variable instead of passing the flag every time:
+
+```text
+export HYRUM_CHARMS=/path/to/my/charms
+hyrum check unit --no-patch
+```
+
+`HYRUM_CHARMS` applies to `hyrum get-charms --dest` as well, so the two commands stay pointed at the same place.
+
 ## Run across the full fleet
 
 With the charms directory populated, run hyrum without any filters:
@@ -56,25 +73,9 @@ hyrum check unit --no-patch --workers 8
 
 Increase `--workers` to match your machine's CPU count for faster runs. The default is `1`.
 
-## Filter by testing framework
+## Narrow the run
 
-If you only care about charms that use a particular testing framework, use `--framework`:
-
-```text
-# Only charms that use the Scenario testing framework:
-hyrum check unit --no-patch --workers 8 --framework scenario
-```
-
-Supported values for `--framework`: `scenario`, `jubilant`.
-
-## Filter by name pattern
-
-Use `--repo` to limit the run to a subset of charms by name:
-
-```text
-# Only charms whose directory names begin with "mysql":
-hyrum check unit --no-patch --workers 4 --repo '^mysql'
-```
+To check a subset of the fleet, or one charm, filter the run with `--repo`, `--framework`, or `--limit`. See [How to filter a run](filter-a-run).
 
 ## Save logs for triage
 

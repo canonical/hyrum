@@ -4,11 +4,11 @@ myst:
     description: Point every charm's ops dependency at a development branch of canonical/operator to find breakages before release.
 ---
 
-# How to swap ops to a development branch
+# How to patch ops to a development branch
 
 The ops-source patcher rewrites each charm's dependency declarations so that `ops` is pulled from a git source instead of PyPI. This lets you run the charm fleet against a pre-release `ops` to find breakages before shipping.
 
-For swapping any *other* dependency, see [How to swap a non-ops dependency](swap-other-dependency).
+For patching any *other* dependency, see [How to patch a non-ops dependency](patch-other-dependency).
 
 ## Basic usage
 
@@ -18,22 +18,16 @@ Point hyrum at a branch of the `canonical/operator` repository using the `owner:
 hyrum check unit --patch 'ops @ canonical:fix/my-change' --workers 8
 ```
 
-`--patch` is a PEP 508 requirement. For `ops`, the accepted forms are:
-
-- `ops @ canonical:fix/my-change` — `owner:branch` shorthand; expands to `https://github.com/canonical/operator` at that branch.
-- `ops @ https://github.com/canonical/operator@fix/my-change` — bare git URL with optional `@ref` (branch, tag, or commit SHA).
-- `ops @ git+https://github.com/canonical/operator@fix/my-change` — explicit PEP 508 form (the one `pip` and `uv` print).
-- `ops==2.17.0` (or any PEP 440 specifier) — a PyPI version; companion packages still resolve from PyPI.
-- `ops @ ~/operator`, `ops @ /abs/operator`, or `ops @ file:///abs/operator` — a local operator checkout.
-
-If `--patch` is omitted (and `--no-patch` is not set), hyrum defaults to `ops @ canonical:main`. Pass `--patch` to override or `--no-patch` to disable patching entirely.
-
 Hyrum will:
 
 1. Rewrite each charm's `requirements.txt` or `pyproject.toml` so `ops` is pulled from the patched source.
 2. Regenerate the lockfile (`poetry.lock` or `uv.lock`) if one is checked in.
 3. Run the target (`tox -e unit` or `make unit`).
 4. Restore every touched file to its original state when finished.
+
+`--patch` takes a PEP 508 requirement, so a branch is not the only thing you can point `ops` at — a tag, a commit, a PyPI version, or a local checkout all work. See [the CLI reference](../reference/cli) for every accepted form.
+
+If `--patch` is omitted (and `--no-patch` is not set), hyrum defaults to `ops @ canonical:main`. Pass `--patch` to override, or `--no-patch` to disable patching entirely.
 
 ## Use a fork
 

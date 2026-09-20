@@ -4,37 +4,37 @@
 :hidden:
 
 install
-run-single-charm
 run-charm-list
-swap-ops-branch
-swap-other-dependency
+filter-a-run
+patch-ops-branch
+patch-other-dependency
 interpret-results
 compare-runs
 suppress-results
 ```
 
-Procedures for exercising hyrum against a charms directory: installing the tool and its host prerequisites, scoping a run from a single charm up to a full fleet, swapping a dependency to a development branch or alternative source, and triaging the results table to decide what action to take.
+Procedures for exercising hyrum against a charms directory: installing the tool and its host prerequisites, running the full fleet and narrowing it to the charms you care about, patching a dependency to a development branch or alternative source, and triaging the results table to decide what action to take.
 
 ## Running hyrum
 <!--
 Themes: installation, charm selection, fleet execution, dependency patching
-Justification: shared concern — preparing and launching a run against the charms directory, from one charm to the full fleet with optional dependency swaps
+Justification: shared concern — preparing and launching a run against the charms directory, from one charm to the full fleet with optional dependency patches
 User journey context: initial setup, run configuration, execution
 -->
 
 **[Install hyrum](install)**
 : Install hyrum from PyPI with uv, plus the host build packages needed for a clean fleet signal.
 
-**[Run against a single charm](run-single-charm)**
-: Use `--repo` or `--limit` to target one repository for a quick check.
-
 **[Run against the charm list](run-charm-list)**
 : Use `hyrum get-charms` to populate the charms directory, then run across many charms.
 
-**[Swap ops to a development branch](swap-ops-branch)**
+**[Filter a run](filter-a-run)**
+: Use `--repo`, `--framework`, or `--limit` to narrow a run to one charm or a subset of the fleet.
+
+**[Patch ops to a development branch](patch-ops-branch)**
 : Use `--patch` to test a pre-release `ops` against your charm fleet.
 
-**[Swap a non-ops dependency](swap-other-dependency)**
+**[Patch a non-ops dependency](patch-other-dependency)**
 : Use `--patch` to point any other package at a PyPI pin, a git source, or a local checkout.
 
 ## Reading and curating results

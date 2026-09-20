@@ -79,18 +79,18 @@ hyrum check [OPTIONS] TARGET
 ### Dependency patching
 
 `--no-patch`
-: Skip the dependency-swap step entirely. Run charms against whatever dependencies they already pin. Mutually exclusive with `--patch`.
+: Skip the patching step entirely. Run charms against whatever dependencies they already pin. Mutually exclusive with `--patch`.
 : Default: off (the default `--patch` of `ops @ canonical:main` applies)
 
 `--patch SPEC`
-: Swap a dependency. `SPEC` is a PEP 508 requirement. May be given multiple times (once per package). If `--patch` is not given (and `--no-patch` is not set), hyrum applies the default `ops @ canonical:main`. Accepted forms:
+: Patch a dependency. `SPEC` is a PEP 508 requirement. May be given multiple times (once per package). If `--patch` is not given (and `--no-patch` is not set), hyrum applies the default `ops @ canonical:main`. Accepted forms:
 : - `<name>==<version>` (or any PEP 440 specifier) — pin to a PyPI version, for example `ops==2.17.0`, `requests>=1.2,<2`.
 : - `<name> @ git+<url>[@<ref>][#subdirectory=<sub>]` — explicit PEP 508 git source. `<ref>` is any git ref (branch, tag, commit SHA).
 : - `<name> @ <url>[@<ref>]` — bare `https://…` URL with optional `@ref`.
 : - `<name> @ file://<path>`, or a bare path (`/abs`, `./rel`, `~/checkout`) — a local checkout.
 : - `ops @ <owner>:<branch>` — GitHub shorthand for `ops`; expands to `https://github.com/<owner>/operator` at that branch.
 : - `charmlibs-<name> @ <owner>:<branch>` — GitHub shorthand for a charm library; expands to `https://github.com/<owner>/charmlibs` at that branch, with the subdirectory taken from the package name verbatim. Type the separators the way the directory exists in the monorepo (for example, `charmlibs-nginx_k8s`, `charmlibs-interfaces-k8s-service`). Charmlibs packages must be patched from a git source: a version pin or a local path is rejected.
-: - `charms.<author>.v<n>.<lib> -> <spec>` — swap a vendored charm library for a package. The left side is the dotted import path of the vendored `lib/charms/<author>/v<n>/<lib>.py` file; `<spec>` is any of the forms above for the replacement package, for example `charms.operator_libs_linux.v0.apt -> charmlibs-apt==1.0.0`.
+: - `charms.<author>.v<n>.<lib> -> <spec>` — patch a vendored charm library to a package. The left side is the dotted import path of the vendored `lib/charms/<author>/v<n>/<lib>.py` file; `<spec>` is any of the forms above for the replacement package, for example `charms.operator_libs_linux.v0.apt -> charmlibs-apt==1.0.0`.
 : The `owner:branch` shorthand is only accepted for `ops` and `charmlibs-*` packages. Any other package needs an explicit `git+<url>` or bare `https://…` URL.
 : When the patched package is `ops`, hyrum also rewrites the `ops[testing]` and `ops[tracing]` companion packages from matching subdirectories of the operator monorepo.
 : Extras written into `SPEC` are not honoured: the patcher preserves whatever extras the charm itself declares.
@@ -315,13 +315,13 @@ Exits `0` whatever the run contained: `show` displays a run, it does not gate on
 # Populate the default charms directory from the bundled CSV:
 hyrum get-charms
 
-# Run tox -e unit with ops swapped to a dev branch, 8 workers:
+# Run tox -e unit with ops patched to a dev branch, 8 workers:
 hyrum check unit --patch 'ops @ canonical:fix/my-change' --workers 8
 
 # Pin ops to a specific PyPI release across the fleet:
 hyrum check unit --patch 'ops==2.17.0'
 
-# Swap a non-ops dependency from a git fork:
+# Patch a non-ops dependency from a git fork:
 hyrum check unit --patch 'requests @ git+https://github.com/psf/requests@main'
 
 # Point a charm library at a branch of canonical/charmlibs:

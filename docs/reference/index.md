@@ -23,7 +23,7 @@ Technical specifications for hyrum's command-line surface, the `hyrum.toml` conf
 : Outcome statuses, summary table format, verbose output, and log file format.
 
 **[Supported charms](supported-charms)**
-: The dependency declarations, swap subjects, testing frameworks, and runner backends hyrum supports.
+: The dependency declarations, patch subjects, testing frameworks, and runner backends hyrum supports.
 
 **[Charm discovery and filtering](charm-discovery)**
 : The repository layouts hyrum recognises and the order its skip filters are applied in.
