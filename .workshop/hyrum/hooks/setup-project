@@ -1,8 +1,21 @@
+# uv hardlinks by default, which fails across the workshop mount boundary, and
+# the default `.venv` would clash with the host's in the mounted project
+# directory. Workshop's SDK guidance is ~/.profile for the workshop user's own
+# variables; this hook runs uv itself, so it needs them in scope as well.
+export UV_LINK_MODE=copy
+export UV_PROJECT_ENVIRONMENT=/home/workshop/.venv-hyrum
+cat <<EOF >> ~/.profile
+
+export UV_LINK_MODE=$UV_LINK_MODE
+export UV_PROJECT_ENVIRONMENT=$UV_PROJECT_ENVIRONMENT
+EOF
+
 # Install hyrum's own development dependencies.
 uv sync --all-groups
 
 # The runner backends hyrum invokes in each charm, and the build tool that a
 # handful of charms' tox environments call. `make` comes from build-essential
-# in setup-base; neither of these is a dependency of hyrum itself.
+# in setup-base; neither of these is a dependency of hyrum itself. Both land in
+# ~/.local/bin, which Ubuntu's own ~/.profile already adds to PATH.
 uv tool install tox
 uv tool install poetry

@@ -15,12 +15,3 @@ apt-get install -yqq \
     libpq-dev \
     pkg-config \
     python3-dev
-
-# uv hardlinks by default, which fails across the workshop mount boundary.
-echo UV_LINK_MODE=copy >> /etc/environment
-# Avoid clashes with the host's .venv in the mounted project directory.
-echo UV_PROJECT_ENVIRONMENT=/home/workshop/.venv-hyrum >> /etc/environment
-# `uv tool install` drops binaries in the user's ~/.local/bin, which isn't on
-# the default PATH for non-interactive commands. Ubuntu's default PATH, plus
-# that directory.
-echo 'PATH=/home/workshop/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' >> /etc/environment
