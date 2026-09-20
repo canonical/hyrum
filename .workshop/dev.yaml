@@ -7,4 +7,4 @@ actions:
   format: make format
   lint: make lint ARGS="$*"
   unit: make unit ARGS="$*"
-  hyrum: sudo -u hyrum-check env PATH="$PATH" /opt/hyrum/venv/bin/hyrum "$@"
+  hyrum: sudo -u hyrum-check env PATH="$PATH" sh -c 'umask 002; exec /opt/hyrum/venv/bin/hyrum "$@"' hyrum "$@"
