@@ -52,7 +52,7 @@ workshop launch dev
 workshop run dev all
 ```
 
-The actions mirror the `make` targets: `all`, `format`, `lint`, and `unit`. `lint` and `unit` pass any extra arguments through, so `workshop run dev unit -k test_pool` does what `make unit ARGS='-k test_pool'` does.
+The actions mirror the `make` targets: `all`, `format`, `lint`, and `unit`. `unit` passes any extra arguments through to `pytest`, so `workshop run dev unit -k test_pool` does what `make unit ARGS='-k test_pool'` does; `lint` forwards them to `pyright` alone, with `ruff` and `codespell` running over everything first either way. An argument containing whitespace won't survive: the `make` recipes expand `$(ARGS)` unquoted, so `-k 'test_pool and not slow'` reaches `pytest` as four arguments whether you go through the workshop or run `make` yourself.
 
 The `hyrum` action runs the CLI itself. This is the safer way to run `hyrum check`, because the check executes each charm's test suite - arbitrary third-party code - and the workshop runs it in the container, as a separate `hyrum-check` user. Workshop mounts the project directory into the container read-write, so code running as the `workshop` user could write to your hyrum checkout on the host; `hyrum-check` can read the checkout but not modify it, and has no access to the host at all beyond that:
 
