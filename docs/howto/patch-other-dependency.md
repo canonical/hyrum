@@ -132,4 +132,4 @@ The generic dependency patcher behaves like the ops-source patcher except that t
 - `pyproject.toml` under `[project.dependencies]`, `[project.optional-dependencies]`, `[dependency-groups]` (PEP 735), `[tool.poetry.dependencies]`, and `[tool.uv.sources]`
 - The corresponding lockfile (`poetry.lock` or `uv.lock`) is regenerated when present
 
-Charms whose declarations cannot be parsed are reported as `patcher_error` rather than `failed`, so an infrastructure problem is not mis-attributed to a charm regression. Charms that do not declare the package at all are reported as `skipped`, since there was nothing to patch. See [How to interpret results](interpret-results).
+Charms whose declarations cannot be parsed are reported as `patcher_error` rather than `failed`, so an infrastructure problem is not mis-attributed to a charm regression. Charms that do not declare the package at all are reported as `skipped`, since there was nothing to patch. See [How to triage a run](triage-a-run).

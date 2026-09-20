@@ -143,6 +143,6 @@ After the run you will find files like `~/hyrum-logs/charm-apt-mirror.log` conta
 
 - [How to run hyrum against the full charm list](../howto/run-charm-list)
 - [How to patch ops to a development branch](../howto/patch-ops-branch)
-- [How to interpret the results](../howto/interpret-results)
+- [How to triage a run](../howto/triage-a-run)
 - [How to compare two runs](../howto/compare-runs)
 - [CLI reference](../reference/cli)
