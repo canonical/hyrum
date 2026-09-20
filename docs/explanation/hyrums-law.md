@@ -18,6 +18,8 @@ Once a library has enough consumers, *any* observable behaviour will be relied o
 
 The `ops` library (from `canonical/operator`) is the foundation for all Juju charms written in Python. It has a large and diverse set of consumers, each with its own test suite. When the ops team changes a behaviour (a method signature, an exception type, a hook-dispatch order, an internal class that leaked into the public namespace), they cannot reliably predict which charms will break by reading the source code alone. Consumer code evolves independently and may depend on behaviour that was never part of the public API.
 
+Charm libraries make the same problem worse. Traditionally a charm library is *vendored*: charmcraft fetches a single-file copy into `lib/charms/<author>/v<n>/<lib>.py`, so every consumer holds its own copy, at whatever version it last fetched, which is precisely the situation in which a behaviour change is hard to assess.
+
 ## What hyrum does
 
 Hyrum automates the process of finding breakages before shipping a change. Given:
@@ -36,19 +38,6 @@ The result is a compatibility matrix: *this proposed change breaks N charms, her
 - It does not run integration tests, only lint and unit tests, which run without a live Juju model.
 - It does not guarantee that passing tests mean the charm works correctly under the new `ops`. Tests only cover what they cover.
 
-## The baseline comparison pattern
+## Why a single run is not enough
 
-Because some charms have pre-existing test failures unrelated to any change, a bare "N charms failed" number is often misleading. The useful signal is the *delta* between a baseline run (no dependency swap) and a patched run (with the proposed change applied):
-
-```text
-# Baseline: how many charms fail on their own pinned deps:
-hyrum check unit --no-patch --save baseline.json
-
-# Patched: how many fail with the proposed change:
-hyrum check unit --patch 'ops @ canonical:fix/my-change' --save patched.json
-
-# The delta:
-hyrum compare baseline.json patched.json
-```
-
-Charms that appear as `failed` in the patched run but not in the baseline are the set of regressions introduced by the change. `hyrum compare` reports exactly that set, alongside the charms the change fixed.
+Some charms have pre-existing test failures that have nothing to do with the change under test, so a bare "N charms failed" number is often misleading. The useful signal is the *delta* between a baseline run and a patched one — see [How to compare two runs](../howto/compare-runs).

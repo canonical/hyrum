@@ -56,11 +56,11 @@ Task-focused guides: install, filter runs, swap a dependency, and triage results
 :::
 
 :::{grid-item-card} [Reference](reference/index)
-CLI options, `hyrum.toml` configuration, and output-status reference.
+CLI options, `hyrum.toml` configuration, output statuses, and what hyrum supports.
 :::
 
 :::{grid-item-card} [Explanation](explanation/index)
-Background on Hyrum's Law, design decisions, and the relationship to charm tooling.
+Background on Hyrum's Law and the design decisions behind hyrum.
 :::
 
 ::::

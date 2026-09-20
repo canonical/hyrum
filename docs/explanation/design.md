@@ -25,41 +25,6 @@ The pool is a simple queue-based design:
 
 The pool deliberately does not use `asyncio.Semaphore` or structured concurrency beyond `asyncio.gather` on the consumer tasks. The queue approach means each worker is idle for at most one charm at a time and work is distributed evenly as workers complete.
 
-## The Patcher protocol
-
-The `Patcher` protocol is narrow:
-
-```python
-class Patcher(Protocol):
-    def apply(self, repo: Path) -> AbstractContextManager[None]: ...
-```
-
-Any object with an `apply` method that returns a context manager satisfies the protocol. That narrowness is what let the patcher set grow without touching the pool or runner layers: the ops-source patcher was joined by a generic single-dependency patcher, a charmlibs patcher that repoints a `charmlibs-*` dependency at a branch of the monorepo, and a vendored-library patcher that deletes a `lib/charms/<author>/v<n>/<lib>.py` file, adds the equivalent package, and rewrites the charm's imports.
-
-`PatcherStack` composes multiple patchers and unwinds them in reverse order on exit, behaving like nested context managers.
-
-`NullPatcher` does nothing. It is used when `--no-patch` is set.
-
-### Skips versus errors
-
-Patchers signal two different kinds of "this did not happen": `PatcherError`, meaning the swap should have applied but could not, and `PatcherSkip`, meaning there was nothing to swap. The second is not a failure — a charm that never depended on the library you are testing tells you nothing about your change, and reporting it as an error would inflate the numbers exactly where the fleet is largest. Skips carry a machine-readable reason, so the tally can separate the ordinary cases (`dep_not_declared`, `vendored_lib_absent`) from the one that deserves attention (`malformed_pyproject`).
-
-## The Runner protocol
-
-```python
-class Runner(Protocol):
-    name: str
-
-    @classmethod
-    def detect(cls, repo: Path) -> bool: ...
-
-    async def run(self, repo: Path, target: str) -> RunResult: ...
-```
-
-`detect` returns `True` if the runner believes it can run in the given repo (for example, `ToxRunner.detect` checks for `tox.ini`). `runners.auto()` calls each runner's `detect` to select the right one per charm.
-
-`RunResult` is a frozen dataclass carrying the repo path, runner name, target name, status, return code, duration, and captured stdout/stderr. The stdout and stderr are preserved in memory for the duration of the run so they can be written to `--log-dir` immediately after.
-
 ## Outcome statuses and attribution
 
 `pool.Outcome` normalises across three paths through the pool:
@@ -76,22 +41,9 @@ The same reasoning motivates the preflight that runs before the pool starts. An 
 
 Each non-passing outcome also carries a one-line `summary`, extracted heuristically from the runner's output: a pytest tally, an exception class, a missing build tool, a resolver error. It exists so that a comparison table is readable without opening the log files — the shape of a failure is usually enough to tell a genuine regression from host noise.
 
-## Charm discovery and filtering
+## Skips versus errors
 
-Charm discovery handles three layouts:
-
-- **Flat**: one charm per top-level directory (has `charmcraft.yaml` or `metadata.yaml`).
-- **Bundle**: a `bundle.yaml` directory; charms are in `charms/` subdirectories.
-- **Monorepo**: a directory containing charm subdirectories, heuristically detected.
-
-Filters are applied as a chain. Each filter either returns `None` (passes) or a skip reason string. The chain short-circuits on the first reason:
-
-1. `not_legacy`: skip reactive/hooks-based charms (`hooks/`, or `src/reactive/` with `src/layer.yaml`).
-2. `has_python`: skip charms with no Python source.
-3. `regex_filter`: skip charms not matching `--repo`.
-4. `ignore_filter`: skip charms listed in `hyrum.toml [ignore]`.
-5. `has_runnable_target`: skip charms with neither `tox.ini` nor `Makefile`.
-6. Framework filter (if `--framework` is set).
+Patchers signal two different kinds of "this did not happen": `PatcherError`, meaning the swap should have applied but could not, and `PatcherSkip`, meaning there was nothing to swap. The second is not a failure — a charm that never depended on the library you are testing tells you nothing about your change, and reporting it as an error would inflate the numbers exactly where the fleet is largest. Skips carry a machine-readable reason, so the tally can separate the ordinary cases (`dep_not_declared`, `vendored_lib_absent`) from the one that deserves attention (`malformed_pyproject`).
 
 ## Signal vs noise
 
