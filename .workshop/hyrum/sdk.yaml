@@ -5,7 +5,12 @@ summary: Development tools for hyrum, and the build tools the charms it checks n
 plugs:
   # hyrum's charm checkouts and saved results. They live on a mount so that
   # cloning the curated charm list survives `workshop refresh`, and so that the
-  # cache can be pointed at a host directory with `workshop remount`.
+  # cache can be pointed at a host directory with `workshop remount`. The owner
+  # is the `hyrum-check` user setup-base creates, because that is who runs the
+  # checks; 0755 lets the workshop user read the saved results.
   cache:
     interface: mount
-    workshop-target: /home/workshop/.cache/hyrum
+    workshop-target: /home/hyrum-check/.cache/hyrum
+    uid: 1500
+    gid: 1500
+    mode: 0o755
