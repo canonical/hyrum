@@ -71,8 +71,16 @@ MALFORMED_SITES: dict[str, dict[str, Any]] = {
     'poetry-dependencies': {'tool': {'poetry': {'dependencies': ['ops']}}},
     'poetry-dev-dependencies': {'tool': {'poetry': {'dev-dependencies': ['ops']}}},
     'poetry-group': {'tool': {'poetry': {'group': {'unit': {'dependencies': ['ops']}}}}},
-    'dependency-groups-not-a-table': {'dependency-groups': ['ops']},
-    'dependency-group-not-an-array': {'dependency-groups': {'unit': {'ops': '*'}}},
+    'pep621-dependencies-not-an-array': {'project': {'dependencies': {'ops': '>=2'}}},
+    # The quiet one: a string is iterable, so without a guard this is read
+    # character by character and the charm is checked unpatched.
+    'pep621-dependencies-a-string': {'project': {'dependencies': 'ops>=2'}},
+    'pep621-optional-dependencies-not-a-table': {'project': {'optional-dependencies': ['ops>=2']}},
+    'pep621-optional-dependency-group-not-an-array': {
+        'project': {'optional-dependencies': {'dev': 'ops>=2'}}
+    },
+    'pep735-dependency-groups-not-a-table': {'dependency-groups': ['ops']},
+    'pep735-dependency-group-not-an-array': {'dependency-groups': {'unit': {'ops': '*'}}},
 }
 
 
