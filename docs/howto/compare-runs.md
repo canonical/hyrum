@@ -59,7 +59,7 @@ path = "~/hyrum-runs"
 Baseline: baseline.json — saved 2026-07-28T08:47:45Z, target unit, patch none
 Current: patched.json — saved 2026-07-28T09:31:02Z, target unit, patch ops @ canonical:fix/my-change
 
-Pass rate: 64% (was 67%) delta -3% (4 new failures, 1 resolved)
+Pass rate: 64.0% (was 67.0%) delta -3.0 pts (4 new failures, 1 resolved)
 
 NEW FAILURES
 

@@ -41,6 +41,12 @@ hyrum check unit --no-patch
 # Diff the last two runs to see what the patch changed:
 hyrum compare ~/.cache/hyrum/results/unit.auto.prev.json \
               ~/.cache/hyrum/results/unit.auto.json
+
+# Print a saved run again, without rerunning it:
+hyrum show ~/.cache/hyrum/results/unit.auto.json
+
+# Remove the build artefacts the runs left behind, keeping the checkouts:
+hyrum clean
 ```
 
 ## In this documentation
@@ -52,7 +58,7 @@ A hands-on walkthrough: populate a charms directory, run hyrum, and read the rep
 :::
 
 :::{grid-item-card} [How-to guides](howto/index)
-Task-focused guides: install, filter runs, patch a dependency, and triage results.
+Task-focused guides: install, filter runs, patch a dependency, triage results, and reclaim disk space.
 :::
 
 :::{grid-item-card} [Reference](reference/index)

@@ -213,9 +213,10 @@ Charms are matched by their path relative to the charms directory, so two runs f
 : Exit non-zero if there are any new failures or new errors relative to the baseline.
 : Default: `--no-fail-on-regression`
 
-`--format {text,markdown}`
+`--format {text,markdown,json}`
 : `text`: the colourised status-level summary, preceded by a line of metadata for each run.
 : `markdown`: a document with a pass-rate paragraph, a list per change category, and a table with one row per non-passing charm, including each run's failure summary. Suitable for pasting into an issue or pull request.
+: `json`: the same diff as a machine-readable object, carrying both runs' metadata, the per-category charm lists, and the pass-rate counts. Versioned separately from the saved-results format. See [Output reference](output).
 : Default: `text`
 
 ## `hyrum get-charms`

@@ -23,6 +23,14 @@ hyrum check unit --patch 'ops @ canonical:fix/my-change' --workers 8
 
 # Run without patching any dependency:
 hyrum check unit --no-patch
+
+# Diff the last two runs, or print one of them again:
+hyrum compare ~/.cache/hyrum/results/unit.auto.prev.json \
+              ~/.cache/hyrum/results/unit.auto.json
+hyrum show ~/.cache/hyrum/results/unit.auto.json
+
+# Reclaim the disk the runs used, keeping the checkouts:
+hyrum clean
 ```
 
 ## Documentation

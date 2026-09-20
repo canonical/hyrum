@@ -71,15 +71,15 @@ You should see output similar to this:
 
 ```text
 hyrum: unit
-STATUS         COUNT     %
-passed             1  100%
-failed             0    0%
-no_target          0    0%
-timeout            0    0%
-runner_error       0    0%
-patcher_error      0    0%
-skipped            0    0%
-1 of 1 runs passed (100%); 0 not run.
+STATUS         COUNT  % OF ALL  % OF RUNS
+passed             1      100%       100%
+failed             0        0%         0%
+no_target          0        0%          —
+timeout            0        0%         0%
+runner_error       0        0%          —
+patcher_error      0        0%          —
+skipped            0        0%          —
+1 of 1 runs passed (100% of runs); 0 not run.
 ```
 
 The summary table is not the only thing that run produced. Hyrum saves the outcomes to a JSON file whether or not you ask it to, under `~/.cache/hyrum/results`, named after the target — so that run wrote `unit.auto.json`. Nothing on screen mentions it, so it is worth knowing it is there: it is what [`hyrum compare`](../howto/compare-runs) reads, and it means you can compare against a run you did not plan ahead for. `--save PATH` writes somewhere specific instead, `--auto-save DIR` moves the rolling pair, and `--no-save` turns saving off. Per-charm runner output is separate and is *not* kept by default — see [Save per-charm logs](#save-per-charm-logs) below.
@@ -146,4 +146,5 @@ After the run you will find files like `~/hyrum-logs/charm-apt-mirror.log` conta
 - [How to patch ops to a development branch](../howto/patch-ops-branch)
 - [How to triage a run](../howto/triage-a-run)
 - [How to compare two runs](../howto/compare-runs)
+- [How to reclaim disk space](../howto/reclaim-disk-space)
 - [CLI reference](../reference/cli)

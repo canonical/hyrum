@@ -30,6 +30,37 @@ cat logs/charm-apt-mirror.log
 
 The log file starts with a metadata header (`=== meta ===`) followed by `=== stdout ===` and `=== stderr ===` sections.
 
+## Re-read a run you already have
+
+The summary scrolls past, but the run itself is on disk: every run saves its outcomes, by default as a rolling pair in `~/.cache/hyrum/results`. `hyrum show` prints a saved run's metadata and the same table `check` printed at the end of it, without running anything:
+
+```text
+hyrum show ~/.cache/hyrum/results/unit.auto.json
+```
+
+```text
+~/.cache/hyrum/results/unit.auto.json — saved 2026-07-28T08:47:35Z, target unit, patch ops @ canonical:main
+hyrum: unit
+STATUS              COUNT  % OF ALL  % OF RUNS
+passed                 42       70%        88%
+failed                  5        8%        10%
+...
+```
+
+`--verbose` adds the same offender list to a saved run that it adds to a live one, which is the quickest way to get the list of charms to look at from a run that has already finished:
+
+```text
+hyrum show ~/.cache/hyrum/results/unit.auto.json --verbose
+```
+
+`--format markdown` renders the table for pasting into an issue, and `--format json` prints the outcomes as a machine-readable object if you want to filter them with a script:
+
+```text
+hyrum show unit.auto.json --format json | jq -r '.outcomes[] | select(.status == "failed") | .repo'
+```
+
+`show` never gates: it exits `0` whatever the run contained. Use [`hyrum compare --fail-on-regression`](compare-runs) for that.
+
 ## Distinguishing signal from noise
 
 Not every `failed` result is caused by the change you are testing. Common sources of noise:

@@ -15,10 +15,12 @@ Each charm produces exactly one outcome. The possible statuses are:
 | `passed`        | The runner exited 0. |
 | `failed`        | The runner exited non-zero. |
 | `no_target`     | The requested tox environment or make target does not exist in this charm. Not counted as a failure. |
-| `timeout`       | The runner was killed after `--timeout` seconds. |
-| `runner_error`  | The runner itself could not be launched — for example, `make` is not installed. This is a host problem, not a charm result. |
-| `patcher_error` | The patch could not be applied. This is distinct from a runner failure: it points to an infrastructure problem, not a charm test failure. |
+| `timeout`       | The runner was killed after `--timeout` seconds (default: 1800). The charm may have a very slow test suite, or it may be hanging. |
+| `runner_error`  | The runner itself could not be launched — for example, `make` is not installed. This is a host problem, not a charm result. `--preflight` (on by default) catches a missing runner before the run starts, so this status usually means the executable disappeared mid-run or is not executable. |
+| `patcher_error` | The patch could not be applied — for example, the charm's `pyproject.toml` could not be parsed, or `poetry lock` failed unrecoverably. This is distinct from a runner failure: it points to an infrastructure problem, not a charm test failure. |
 | `skipped`       | Excluded before the run began (by `--repo`, `--framework`, `[ignore]` in `hyrum.toml`, no Python source, a legacy reactive/hooks layout, or no `tox.ini`/`Makefile`), or skipped by a patcher that had nothing to do. |
+
+A non-passing status says what happened, not what to do about it. See [How to triage a run](../howto/triage-a-run) for getting at the detail behind a result with `--verbose` and `--log-dir`.
 
 (patcher-skip-reasons)=
 ### Patcher skip reasons
@@ -38,20 +40,20 @@ After all charms have been processed, hyrum prints a plain-text tally. Columns a
 
 ```text
 hyrum: unit
-STATUS              COUNT     %
-passed                 42   70%
-failed                  5    8%
-no_target               3    5%
-timeout                 1    2%
-runner_error            0    0%
-patcher_error           2    3%
-skipped                 7   12%
-  dep_not_declared      4    7%
-  no_pyproject          2    3%
-42 of 48 runs passed (88%); 12 not run (7 skipped, 3 no_target, 2 patcher_error).
+STATUS              COUNT  % OF ALL  % OF RUNS
+passed                 42       70%        88%
+failed                  5        8%        10%
+no_target               3        5%          —
+timeout                 1        2%         2%
+runner_error            0        0%          —
+patcher_error           2        3%          —
+skipped                 7       12%          —
+  dep_not_declared      4        7%          —
+  no_pyproject          2        3%          —
+42 of 48 runs passed (88% of runs); 12 not run (7 skipped, 3 no_target, 2 patcher_error).
 ```
 
-The `%` column uses the total number of charms (including skipped) as the denominator. The summary line below the table reports the pass rate over charms that were actually run: `passed`, `failed`, and `timeout`. Everything else is counted as not run, broken down by status in the parenthesis.
+The table carries two denominators, so that a fleet where most charms are skipped cannot make a healthy pass rate look like a terrible one. `% OF ALL` is the share of every charm considered, including skipped ones. `% OF RUNS` is the share of the charms that actually ran — `passed`, `failed`, and `timeout` — and reads `—` for the statuses that never run, since a percentage of runs is meaningless for them. The summary line below the table uses the same runs denominator, and breaks the rest down by status in the parenthesis.
 
 Indented rows under `skipped` break the skips down by [patcher skip reason](#patcher-skip-reasons). Skips from the up-front filters (`--repo`, `[ignore]`, and so on) have no category and appear only in the `skipped` total.
 
@@ -185,7 +187,7 @@ The file is written to a temporary name and then renamed, so an interrupted save
 Baseline: baseline.json — saved 2026-07-28T08:47:45Z, target unit, patch none
 Current: current.json — saved 2026-07-28T08:47:45Z, target unit, patch ops @ https://github.com/canonical/operator@main
 
-Pass rate: 67% (was 67%) delta +0% (1 new failure, 1 resolved)
+Pass rate: 67.0% (was 67.0%) delta +0.0 pts (1 new failure, 1 resolved)
 
 NEW FAILURES
 
@@ -214,7 +216,7 @@ With `--format markdown`, the same diff is rendered as a document with a pass-ra
 ```markdown
 # hyrum run comparison (unit)
 
-Baseline pass rate: **67%** (2/3). Current pass rate: **67%** (2/3). 1 new failure(s), 1 resolved, 0 new error(s).
+Baseline pass rate: **67.0%** (2/3). Current pass rate: **67.0%** (2/3). 1 new failure, 1 resolved, 0 new errors.
 
 ## New failures
 
@@ -228,6 +230,60 @@ Baseline pass rate: **67%** (2/3). Current pass rate: **67%** (2/3). 1 new failu
 
 A cell reads `_absent_` when the charm is missing from that run, and `same` when the current run's cell would be identical to the baseline's.
 
+With `--format json`, the same diff is printed as a machine-readable object, carrying both runs' metadata alongside the counts the other formats render:
+
+```json
+{
+  "version": 1,
+  "baseline": {
+    "path": "baseline.json",
+    "meta": {
+      "created_at": "2026-07-28T08:47:35Z",
+      "hyrum_version": "1.0.0b1",
+      "target": "unit",
+      "patcher": "none",
+      "charms_dir": "/home/user/.cache/hyrum/charms"
+    }
+  },
+  "current": {
+    "path": "current.json",
+    "meta": {
+      "created_at": "2026-07-28T09:31:02Z",
+      "hyrum_version": "1.0.0b1",
+      "target": "unit",
+      "patcher": "ops @ canonical:main",
+      "charms_dir": "/home/user/.cache/hyrum/charms"
+    }
+  },
+  "diff": {
+    "new_failures": ["canonical/charm-apt-mirror"],
+    "resolved": [],
+    "new_errors": [],
+    "only_in_baseline": [],
+    "only_in_current": [],
+    "common": 2,
+    "baseline_pass_rate": 0.5,
+    "current_pass_rate": 0.0,
+    "baseline_passed": 1,
+    "baseline_ran": 2,
+    "current_passed": 0,
+    "current_ran": 2,
+    "disjoint": false
+  }
+}
+```
+
+`version`
+: Schema version of this payload, independent of the saved-results `version`. It is bumped when the shape changes incompatibly, so a script can tell which contract it is reading.
+
+`only_in_baseline` / `only_in_current`
+: Charms present in one run and not the other. These are reported rather than counted as changes, and never trip `--fail-on-regression`.
+
+`disjoint`
+: True when the two runs share no charms at all, in which case the comparison carries no information and `--fail-on-regression` exits `2`.
+
+Pass rates are fractions between 0 and 1 here, rather than the rounded percentages the text and markdown formats display.
+
 ## Exit codes
 
 | Code | Condition |
@@ -238,7 +294,7 @@ A cell reads `_absent_` when the charm is missing from that run, and `same` when
 
 `no_target` and `skipped` outcomes do not affect the exit code.
 
-`hyrum compare` exits `1` if a results file cannot be read, or if `--fail-on-regression` is set and there are new failures or new errors; otherwise it exits `0`.
+`hyrum compare` exits `1` when `--fail-on-regression` is set and there are new failures or new errors. It exits `2` when a results file cannot be read, and also when `--fail-on-regression` is set over two runs with no charms in common, since the gate cannot be evaluated and exiting `0` would green-light a meaningless comparison. Otherwise it exits `0`. `hyrum show` exits `2` when it cannot read the file and `0` otherwise: it displays a run, it does not gate on one.
 
 ## Quiet mode
 
