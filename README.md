@@ -2,7 +2,7 @@
 
 > Named after [Hyrum's Law](https://www.hyrumslaw.com/): once you have enough users, every observable behaviour of your code is depended on by somebody. This tool exists to find out who that "somebody" is — by running a proposed dependency change against a fleet of consumer repositories before you ship it.
 
-Bulk-run a check (typically lint or unit tests) across many charm repositories, optionally swapping out one of their dependencies first.
+Bulk-run a check (typically lint or unit tests) across many charm repositories, optionally patching one of their dependencies first.
 
 > [!WARNING]
 > Hyrum executes third-party code on your machine. Unit tests — and, in principle, even lint hooks — run with your user's privileges: anything you can do, a test can do. Charm test suites may not mock every side effect, so a test may write or delete files anywhere your user can reach, install packages, modify `crontab`, download arbitrary content, or reach out to the network.
@@ -18,10 +18,10 @@ uv tool install --prerelease=allow hyrum
 ## Quick start
 
 ```text
-# Run tox -e unit with ops swapped to a development branch:
+# Run tox -e unit with ops patched to a development branch:
 hyrum check unit --patch 'ops @ canonical:fix/my-change' --workers 8
 
-# Run without any dependency swap:
+# Run without patching any dependency:
 hyrum check unit --no-patch
 ```
 

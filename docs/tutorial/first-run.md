@@ -129,6 +129,7 @@ hyrum compare ~/.cache/hyrum/results/unit.auto.prev.json \
 
 Nothing changed between the two runs, so hyrum reports the pass rate and `No changes between runs.` When you start patching dependencies, the same comparison is what tells you which charms your change broke.
 
+(save-per-charm-logs)=
 ## Save per-charm logs
 
 Use `--log-dir` to write each charm's runner output to a file for offline triage:
