@@ -48,10 +48,13 @@ above.
 
 ## Architecture
 
-- Entry point: `hyrum._cli:main` — an `argparse` parser with three
+- Entry point: `hyrum._cli:main` — an `argparse` parser with six
   subcommands: `check` (the core bulk-runner), `get-charms` (clones/pulls
   every repository listed in `charm-list/charms.csv` into the cache
-  folder), and `compare` (diffs two saved runs).
+  folder), `prune-charms` (removes cached checkouts by their outcome in a
+  saved run, the inverse of `get-charms`), `clean` (removes build
+  artefacts from the cache, keeping the checkouts), `compare` (diffs two
+  saved runs), and `show` (prints a saved run's status summary).
 - `results` / `compare` — run persistence and run-to-run diff. `check`
   saves outcomes as JSON (`--save` / `--auto-save`, rolling by target);
   `compare` diffs two such files as text, markdown, or JSON. Charms are
@@ -69,6 +72,11 @@ above.
   which never fires because some repo under it has charms.
 - `get_charms` — distributed cache-population subcommand: shallow-clones
   or pulls every repository in the CSV concurrently via `asyncio`.
+  `prune-charms` is its inverse and removes whole checkouts, never a charm
+  directory inside one: `enumerate.iter_charm_repos` yields charm roots,
+  and for a bundle or monorepo those live inside a clone, so deleting one
+  frees no disk and `get-charms` cannot restore it (the clone is still
+  there, so it pulls rather than re-clones).
 - `patchers/` — `Patcher` protocol, `NullPatcher`, `PatcherStack`,
   `OpsSourcePatcher`. The protocol is deliberately narrow so a future
   charm-library patcher (vendored `lib/charms/…/v<n>/<file>.py` swapped from a
