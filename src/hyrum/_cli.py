@@ -1402,8 +1402,9 @@ def _add_prune_charms_subparser(
             'Only remove charms whose saved outcome is one of these. Repeatable and '
             'comma-separated; repeats and commas union together. Accepts the outcome '
             'statuses (passed, failed, no_target, timeout, runner_error, patcher_error, '
-            'skipped) plus two groups: failing (reached the runner or the patcher and did '
-            'not come out clean) and not-passing (everything but passed). Required -- '
+            'skipped) plus the group failing (reached the runner or the patcher and did '
+            'not come out clean). The not-passing group is refused here because it '
+            'includes skipped, which means a filter passed the charm over. Required -- '
             'unlike check --from-results, there is no default here.'
         ),
     )
@@ -1647,6 +1648,21 @@ def _run_prune_charms(args: argparse.Namespace) -> int:
     _configure_logging(logging.INFO)
 
     status_tokens = [token for group in args.status for token in group]
+    # `skipped` is what a charm gets when a filter passed it over, not
+    # anything about the charm, and after `check --limit N` it is every charm
+    # past the Nth. Reaching that through a group named for quality is a way
+    # to lose most of a cache to a command you thought said "delete the
+    # rubbish", so the group keeps one meaning everywhere and the combination
+    # is refused instead.
+    if 'not-passing' in status_tokens:
+        print(
+            "hyrum: error: --status not-passing includes 'skipped', which is what a "
+            'charm gets when a filter passed it over (--repo, --framework, [ignore], '
+            'or not being reached before --limit) rather than anything about the '
+            'charm. Spell the statuses you mean, or pass --status skipped explicitly.',
+            file=sys.stderr,
+        )
+        return 2
     statuses = selection.expand_statuses(status_tokens)
     try:
         sel = selection.load_selection(args.from_results, statuses, cache=charms_dir)

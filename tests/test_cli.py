@@ -2388,18 +2388,50 @@ def test_prune_charms_disjoint_exits_2(tmp_path: pathlib.Path, capsys: pytest.Ca
     assert 'no charms in common' in capsys.readouterr().err
 
 
-def test_prune_charms_status_group_not_passing(tmp_path: pathlib.Path):
+def test_prune_charms_refuses_the_not_passing_group(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    # not-passing includes `skipped`, which is what a filter leaves behind --
+    # after `check --limit N` that is every charm past the Nth, so reaching it
+    # through a group named for quality is how you lose a cache.
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha')
+    run1 = tmp_path / 'run.json'
+    results.save([pool.Outcome(repo=cache / 'alpha', status='failed')], run1, base=cache)
+
+    rc = _run([
+        'prune-charms',
+        '--charms-dir',
+        str(cache),
+        '--from-results',
+        str(run1),
+        '--status',
+        'not-passing',
+        '--yes',
+    ])
+
+    assert rc == 2
+    assert (cache / 'alpha').exists()
+    assert "includes 'skipped'" in capsys.readouterr().err
+
+
+def test_prune_charms_takes_the_statuses_spelled_out(tmp_path: pathlib.Path):
+    # What not-passing was reached for, said explicitly: everything the run
+    # actually judged, and nothing a filter merely passed over.
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha')
     make_charm(cache / 'beta')
     make_charm(cache / 'gamma')
+    make_charm(cache / 'delta')
     run1 = tmp_path / 'run.json'
     results.save(
         [
             pool.Outcome(repo=cache / 'alpha', status='passed'),
             pool.Outcome(repo=cache / 'beta', status='failed'),
             pool.Outcome(repo=cache / 'gamma', status='no_target'),
+            pool.Outcome(repo=cache / 'delta', status='skipped'),
         ],
         run1,
         base=cache,
@@ -2412,13 +2444,16 @@ def test_prune_charms_status_group_not_passing(tmp_path: pathlib.Path):
         '--from-results',
         str(run1),
         '--status',
-        'not-passing',
+        'failed,no_target',
         '--yes',
     ])
+
     assert rc == 0
     assert (cache / 'alpha').exists()
     assert not (cache / 'beta').exists()
     assert not (cache / 'gamma').exists()
+    # Never reached by the run, so not the command's business.
+    assert (cache / 'delta').exists()
 
 
 def test_prune_charms_no_matches_exits_0(
