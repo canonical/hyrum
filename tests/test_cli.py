@@ -2617,3 +2617,37 @@ def test_prune_charms_keeps_going_past_a_removal_failure(
     assert not (cache / 'beta').exists()
     assert 'removed 1 checkout(s), 1 charm(s)' in captured.out
     assert 'alpha' in captured.err
+
+
+def test_prune_charms_removes_an_emptied_owner_directory(tmp_path: pathlib.Path):
+    # The owner directory is not a charm, nothing but get-charms re-creates
+    # it, and leaving it behind makes every later enumeration walk it.
+    cache = tmp_path / 'cache'
+    (cache / 'canonical').mkdir(parents=True)
+    make_charm(cache / 'canonical' / 'solo')
+    make_charm(cache / 'other' / 'kept')
+    run = tmp_path / 'run.json'
+    results.save(
+        [
+            pool.Outcome(repo=cache / 'canonical' / 'solo', status='failed'),
+            pool.Outcome(repo=cache / 'other' / 'kept', status='passed'),
+        ],
+        run,
+        base=cache,
+    )
+
+    rc = _run([
+        'prune-charms',
+        '--charms-dir',
+        str(cache),
+        '--from-results',
+        str(run),
+        '--status',
+        'failed',
+        '--yes',
+    ])
+
+    assert rc == 0
+    assert not (cache / 'canonical').exists()
+    # The owner that still has a charm under it is untouched.
+    assert (cache / 'other' / 'kept').exists()

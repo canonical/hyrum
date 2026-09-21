@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import csv
 import dataclasses
 import json
@@ -1756,6 +1757,13 @@ def _run_prune_charms(args: argparse.Namespace) -> int:
             continue
         removed_charms += len(charms)
         logger.info('Removed %s (%d charm(s))', identity, len(charms))
+        # The owner directory is ours too once its last checkout goes: it is
+        # not a charm, nothing re-creates it but get-charms, and leaving it
+        # makes iter_charm_repos walk an empty directory on every later run.
+        # rmdir only removes it when it is empty, so a surviving sibling
+        # keeps it.
+        with contextlib.suppress(OSError):
+            clone.parent.rmdir()
 
     removed = len(full) - len(failures)
     print(f'hyrum: removed {removed} checkout(s), {removed_charms} charm(s).')
