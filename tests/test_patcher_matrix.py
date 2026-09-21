@@ -300,29 +300,20 @@ def test_an_unknown_flavour_is_a_programming_error(patch: Any):
             patch('', 'ops', '==1.0', set(), 'unknown')
 
 
-LAYOUTS: dict[str, tuple[str, ...]] = {
-    'tox only': ('tox.ini',),
-    'Makefile only': ('Makefile',),
-    'lowercase makefile only': ('makefile',),
-    'both': ('tox.ini', 'Makefile'),
-    'neither': (),
-}
-
-
 @pytest.mark.parametrize(
-    ('layout', 'tox_detects', 'make_detects'),
+    ('files', 'tox_detects', 'make_detects'),
     [
-        ('tox only', True, False),
-        ('Makefile only', False, True),
-        ('lowercase makefile only', False, True),
-        ('both', True, True),
-        ('neither', False, False),
+        pytest.param(('tox.ini',), True, False, id='tox only'),
+        pytest.param(('Makefile',), False, True, id='Makefile only'),
+        pytest.param(('makefile',), False, True, id='lowercase makefile only'),
+        pytest.param(('tox.ini', 'Makefile'), True, True, id='both'),
+        pytest.param((), False, False, id='neither'),
     ],
 )
 def test_runner_detection_by_layout(
-    tmp_path: pathlib.Path, layout: str, tox_detects: bool, make_detects: bool
+    tmp_path: pathlib.Path, files: tuple[str, ...], tox_detects: bool, make_detects: bool
 ):
-    for name in LAYOUTS[layout]:
+    for name in files:
         (tmp_path / name).write_text('')
     assert tox.ToxRunner.detect(tmp_path) is tox_detects
     assert make_runner.MakeRunner.detect(tmp_path) is make_detects
@@ -371,8 +362,7 @@ class _Completed:
         (_Completed(0), True),
         # A lock that cannot be regenerated under the patched source must not
         # be left behind: the run would then install the charm's original
-        # pins and report on the wrong dependency. This is one of the two
-        # defects the last full-collection run turned up.
+        # pins and report on the wrong dependency.
         (_Completed(1, b'no solution found'), False),
         (subprocess.TimeoutExpired(cmd='uv', timeout=1), False),
         # A missing tool is a host problem rather than a charm one, so the
