@@ -1687,18 +1687,66 @@ def _run_prune_charms(args: argparse.Namespace) -> int:
         print('hyrum: no charms matched --from-results / --status.')
         return 0
 
-    if not args.yes:
-        print(f'Would remove {len(matched)} charm(s):')
-        for repo in sorted(matched, key=lambda r: _results._identity(r, charms_dir)):
-            print(f'  {_results._identity(repo, charms_dir)}')
+    # Delete clones, not charm directories. iter_charm_repos yields charm
+    # roots, and for a bundle or monorepo those live inside a clone: removing
+    # one frees no disk (.git is the bulk of it), leaves a working tree that
+    # differs from HEAD, and cannot be undone by get-charms, which sees the
+    # clone directory still there and fast-forwards instead of re-cloning.
+    by_clone: dict[pathlib.Path, list[pathlib.Path]] = {}
+    for repo in cached:
+        by_clone.setdefault(_clone_root(repo, charms_dir), []).append(repo)
+    matched_set = set(matched)
+
+    full, partial = [], []
+    for clone, charms in sorted(by_clone.items()):
+        hits = [c for c in charms if c in matched_set]
+        if not hits:
+            continue
+        (full if len(hits) == len(charms) else partial).append((clone, charms, hits))
+
+    for clone, charms, hits in partial:
+        # Removing the clone would take the charms that did not match with it,
+        # so leave it and say why the charm the user asked about is still here.
+        print(
+            f'hyrum: keeping {_results._identity(clone, charms_dir)}: '
+            f'{len(hits)} of {len(charms)} charms matched, and they share a checkout.'
+        )
+
+    if not full:
+        print('hyrum: no checkout matched entirely; nothing to remove.')
         return 0
 
-    for repo in matched:
-        identity = _results._identity(repo, charms_dir)
-        shutil.rmtree(repo)
-        logger.info('Removed %s', identity)
-    print(f'hyrum: removed {len(matched)} charm(s).')
+    total = sum(len(charms) for _, charms, _ in full)
+    if not args.yes:
+        print(f'Would remove {len(full)} checkout(s), {total} charm(s):')
+        for clone, charms, _ in full:
+            names = ', '.join(sorted(_results._identity(c, charms_dir) for c in charms))
+            print(f'  {_results._identity(clone, charms_dir)} ({len(charms)}): {names}')
+        return 0
+
+    for clone, charms, _ in full:
+        identity = _results._identity(clone, charms_dir)
+        shutil.rmtree(clone)
+        logger.info('Removed %s (%d charm(s))', identity, len(charms))
+    print(f'hyrum: removed {len(full)} checkout(s), {total} charm(s).')
     return 0
+
+
+def _clone_root(repo: pathlib.Path, base: pathlib.Path) -> pathlib.Path:
+    """Return the git checkout *repo* belongs to, or *repo* itself.
+
+    A single-charm repo is its own checkout; a bundle or monorepo charm is a
+    directory inside one, and it is the checkout that can be removed and
+    re-cloned.
+    """
+    for candidate in [repo, *repo.parents]:
+        if candidate == base.parent:
+            break
+        if (candidate / '.git').exists():
+            return candidate
+        if candidate == base:
+            break
+    return repo
 
 
 def _run_clean(args: argparse.Namespace) -> int:

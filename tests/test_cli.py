@@ -2449,3 +2449,90 @@ def test_prune_charms_no_matches_exits_0(
     assert (cache / 'alpha').exists()
     assert (cache / 'beta').exists()
     assert 'no charms matched' in captured.out
+
+
+def _cache_with_a_bundle(tmp_path: pathlib.Path) -> pathlib.Path:
+    """A cache holding one bundle checkout of two charms, and one solo charm."""
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    bundle = cache / 'canonical' / 'mybundle'
+    (bundle / '.git').mkdir(parents=True)
+    (bundle / '.git' / 'HEAD').write_text('ref: refs/heads/main\n')
+    (bundle / 'bundle.yaml').write_text('bundle: x\n')
+    for name in ('foo', 'bar'):
+        make_charm(bundle / 'charms' / name)
+    solo = cache / 'canonical' / 'solo'
+    make_charm(solo)
+    (solo / '.git').mkdir()
+    (solo / '.git' / 'HEAD').write_text('ref: refs/heads/main\n')
+    return cache
+
+
+def test_prune_charms_removes_the_whole_checkout_not_the_charm_directory(
+    tmp_path: pathlib.Path,
+):
+    # Removing a charm directory out of a bundle checkout frees no disk (.git
+    # is the bulk of it) and get-charms cannot undo it: the clone is still
+    # there, so it fast-forwards instead of re-cloning.
+    cache = _cache_with_a_bundle(tmp_path)
+    bundle = cache / 'canonical' / 'mybundle'
+    run = tmp_path / 'run.json'
+    results.save(
+        [
+            pool.Outcome(repo=bundle / 'charms' / 'foo', status='failed'),
+            pool.Outcome(repo=bundle / 'charms' / 'bar', status='failed'),
+        ],
+        run,
+        base=cache,
+    )
+
+    rc = _run([
+        'prune-charms',
+        '--charms-dir',
+        str(cache),
+        '--from-results',
+        str(run),
+        '--status',
+        'failed',
+        '--yes',
+    ])
+
+    assert rc == 0
+    assert not bundle.exists()
+    assert (cache / 'canonical' / 'solo').exists()
+
+
+def test_prune_charms_keeps_a_checkout_only_partly_matched(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    # Taking the clone would take `bar` with it, which the user did not ask
+    # for, so the clone stays and the output says why `foo` is still here.
+    cache = _cache_with_a_bundle(tmp_path)
+    bundle = cache / 'canonical' / 'mybundle'
+    run = tmp_path / 'run.json'
+    results.save(
+        [
+            pool.Outcome(repo=bundle / 'charms' / 'foo', status='failed'),
+            pool.Outcome(repo=bundle / 'charms' / 'bar', status='passed'),
+        ],
+        run,
+        base=cache,
+    )
+
+    rc = _run([
+        'prune-charms',
+        '--charms-dir',
+        str(cache),
+        '--from-results',
+        str(run),
+        '--status',
+        'failed',
+        '--yes',
+    ])
+
+    assert rc == 0
+    assert (bundle / 'charms' / 'foo').exists()
+    assert (bundle / 'charms' / 'bar').exists()
+    out = capsys.readouterr().out
+    assert 'keeping canonical/mybundle' in out
+    assert '1 of 2 charms matched' in out
