@@ -122,7 +122,8 @@ def test_another_package_is_not_found_at_any_site(site: str):
     ],
 )
 def test_names_match_after_canonicalisation(declared: str, looked_for: str):
-    # PEP 503 says these are one package, and charms spell it both ways.
+    # PEP 503 says these names refer to one package, and charms spell it
+    # both ways.
     poetry = {'tool': {'poetry': {'dependencies': {declared: '^1'}}}}
     pep621 = {'project': {'dependencies': [f'{declared}>=1']}}
     assert common.pkg_is_declared(poetry, looked_for)
@@ -140,10 +141,21 @@ def test_a_malformed_site_skips_the_charm(site: str):
     assert extras.value.reason is base.PatcherSkipReason.MALFORMED_PYPROJECT
 
 
-def test_an_unparseable_requirement_is_not_a_match():
+@pytest.mark.parametrize(
+    'line',
+    [
+        'this is not a requirement',
+        # Starts with the name we are looking for, so a pass here means the
+        # line was rejected as invalid rather than parsed and found not to
+        # match -- which a line not mentioning `ops` at all can't tell apart.
+        'ops this is not a requirement',
+        'ops >= >= 2',
+    ],
+)
+def test_an_unparseable_requirement_is_not_a_match(line: str):
     # A charm is free to put something in that is not PEP 508 at all; it just
     # is not the package we are looking for.
-    data = {'project': {'dependencies': ['this is not a requirement']}}
+    data = {'project': {'dependencies': [line]}}
     assert not common.pkg_is_declared(data, 'ops')
     assert common.collect_pyproject_pkg_extras(data, 'ops') == set()
 
