@@ -212,15 +212,42 @@ ORIGINALS: dict[str, str] = {
 }
 
 
+# The extras are what the first half of this module is about collecting, so
+# the rewrites that have to write them back out are worth running too. Each
+# flavour spells an extra differently, and the Poetry rewrites change shape
+# entirely to carry one.
 @pytest.mark.parametrize('flavour', sorted(ORIGINALS))
-def test_every_flavour_can_be_patched(flavour: str):
+@pytest.mark.parametrize('extras', [set(), {'testing'}], ids=['no extras', 'with extras'])
+def test_every_flavour_can_be_patched(flavour: str, extras: set[str]):
     original = ORIGINALS[flavour]
     git = common.patch_git_dep(
-        original, 'ops', 'https://example.com/operator', 'main', None, set(), flavour
+        original, 'ops', 'https://example.com/operator', 'main', None, extras, flavour
     )
-    version = common.patch_version_dep(original, 'ops', '==2.17.0', set(), flavour)
+    version = common.patch_version_dep(original, 'ops', '==2.17.0', extras, flavour)
+    path = common.patch_path_dep(original, 'ops', '/opt/operator', extras, flavour)
     assert 'https://example.com/operator' in git
     assert '2.17.0' in version
+    assert '/opt/operator' in path
+    if not extras:
+        assert '[testing]' not in git + version + path
+        return
+    if flavour == 'poetry':
+        # Poetry can't spell an extra in the string form, so every rewrite
+        # becomes an inline table.
+        assert "extras = ['testing']" in git
+        assert 'version = "==2.17.0", extras = [\'testing\']' in version
+        assert "extras = ['testing']" in path
+    else:
+        assert 'ops[testing]==2.17.0' in version
+    if flavour == 'pep621':
+        assert 'ops[testing] @ git+https://example.com/operator@main' in git
+        assert 'ops[testing] @ file:///opt/operator' in path
+    if flavour == 'uv':
+        # uv redirects the source in [tool.uv.sources] and leaves the
+        # requirement alone, so the extra stays wherever the charm already
+        # declared it rather than being written again here.
+        assert '[tool.uv.sources]' in git
+        assert '[tool.uv.sources]' in path
 
 
 def test_the_poetry_rewrite_needs_a_poetry_table():
