@@ -21,7 +21,7 @@ from collections.abc import Sequence
 
 import packaging.requirements
 
-from hyrum import _clean, _compare, _enumerate, _results, _version
+from hyrum import _clean, _compare, _enumerate, _locks, _results, _version
 from hyrum import _config as config_loader
 from hyrum import _filters as filt
 from hyrum import _frameworks as frameworks
@@ -1112,6 +1112,15 @@ def _add_check_subparser(
         ),
     )
     parser.add_argument(
+        '--no-lock',
+        action='store_true',
+        help=(
+            'Do not take a per-charm lock. Two runs sharing a charms directory then '
+            'patch the same charm at the same time, and each reports results for '
+            'whichever patch won, so only use this when nothing else is running.'
+        ),
+    )
+    parser.add_argument(
         '--no-headers',
         action='store_true',
         help='Suppress header row in the summary table.',
@@ -1300,6 +1309,15 @@ def _add_clean_subparser(
         action='store_true',
         help='Clean a directory that does not look like a charms directory.',
     )
+    parser.add_argument(
+        '--no-lock',
+        action='store_true',
+        help=(
+            "Do not take a per-charm lock before removing that charm's artefacts. "
+            'A concurrent check run then has its .tox or .venv deleted mid-run, so '
+            'only use this when nothing else is running.'
+        ),
+    )
     parser.add_argument('--quiet', action='store_true', help='Suppress non-error output.')
     parser.set_defaults(func=_run_clean)
     return parser
@@ -1485,6 +1503,7 @@ def _run_check(args: argparse.Namespace) -> int:
             workers=args.workers,
             log_dir=args.log_dir,
             log_base=charms_dir,
+            lock_root=None if args.no_lock else _locks.lock_root_for(charms_dir),
         )
     )
     pool.add_skipped(results, skipped)
@@ -1588,22 +1607,44 @@ def _run_clean(args: argparse.Namespace) -> int:
     except (FileNotFoundError, NotADirectoryError) as exc:
         sys.exit(f'hyrum: error: --charms-dir: {exc}')
 
-    removed = 0
-    reclaimed = 0
-    failed = 0
-    for artefact in artefacts:
-        relative = report.relative(artefact.path, charms_dir)
-        if args.dry_run:
-            logger.info('Would remove %s (%s)', relative, _clean.format_size(artefact.size))
-            removed += 1
-            reclaimed += artefact.size
-            continue
-        logger.debug('Removing %s (%s)', relative, _clean.format_size(artefact.size))
-        if _clean.remove(artefact):
-            removed += 1
-            reclaimed += artefact.size
-        else:
-            failed += 1
+    def dispose(batch: list[_clean.Artefact]) -> tuple[int, int, int]:
+        """Remove ``batch``, returning ``(removed, reclaimed, failed)``."""
+        removed = reclaimed = failed = 0
+        for artefact in batch:
+            relative = report.relative(artefact.path, charms_dir)
+            if args.dry_run:
+                logger.info('Would remove %s (%s)', relative, _clean.format_size(artefact.size))
+                removed += 1
+                reclaimed += artefact.size
+                continue
+            logger.debug('Removing %s (%s)', relative, _clean.format_size(artefact.size))
+            if _clean.remove(artefact):
+                removed += 1
+                reclaimed += artefact.size
+            else:
+                failed += 1
+        return removed, reclaimed, failed
+
+    # A dry run removes nothing, so it does not wait on a lock: blocking a
+    # read-only report behind a live run would be the surprising behaviour.
+    # Real removal does wait, per charm, because .tox and .venv are exactly
+    # what a concurrent run is using.
+    lock_root = None if args.no_lock or args.dry_run else _locks.lock_root_for(charms_dir)
+    groups, unowned = _clean.group_by_charm(
+        artefacts, _enumerate.iter_charm_repos(charms_dir) if lock_root is not None else ()
+    )
+    removed = reclaimed = failed = 0
+    for charm, batch in groups:
+        with _locks.charm_lock(charm, lock_root=lock_root, base=charms_dir):
+            counts = dispose(batch)
+        removed += counts[0]
+        reclaimed += counts[1]
+        failed += counts[2]
+    # Nothing owns these, so there is no lock that would mean anything.
+    counts = dispose(unowned)
+    removed += counts[0]
+    reclaimed += counts[1]
+    failed += counts[2]
 
     if not args.quiet:
         verb = 'Would reclaim' if args.dry_run else 'Reclaimed'

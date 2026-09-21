@@ -3,7 +3,6 @@ aar
 ams
 ams-load-balancer
 ams-lxd
-ams-node-controller
 anbox-cloud
 anbox-cloud-core
 anbox-cloud-dashboard
@@ -71,10 +70,8 @@ easyrsa
 elasticsearch-k8s
 etcd
 flannel
-fresh-rss
 ganglia-node
 gcp-integrator
-ghost
 giraph
 gitlab-runner
 glance
