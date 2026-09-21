@@ -59,6 +59,19 @@ DECLARATION_SITES: dict[str, dict[str, Any]] = {
             }
         }
     },
+    # A group that declares no dependencies at all is a real shape (an
+    # optional docs group, say), and the scan has to step over it rather than
+    # stop at it.
+    'poetry-group-beside-a-group-with-no-deps': {
+        'tool': {
+            'poetry': {
+                'group': {
+                    'docs': {'optional': True},
+                    'unit': {'dependencies': {'ops': {'version': '^2', 'extras': ['testing']}}},
+                }
+            }
+        }
+    },
     'pep621-dependencies': {'project': {'dependencies': ['ops[testing]>=2']}},
     'pep621-optional-dependencies': {
         'project': {'optional-dependencies': {'dev': ['ops[testing]>=2']}}
