@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import csv
 import dataclasses
 import json
@@ -30,6 +31,7 @@ from hyrum import _patchers as patchers
 from hyrum import _pool as pool
 from hyrum import _report as report
 from hyrum import _runners as runners
+from hyrum import _selection as selection
 from hyrum._runners import make_runner, tox
 
 logger = logging.getLogger('hyrum')
@@ -589,6 +591,7 @@ def _select_repos(
     repo_re: str,
     limit: int,
     framework: str | None,
+    from_results: filt.Filter | None = None,
 ) -> tuple[list[pathlib.Path], list[tuple[pathlib.Path, str]]]:
     """Return (repos to run, list of (repo, skip-reason) pairs).
 
@@ -598,6 +601,10 @@ def _select_repos(
     cap applied before filtering makes small values select nothing at all.
     Charms passed over on the way to the cap still land in ``skipped``, so
     the summary stays honest about what was looked at.
+
+    ``from_results`` (built by :func:`hyrum._selection.load_selection`) is
+    one more link in the chain, intersecting with every other filter here
+    and applied before ``limit`` like the rest of them.
     """
     chain: list[filt.Filter] = [
         filt.not_legacy,
@@ -614,6 +621,8 @@ def _select_repos(
             )
 
         chain.append(framework_filter)
+    if from_results is not None:
+        chain.append(from_results)
 
     repos: list[pathlib.Path] = []
     skipped: list[tuple[pathlib.Path, str]] = []
@@ -648,6 +657,19 @@ def _non_negative_int(value: str) -> int:
     if number < 0:
         raise argparse.ArgumentTypeError(f'{value!r} is not a non-negative integer')
     return number
+
+
+def _parse_status_arg(value: str) -> tuple[str, ...]:
+    """Parse one ``--status`` occurrence: a comma-separated list of status/group names."""
+    tokens = tuple(part.strip() for part in value.split(',') if part.strip())
+    if not tokens:
+        raise argparse.ArgumentTypeError('--status: empty value')
+    valid = selection.known_selectors()
+    for token in tokens:
+        if token not in valid:
+            choices = ', '.join(sorted(valid))
+            raise argparse.ArgumentTypeError(f'--status: {token!r} is not one of: {choices}')
+    return tokens
 
 
 def _default_charms_dir() -> pathlib.Path:
@@ -775,17 +797,34 @@ class _RollingSavePlan(_DirectorySavePlan):
 _SavePlan = _NoSavePlan | _PathSavePlan | _TimestampedSavePlan | _RollingSavePlan
 
 
+_NARROWED_ROLLING_WARNING = (
+    'hyrum: warning: this run is narrowed by --from-results, so the rolling '
+    'results it saves are not a fleet baseline: every charm it did not run is '
+    'recorded as `skipped`, and a later `hyrum compare` against it reads those '
+    'charms as never having passed.'
+)
+
+
 def _resolve_save_plan(
     *,
     no_save: bool,
     save: pathlib.Path | None,
     auto_save: pathlib.Path | None,
     save_config: config_loader.SaveConfig | None,
+    narrowed: bool = False,
 ) -> _SavePlan:
     """Fold the CLI flags and config default into a single :class:`_SavePlan`.
 
     Precedence: explicit CLI flag > config file > built-in default (auto-save
     to ``~/.cache/hyrum/results/``).
+
+    ``narrowed`` says the run only looks at some of the cache (``--from-results``).
+    Such a run must not silently become the rolling baseline the next comparison
+    trusts, because the charms it skipped are saved as `skipped` and
+    ``passed -> skipped`` is not a regression to ``compare``. So the *built-in*
+    rolling default is dropped for a narrowed run; a rolling save the user asked
+    for, by flag or by config, still happens, with a warning saying what the
+    file is and is not.
     """
     if no_save:
         return _NoSavePlan()
@@ -794,10 +833,26 @@ def _resolve_save_plan(
             return _TimestampedSavePlan(save)
         return _PathSavePlan(save)
     if auto_save is not None:
+        if narrowed:
+            print(_NARROWED_ROLLING_WARNING, file=sys.stderr)
         return _RollingSavePlan(auto_save)
     # No CLI save flag: consult the config file, else fall back to auto-save.
     if save_config is not None:
-        return _plan_from_config(save_config)
+        plan = _plan_from_config(save_config)
+        if narrowed and isinstance(plan, _RollingSavePlan):
+            print(_NARROWED_ROLLING_WARNING, file=sys.stderr)
+        return plan
+    if narrowed:
+        # The built-in default only: nobody asked for this file, so a narrowed
+        # run writes nothing rather than overwriting the fleet's baseline.
+        # `--auto-save`, `--save` or `[save]` all still do what they say.
+        print(
+            'hyrum: warning: --from-results narrows the run, so the default rolling '
+            'save is off (it would record every charm this run skipped as `skipped`, '
+            'replacing the fleet baseline). Pass --save or --auto-save to save anyway.',
+            file=sys.stderr,
+        )
+        return _NoSavePlan()
     return _RollingSavePlan(_default_auto_save_dir())
 
 
@@ -906,6 +961,32 @@ def _add_check_subparser(
         choices=list(frameworks.supported_frameworks()),
         default=None,
         help='Only run for charms using this testing framework.',
+    )
+    parser.add_argument(
+        '--from-results',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'Only run charms named in this saved results file (for example, one written '
+            'by --save/--auto-save). Always a filesystem path: no default location, run id, '
+            'or target-name lookup. Intersects with --repo, --framework and [ignore] like '
+            'every other filter, and is applied before --limit. Defaults --status to failing.'
+        ),
+    )
+    parser.add_argument(
+        '--status',
+        dest='status',
+        action='append',
+        type=_parse_status_arg,
+        default=[],
+        help=(
+            'With --from-results, only select charms whose saved outcome is one of these. '
+            'Repeatable and comma-separated; repeats and commas union together. Accepts the '
+            'outcome statuses (passed, failed, no_target, timeout, runner_error, '
+            'patcher_error, skipped) plus two groups: failing (reached the runner or the '
+            'patcher and did not come out clean) and not-passing (everything but passed). '
+            'Requires --from-results. [default with --from-results: failing]'
+        ),
     )
     parser.add_argument(
         '--workers',
@@ -1284,6 +1365,59 @@ def _add_show_subparser(
     return parser
 
 
+def _add_prune_charms_subparser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    parser = subparsers.add_parser(
+        'prune-charms',
+        help='Delete charms from the cache by their outcome in a saved run.',
+        description=(
+            'Delete charms from the charms directory whose outcome in a saved results '
+            'file matches --status. Without --yes, lists what would be removed and exits 0.'
+        ),
+    )
+    parser.add_argument(
+        '--charms-dir',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'Directory containing pre-cloned charm repositories. '
+            '[env: HYRUM_CHARMS] [default: ~/.cache/hyrum/charms]'
+        ),
+    )
+    # PATH is always a filesystem path, like `check --from-results`: no
+    # default location, run id, or target-name lookup.
+    parser.add_argument(
+        '--from-results',
+        type=pathlib.Path,
+        required=True,
+        help='Saved results file naming which charms to consider.',
+    )
+    parser.add_argument(
+        '--status',
+        dest='status',
+        action='append',
+        type=_parse_status_arg,
+        required=True,
+        help=(
+            'Only remove charms whose saved outcome is one of these. Repeatable and '
+            'comma-separated; repeats and commas union together. Accepts the outcome '
+            'statuses (passed, failed, no_target, timeout, runner_error, patcher_error, '
+            'skipped) plus the group failing (reached the runner or the patcher and did '
+            'not come out clean). The not-passing group is refused here because it '
+            'includes skipped, which means a filter passed the charm over. Required -- '
+            'unlike check --from-results, there is no default here.'
+        ),
+    )
+    parser.add_argument(
+        '--yes',
+        action='store_true',
+        help='Actually delete the matched charms. Without this, list them and exit 0.',
+    )
+    parser.set_defaults(func=_run_prune_charms)
+    return parser
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     description = 'Bulk-run a check across many charm repositories with a dependency swapped out.'
     parser = argparse.ArgumentParser(prog='hyrum', description=description)
@@ -1293,6 +1427,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     _add_clean_subparser(subparsers)
     _add_compare_subparser(subparsers)
     _add_get_charms_subparser(subparsers)
+    _add_prune_charms_subparser(subparsers)
     _add_show_subparser(subparsers)
     return parser
 
@@ -1312,6 +1447,7 @@ def _run_check(args: argparse.Namespace) -> int:
         save=args.save_path,
         auto_save=auto_save_dir,
         save_config=cfg.save,
+        narrowed=args.from_results is not None,
     )
     # Reject an unusable save target now, not after a multi-hour run.
     if not save_plan.validate():
@@ -1321,14 +1457,55 @@ def _run_check(args: argparse.Namespace) -> int:
     if args.host_env_defaults:
         _apply_host_env_defaults(args.target)
 
+    status_tokens = [token for group in args.status for token in group]
+    if status_tokens and args.from_results is None:
+        # Exit 2 rather than 1: this is bad input, like a malformed
+        # --from-results file, and `hyrum compare` already spells that 2.
+        print('hyrum: error: --status requires --from-results', file=sys.stderr)
+        return 2
+    from_results: selection.Selection | None = None
+    if args.from_results is not None:
+        statuses = selection.expand_statuses(status_tokens or ['failing'])
+        try:
+            from_results = selection.load_selection(args.from_results, statuses, cache=charms_dir)
+        except ValueError as exc:
+            print(f'hyrum: error: {exc}', file=sys.stderr)
+            return 2
+
     repos, skipped = _select_repos(
         charms_dir,
         config=cfg,
         repo_re=args.repo,
         limit=args.limit,
         framework=args.framework,
+        from_results=from_results.filter if from_results is not None else None,
     )
     logger.info('Selected %d charm(s); skipping %d up-front.', len(repos), len(skipped))
+
+    if from_results is not None:
+        missing = selection.unmatched(
+            from_results, [*repos, *(repo for repo, _ in skipped)], base=charms_dir
+        )
+        if missing:
+            logger.info(
+                '%d charm(s) named in %s are not present in %s '
+                '(not cloned; see `hyrum get-charms`).',
+                len(missing),
+                args.from_results,
+                charms_dir,
+            )
+        if not repos:
+            # Every way of selecting nothing lands here: a file naming charms
+            # this cache doesn't have, a file with no charm in a wanted status,
+            # an empty file. Running zero charms would otherwise be reported as
+            # a clean run.
+            print(
+                f'hyrum: error: no charm in {charms_dir} matched --from-results '
+                f'{args.from_results} with --status '
+                f'{", ".join(sorted(from_results.statuses))}; nothing to run.',
+                file=sys.stderr,
+            )
+            return 2
 
     if args.no_patch and args.patches:
         raise SystemExit('--no-patch is mutually exclusive with --patch')
@@ -1462,6 +1639,159 @@ def _run_get_charms(args: argparse.Namespace) -> int:
         return 0
     asyncio.run(get_charms.process_rows(rows, dest, workers=args.workers, timeout=args.timeout))
     return 0
+
+
+def _run_prune_charms(args: argparse.Namespace) -> int:
+    charms_dir: pathlib.Path = args.charms_dir or _default_charms_dir()
+    if not charms_dir.is_dir():
+        sys.exit(f'hyrum: error: --charms-dir: {charms_dir} is not a directory.')
+
+    _configure_logging(logging.INFO)
+
+    status_tokens = [token for group in args.status for token in group]
+    # `skipped` is what a charm gets when a filter passed it over, not
+    # anything about the charm, and after `check --limit N` it is every charm
+    # past the Nth. Reaching that through a group named for quality is a way
+    # to lose most of a cache to a command you thought said "delete the
+    # rubbish", so the group keeps one meaning everywhere and the combination
+    # is refused instead.
+    if 'not-passing' in status_tokens:
+        print(
+            "hyrum: error: --status not-passing includes 'skipped', which is what a "
+            'charm gets when a filter passed it over (--repo, --framework, [ignore], '
+            'or not being reached before --limit) rather than anything about the '
+            'charm. Spell the statuses you mean, or pass --status skipped explicitly.',
+            file=sys.stderr,
+        )
+        return 2
+    statuses = selection.expand_statuses(status_tokens)
+    try:
+        sel = selection.load_selection(args.from_results, statuses, cache=charms_dir)
+    except ValueError as exc:
+        print(f'hyrum: error: {exc}', file=sys.stderr)
+        return 2
+
+    cached = list(_enumerate.iter_charm_repos(charms_dir))
+    missing = selection.unmatched(sel, cached, base=charms_dir)
+
+    # load_selection deliberately does not decide what selecting nothing
+    # means, so the disjoint case is ours: a file naming no charm this cache
+    # holds is about a different cache, and deleting nothing on that basis is
+    # bad input rather than a clean no-op. A file naming charms we do have,
+    # none of them in a wanted status, is the no-op -- see below.
+    if cached and sel.keys and missing == sel.keys:
+        print(
+            f'hyrum: error: --from-results {args.from_results} and the charms cached in '
+            f'{charms_dir} have no charms in common -- different charm collections, or a '
+            f'run saved by a hyrum version that stored absolute paths?',
+            file=sys.stderr,
+        )
+        return 2
+    if missing:
+        logger.info(
+            '%d charm(s) named in %s are not present in %s (not cloned; see `hyrum get-charms`).',
+            len(missing),
+            args.from_results,
+            charms_dir,
+        )
+
+    # sel.filter(repo) is None for a charm the selector keeps -- the same
+    # "selected to run" meaning check gives it, here read as "selected to
+    # remove".
+    matched = [repo for repo in cached if sel.filter(repo) is None]
+
+    if not matched:
+        print('hyrum: no charms matched --from-results / --status.')
+        return 0
+
+    # Delete clones, not charm directories. iter_charm_repos yields charm
+    # roots, and for a bundle or monorepo those live inside a clone: removing
+    # one frees no disk (.git is the bulk of it), leaves a working tree that
+    # differs from HEAD, and cannot be undone by get-charms, which sees the
+    # clone directory still there and fast-forwards instead of re-cloning.
+    by_clone: dict[pathlib.Path, list[pathlib.Path]] = {}
+    for repo in cached:
+        by_clone.setdefault(_clone_root(repo, charms_dir), []).append(repo)
+    matched_set = set(matched)
+
+    full, partial = [], []
+    for clone, charms in sorted(by_clone.items()):
+        hits = [c for c in charms if c in matched_set]
+        if not hits:
+            continue
+        (full if len(hits) == len(charms) else partial).append((clone, charms, hits))
+
+    for clone, charms, hits in partial:
+        # Removing the clone would take the charms that did not match with it,
+        # so leave it and say why the charm the user asked about is still here.
+        print(
+            f'hyrum: keeping {_results._identity(clone, charms_dir)}: '
+            f'{len(hits)} of {len(charms)} charms matched, and they share a checkout.'
+        )
+
+    if not full:
+        print('hyrum: no checkout matched entirely; nothing to remove.')
+        return 0
+
+    total = sum(len(charms) for _, charms, _ in full)
+    if not args.yes:
+        print(f'Would remove {len(full)} checkout(s), {total} charm(s):')
+        for clone, charms, _ in full:
+            names = ', '.join(sorted(_results._identity(c, charms_dir) for c in charms))
+            print(f'  {_results._identity(clone, charms_dir)} ({len(charms)}): {names}')
+        return 0
+
+    # Keep going past a failure. A bulk delete that aborts halfway leaves the
+    # user with no record of where it stopped: some checkouts gone, some not,
+    # and no summary line. A root-owned file from a containerised tox run is
+    # enough to cause it.
+    removed_charms = 0
+    failures: list[tuple[str, OSError]] = []
+    for clone, charms, _ in full:
+        identity = _results._identity(clone, charms_dir)
+        try:
+            shutil.rmtree(clone)
+        except OSError as exc:
+            logger.error('Could not remove %s: %s', identity, exc)
+            failures.append((identity, exc))
+            continue
+        removed_charms += len(charms)
+        logger.info('Removed %s (%d charm(s))', identity, len(charms))
+        # The owner directory is ours too once its last checkout goes: it is
+        # not a charm, nothing re-creates it but get-charms, and leaving it
+        # makes iter_charm_repos walk an empty directory on every later run.
+        # rmdir only removes it when it is empty, so a surviving sibling
+        # keeps it.
+        with contextlib.suppress(OSError):
+            clone.parent.rmdir()
+
+    removed = len(full) - len(failures)
+    print(f'hyrum: removed {removed} checkout(s), {removed_charms} charm(s).')
+    if failures:
+        print(
+            f'hyrum: error: {len(failures)} checkout(s) could not be removed: '
+            f'{", ".join(identity for identity, _ in failures)}.',
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+def _clone_root(repo: pathlib.Path, base: pathlib.Path) -> pathlib.Path:
+    """Return the git checkout *repo* belongs to, or *repo* itself.
+
+    A single-charm repo is its own checkout; a bundle or monorepo charm is a
+    directory inside one, and it is the checkout that can be removed and
+    re-cloned.
+    """
+    for candidate in [repo, *repo.parents]:
+        if candidate == base.parent:
+            break
+        if (candidate / '.git').exists():
+            return candidate
+        if candidate == base:
+            break
+    return repo
 
 
 def _run_clean(args: argparse.Namespace) -> int:
