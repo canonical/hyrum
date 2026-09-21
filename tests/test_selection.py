@@ -86,8 +86,8 @@ def test_from_results_filter_excludes_charm_not_in_file(charm_cache: pathlib.Pat
 
 def test_from_results_filter_matches_across_charms_dir_spellings(tmp_path: pathlib.Path):
     """The filter keys on owner/name, not on the literal cache path."""
-    saved_from = tmp_path / 'host-a' / 'cache'
-    saved_from.mkdir(parents=True)
+    # The outcome's repo is the relative identity `_results.save` writes, so
+    # nothing in the file records the cache it was saved from.
     outcomes_by_key = {
         'canonical/foo': pool.Outcome(repo=pathlib.Path('canonical/foo'), status='failed')
     }
