@@ -323,12 +323,12 @@ class _Recorder:
 
     def __init__(self, result: Any):
         self.result = result
-        self.env: dict[str, str] = {}
+        self.env: dict[str, str] | None = None
         self.calls = 0
 
     def __call__(self, cmd: Any, **kwargs: Any) -> Any:
         self.calls += 1
-        self.env = kwargs.get('env') or {}
+        self.env = kwargs.get('env')
         if isinstance(self.result, Exception):
             raise self.result
         return self.result
@@ -374,5 +374,11 @@ def test_lock_runs_without_hyrums_own_virtualenv(
     monkeypatch.setenv('VIRTUAL_ENV', '/somewhere/hyrum/.venv')
     recorder = _Recorder(_Completed(0))
     monkeypatch.setattr(common.subprocess, 'run', recorder)
+    monkeypatch.setenv('HYRUM_SENTINEL', 'kept')
     common.run_lock(tmp_path, ['poetry', 'lock'], 60)
+    # Not `or {}`: an env that was never passed would then read as an env with
+    # no VIRTUAL_ENV in it, and this test would pass against the bug.
+    assert recorder.env is not None
     assert 'VIRTUAL_ENV' not in recorder.env
+    # The rest of the environment still has to reach the subprocess.
+    assert recorder.env['HYRUM_SENTINEL'] == 'kept'
