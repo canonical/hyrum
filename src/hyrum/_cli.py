@@ -1364,6 +1364,58 @@ def _add_show_subparser(
     return parser
 
 
+def _add_prune_charms_subparser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    parser = subparsers.add_parser(
+        'prune-charms',
+        help='Delete charms from the cache by their outcome in a saved run.',
+        description=(
+            'Delete charms from the charms directory whose outcome in a saved results '
+            'file matches --status. Without --yes, lists what would be removed and exits 0.'
+        ),
+    )
+    parser.add_argument(
+        '--charms-dir',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'Directory containing pre-cloned charm repositories. '
+            '[env: HYRUM_CHARMS] [default: ~/.cache/hyrum/charms]'
+        ),
+    )
+    # PATH is always a filesystem path, like `check --from-results`: no
+    # default location, run id, or target-name lookup.
+    parser.add_argument(
+        '--from-results',
+        type=pathlib.Path,
+        required=True,
+        help='Saved results file naming which charms to consider.',
+    )
+    parser.add_argument(
+        '--status',
+        dest='status',
+        action='append',
+        type=_parse_status_arg,
+        required=True,
+        help=(
+            'Only remove charms whose saved outcome is one of these. Repeatable and '
+            'comma-separated; repeats and commas union together. Accepts the outcome '
+            'statuses (passed, failed, no_target, timeout, runner_error, patcher_error, '
+            'skipped) plus two groups: failing (reached the runner or the patcher and did '
+            'not come out clean) and not-passing (everything but passed). Required -- '
+            'unlike check --from-results, there is no default here.'
+        ),
+    )
+    parser.add_argument(
+        '--yes',
+        action='store_true',
+        help='Actually delete the matched charms. Without this, list them and exit 0.',
+    )
+    parser.set_defaults(func=_run_prune_charms)
+    return parser
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     description = 'Bulk-run a check across many charm repositories with a dependency swapped out.'
     parser = argparse.ArgumentParser(prog='hyrum', description=description)
@@ -1373,6 +1425,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     _add_clean_subparser(subparsers)
     _add_compare_subparser(subparsers)
     _add_get_charms_subparser(subparsers)
+    _add_prune_charms_subparser(subparsers)
     _add_show_subparser(subparsers)
     return parser
 
@@ -1583,6 +1636,68 @@ def _run_get_charms(args: argparse.Namespace) -> int:
         logger.warning('No charms in %s match --repo %r; nothing to do.', source, args.repo)
         return 0
     asyncio.run(get_charms.process_rows(rows, dest, workers=args.workers, timeout=args.timeout))
+    return 0
+
+
+def _run_prune_charms(args: argparse.Namespace) -> int:
+    charms_dir: pathlib.Path = args.charms_dir or _default_charms_dir()
+    if not charms_dir.is_dir():
+        sys.exit(f'hyrum: error: --charms-dir: {charms_dir} is not a directory.')
+
+    _configure_logging(logging.INFO)
+
+    status_tokens = [token for group in args.status for token in group]
+    statuses = selection.expand_statuses(status_tokens)
+    try:
+        sel = selection.load_selection(args.from_results, statuses, cache=charms_dir)
+    except ValueError as exc:
+        print(f'hyrum: error: {exc}', file=sys.stderr)
+        return 2
+
+    cached = list(_enumerate.iter_charm_repos(charms_dir))
+    missing = selection.unmatched(sel, cached, base=charms_dir)
+
+    # load_selection deliberately does not decide what selecting nothing
+    # means, so the disjoint case is ours: a file naming no charm this cache
+    # holds is about a different cache, and deleting nothing on that basis is
+    # bad input rather than a clean no-op. A file naming charms we do have,
+    # none of them in a wanted status, is the no-op -- see below.
+    if cached and sel.keys and missing == sel.keys:
+        print(
+            f'hyrum: error: --from-results {args.from_results} and the charms cached in '
+            f'{charms_dir} have no charms in common -- different charm collections, or a '
+            f'run saved by a hyrum version that stored absolute paths?',
+            file=sys.stderr,
+        )
+        return 2
+    if missing:
+        logger.info(
+            '%d charm(s) named in %s are not present in %s (not cloned; see `hyrum get-charms`).',
+            len(missing),
+            args.from_results,
+            charms_dir,
+        )
+
+    # sel.filter(repo) is None for a charm the selector keeps -- the same
+    # "selected to run" meaning check gives it, here read as "selected to
+    # remove".
+    matched = [repo for repo in cached if sel.filter(repo) is None]
+
+    if not matched:
+        print('hyrum: no charms matched --from-results / --status.')
+        return 0
+
+    if not args.yes:
+        print(f'Would remove {len(matched)} charm(s):')
+        for repo in sorted(matched, key=lambda r: _results._identity(r, charms_dir)):
+            print(f'  {_results._identity(repo, charms_dir)}')
+        return 0
+
+    for repo in matched:
+        identity = _results._identity(repo, charms_dir)
+        shutil.rmtree(repo)
+        logger.info('Removed %s', identity)
+    print(f'hyrum: removed {len(matched)} charm(s).')
     return 0
 
 
