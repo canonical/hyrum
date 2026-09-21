@@ -161,13 +161,36 @@ def test_an_unparseable_requirement_is_not_a_match():
         # deps to rewrite is a pep621 charm as far as patching goes.
         ('uv table but no deps', {'project': {'name': 'x'}, 'tool': {'uv': {}}}, False, 'pep621'),
         ('poetry', {'tool': {'poetry': {'dependencies': {}}}}, False, 'poetry'),
-        # Poetry plus a uv.lock is the one real ambiguity, and uv wins only
-        # when the deps are declared where uv would read them.
+        # Poetry alongside a uv signal is the one real ambiguity, and it turns
+        # entirely on where the deps are declared: the uv branch is gated on
+        # PEP 621 / PEP 735 deps existing, and is checked before the poetry
+        # table. These four rows are the two uv signals on both sides of that.
         (
             'poetry with a uv lock',
             {'tool': {'poetry': {'dependencies': {}}}},
             True,
             'poetry',
+        ),
+        (
+            'poetry with a uv table',
+            {'tool': {'poetry': {'dependencies': {}}, 'uv': {}}},
+            False,
+            'poetry',
+        ),
+        (
+            'poetry and a uv lock, with pep621 deps as well',
+            {'project': {'dependencies': []}, 'tool': {'poetry': {'dependencies': {}}}},
+            True,
+            'uv',
+        ),
+        (
+            'poetry and a uv table, with pep621 deps as well',
+            {
+                'project': {'dependencies': []},
+                'tool': {'poetry': {'dependencies': {}}, 'uv': {}},
+            },
+            False,
+            'uv',
         ),
         ('pep621 deps alone', {'project': {'dependencies': []}}, False, 'pep621'),
         ('dependency groups alone', {'dependency-groups': {}}, False, 'pep621'),
