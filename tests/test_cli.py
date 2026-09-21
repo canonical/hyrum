@@ -2536,3 +2536,49 @@ def test_prune_charms_keeps_a_checkout_only_partly_matched(
     out = capsys.readouterr().out
     assert 'keeping canonical/mybundle' in out
     assert '1 of 2 charms matched' in out
+
+
+def test_prune_charms_keeps_going_past_a_removal_failure(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # One unremovable checkout (a root-owned file from a containerised tox
+    # run, say) must not strand the rest with no record of where it stopped.
+    cache = _cache_with_alpha_beta(tmp_path)
+    run = tmp_path / 'run.json'
+    results.save(
+        [
+            pool.Outcome(repo=cache / 'alpha', status='failed'),
+            pool.Outcome(repo=cache / 'beta', status='failed'),
+        ],
+        run,
+        base=cache,
+    )
+
+    real_rmtree = shutil.rmtree
+
+    def explode(path: object, *args: object, **kwargs: object) -> None:
+        if pathlib.Path(path).name == 'alpha':
+            raise OSError(13, 'Permission denied')
+        real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(cli.shutil, 'rmtree', explode)
+
+    rc = _run([
+        'prune-charms',
+        '--charms-dir',
+        str(cache),
+        '--from-results',
+        str(run),
+        '--status',
+        'failed',
+        '--yes',
+    ])
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert (cache / 'alpha').exists()
+    assert not (cache / 'beta').exists()
+    assert 'removed 1 checkout(s), 1 charm(s)' in captured.out
+    assert 'alpha' in captured.err

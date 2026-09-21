@@ -1724,11 +1724,32 @@ def _run_prune_charms(args: argparse.Namespace) -> int:
             print(f'  {_results._identity(clone, charms_dir)} ({len(charms)}): {names}')
         return 0
 
+    # Keep going past a failure. A bulk delete that aborts halfway leaves the
+    # user with no record of where it stopped: some checkouts gone, some not,
+    # and no summary line. A root-owned file from a containerised tox run is
+    # enough to cause it.
+    removed_charms = 0
+    failures: list[tuple[str, OSError]] = []
     for clone, charms, _ in full:
         identity = _results._identity(clone, charms_dir)
-        shutil.rmtree(clone)
+        try:
+            shutil.rmtree(clone)
+        except OSError as exc:
+            logger.error('Could not remove %s: %s', identity, exc)
+            failures.append((identity, exc))
+            continue
+        removed_charms += len(charms)
         logger.info('Removed %s (%d charm(s))', identity, len(charms))
-    print(f'hyrum: removed {len(full)} checkout(s), {total} charm(s).')
+
+    removed = len(full) - len(failures)
+    print(f'hyrum: removed {removed} checkout(s), {removed_charms} charm(s).')
+    if failures:
+        print(
+            f'hyrum: error: {len(failures)} checkout(s) could not be removed: '
+            f'{", ".join(identity for identity, _ in failures)}.',
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
