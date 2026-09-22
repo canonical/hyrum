@@ -18,6 +18,7 @@ from hyrum import _locks as locks
 from hyrum import _pool as pool
 from hyrum import _results as results
 from hyrum import _runners as runners
+from hyrum import _selection as selection
 from hyrum._runners import tox
 
 from .conftest import make_charm
@@ -1731,3 +1732,516 @@ def test_clean_waits_for_a_run_holding_the_charm(tmp_path: pathlib.Path):
     assert done.wait(timeout=10)
     cleaner.join(timeout=10)
     assert not (repo / '.tox').exists()
+
+
+# ---- --from-results / --status ----------------------------------------------
+
+
+def _fake_runner_by_name(
+    monkeypatch: pytest.MonkeyPatch, statuses: dict[str, runners.RunStatus]
+) -> list[str]:
+    """Fake ToxRunner.run whose status varies per charm; returns the call log."""
+    calls: list[str] = []
+
+    async def fake_run(self, repo, target):  # ruff: ignore[unused-async]
+        calls.append(repo.name)
+        status = statuses.get(repo.name, runners.RunStatus.PASSED)
+        returncode = 0 if status is runners.RunStatus.PASSED else 1
+        return runners.RunResult(
+            repo=repo,
+            runner=self.name,
+            target=target,
+            status=status,
+            returncode=returncode,
+            duration_s=0.01,
+        )
+
+    monkeypatch.setattr(tox.ToxRunner, 'run', fake_run)
+    return calls
+
+
+def _cache_with_alpha_beta(tmp_path: pathlib.Path) -> pathlib.Path:
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    make_charm(cache / 'beta', requirements=True)
+    return cache
+
+
+def test_from_results_defaults_status_to_failing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+):
+    cache = _cache_with_alpha_beta(tmp_path)
+    _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    run1 = tmp_path / 'run1.json'
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--save',
+        str(run1),
+    ])
+    assert rc == 1
+
+    calls = _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(run1),
+        '--no-save',
+    ])
+    assert rc == 1
+    assert calls == ['beta']
+
+
+def test_from_results_explicit_status_selects_passed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+):
+    cache = _cache_with_alpha_beta(tmp_path)
+    _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    run1 = tmp_path / 'run1.json'
+    _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--save', str(run1)])
+
+    calls = _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(run1),
+        '--status',
+        'passed',
+        '--no-save',
+    ])
+    assert rc == 0
+    assert calls == ['alpha']
+
+
+def test_from_results_status_comma_and_repeat_union(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    make_charm(cache / 'beta', requirements=True)
+    make_charm(cache / 'gamma', requirements=True)
+    _fake_runner_by_name(
+        monkeypatch,
+        {'beta': runners.RunStatus.FAILED, 'gamma': runners.RunStatus.TIMEOUT},
+    )
+    run1 = tmp_path / 'run1.json'
+    _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--save', str(run1)])
+
+    calls = _fake_runner_by_name(
+        monkeypatch,
+        {'beta': runners.RunStatus.FAILED, 'gamma': runners.RunStatus.TIMEOUT},
+    )
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(run1),
+        '--status',
+        'failed,timeout',
+        '--no-save',
+    ])
+    assert rc == 1
+    assert sorted(calls) == ['beta', 'gamma']
+
+    calls.clear()
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(run1),
+        '--status',
+        'failed',
+        '--status',
+        'timeout',
+        '--no-save',
+    ])
+    assert rc == 1
+    assert sorted(calls) == ['beta', 'gamma']
+
+
+def test_from_results_excluded_charms_are_skipped_with_a_reason_naming_the_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = _cache_with_alpha_beta(tmp_path)
+    _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    run1 = tmp_path / 'run1.json'
+    _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--save', str(run1)])
+
+    _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--verbose',
+        '--from-results',
+        str(run1),
+        '--no-save',
+    ])
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert 'alpha' in out
+    assert str(run1) in out
+
+
+def test_status_without_from_results_is_an_error(tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--status',
+        'failed',
+    ])
+    assert rc != 0
+
+
+def test_from_results_bad_file_exits_2(tmp_path: pathlib.Path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    bad = tmp_path / 'bad.json'
+    bad.write_text('not json')
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(bad),
+    ])
+    assert rc == 2
+
+
+def test_from_results_selecting_nothing_exits_2(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    other = tmp_path / 'run.json'
+    results.save([pool.Outcome(repo=pathlib.Path('someone-else/bar'), status='failed')], other)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(other),
+    ])
+    assert rc == 2
+    assert 'nothing to run' in capsys.readouterr().err
+
+
+def test_from_results_intersects_with_repo(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+):
+    """--from-results narrows further, it does not replace --repo."""
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha-k8s', requirements=True)
+    make_charm(cache / 'beta-k8s', requirements=True)
+    _fake_runner_by_name(
+        monkeypatch,
+        {'alpha-k8s': runners.RunStatus.FAILED, 'beta-k8s': runners.RunStatus.FAILED},
+    )
+    run1 = tmp_path / 'run1.json'
+    _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch', '--save', str(run1)])
+
+    calls = _fake_runner_by_name(
+        monkeypatch,
+        {'alpha-k8s': runners.RunStatus.FAILED, 'beta-k8s': runners.RunStatus.FAILED},
+    )
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--repo',
+        'alpha.*',
+        '--from-results',
+        str(run1),
+        '--status',
+        'failed',
+        '--no-save',
+    ])
+    assert rc == 1
+    assert calls == ['alpha-k8s']
+
+
+def test_from_results_is_applied_before_limit(charm_cache: pathlib.Path, tmp_path: pathlib.Path):
+    make_charm(charm_cache / 'alpha', requirements=True)
+    make_charm(charm_cache / 'beta', requirements=True)
+    run1 = tmp_path / 'run1.json'
+    results.save(
+        [
+            pool.Outcome(repo=charm_cache / 'alpha', status='passed'),
+            pool.Outcome(repo=charm_cache / 'beta', status='failed'),
+        ],
+        run1,
+        base=charm_cache,
+    )
+    from_results = selection.load_selection(run1, frozenset({'failed'}), cache=charm_cache)
+
+    repos, skipped = cli._select_repos(
+        charm_cache,
+        config=config_loader.Config(),
+        repo_re='.*',
+        limit=1,
+        framework=None,
+        from_results=from_results.filter,
+    )
+    assert [p.name for p in repos] == ['beta']
+    assert [p.name for p, _ in skipped] == ['alpha']
+
+
+def test_from_results_is_always_a_path_no_shorthand_resolution(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+):
+    """--from-results only ever takes a filesystem path.
+
+    A bare word with no directory or extension — exactly what a future
+    ``--from-results unit`` shorthand might expand to
+    ``<auto-save-dir>/unit.auto.json`` — is read as a literal file in the
+    current directory today, and must keep being read that way once a
+    shorthand exists: the existing-path check has to come first.
+    """
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    repo = make_charm(cache / 'alpha', requirements=True)
+    _fake_pass_runner(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    bare = tmp_path / 'unit'
+    results.save([pool.Outcome(repo=repo, status='failed')], bare, base=cache, target='unit')
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        'unit',
+        '--no-save',
+    ])
+    assert rc == 0
+
+
+def test_from_results_survives_the_auto_save_it_feeds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+):
+    """Reading the file a run is about to overwrite is safe.
+
+    Selection happens before the pool starts, and the rolling save rotates
+    the old file to <target>.auto.prev.json before writing the new one, so
+    --from-results pointed at the same auto-save path a run will refresh
+    still sees the run it was selected from.
+    """
+    cache = _cache_with_alpha_beta(tmp_path)
+    _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    save_dir = tmp_path / 'auto'
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--auto-save',
+        str(save_dir),
+    ])
+    assert rc == 1
+    auto_path = save_dir / 'unit.auto.json'
+    assert auto_path.exists()
+
+    calls = _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(auto_path),
+        '--auto-save',
+        str(save_dir),
+    ])
+    assert rc == 1
+    assert calls == ['beta']
+    assert auto_path.exists()
+    # The point is not that the file survives, but what is now in it: alpha
+    # ran in the first pass and did not in this one, so it is recorded as
+    # `skipped` and the file is no longer a fleet baseline. The warning is
+    # what tells the user that.
+    saved = results.load(auto_path)
+    assert {str(o.repo): o.status for o in saved.outcomes} == {
+        'alpha': 'skipped',
+        'beta': 'failed',
+    }
+
+
+def test_a_narrowed_run_does_not_write_the_default_rolling_save(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """--from-results plus the built-in default save would replace the baseline.
+
+    Every charm the selection excludes is saved as `skipped`, and
+    `passed -> skipped` is not a regression to `compare`, so a narrowed run
+    that silently became the rolling file would hide a later real failure.
+    Nobody asked for that file, so a narrowed run writes nothing instead.
+    """
+    cache = _cache_with_alpha_beta(tmp_path)
+    default_dir = tmp_path / 'default-results'
+    monkeypatch.setattr(cli, '_default_auto_save_dir', lambda: default_dir)
+    _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    rc = _run(['check', 'unit', '--charms-dir', str(cache), '--no-patch'])
+    assert rc == 1
+    baseline = default_dir / 'unit.auto.json'
+    assert {str(o.repo): o.status for o in results.load(baseline).outcomes} == {
+        'alpha': 'passed',
+        'beta': 'failed',
+    }
+
+    _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(baseline),
+    ])
+
+    assert rc == 1
+    assert 'the default rolling save is off' in capsys.readouterr().err
+    # Untouched: still the fleet-wide run.
+    assert {str(o.repo): o.status for o in results.load(baseline).outcomes} == {
+        'alpha': 'passed',
+        'beta': 'failed',
+    }
+
+
+def test_a_narrowed_run_warns_when_it_does_write_a_rolling_save(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """An explicit --auto-save is still honoured, but says what the file is not."""
+    cache = _cache_with_alpha_beta(tmp_path)
+    save_dir = tmp_path / 'auto'
+    _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    assert (
+        _run([
+            'check',
+            'unit',
+            '--charms-dir',
+            str(cache),
+            '--no-patch',
+            '--auto-save',
+            str(save_dir),
+        ])
+        == 1
+    )
+    auto_path = save_dir / 'unit.auto.json'
+
+    _fake_runner_by_name(monkeypatch, {'beta': runners.RunStatus.FAILED})
+    _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(auto_path),
+        '--auto-save',
+        str(save_dir),
+    ])
+
+    assert 'not a fleet baseline' in capsys.readouterr().err
+
+
+def test_from_results_with_no_matching_status_exits_2(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """Asking for a status nothing carries selects nothing, like a disjoint file."""
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    alpha = make_charm(cache / 'alpha', requirements=True)
+    run = tmp_path / 'run.json'
+    results.save([pool.Outcome(repo=alpha, status='failed')], run, base=cache)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(run),
+        '--status',
+        'timeout',
+    ])
+
+    assert rc == 2
+    assert 'nothing to run' in capsys.readouterr().err
+
+
+def test_from_results_with_an_empty_file_exits_2(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """A file that names no charm at all is the same 'nothing ran' case."""
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    make_charm(cache / 'alpha', requirements=True)
+    run = tmp_path / 'run.json'
+    results.save([], run, base=cache)
+
+    rc = _run([
+        'check',
+        'unit',
+        '--charms-dir',
+        str(cache),
+        '--no-patch',
+        '--from-results',
+        str(run),
+    ])
+
+    assert rc == 2
+    assert 'nothing to run' in capsys.readouterr().err
+
+
+def test_status_without_from_results_exits_2(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+):
+    """Bad input is exit 2, the same as a bad --from-results file."""
+    rc = _run(['check', 'unit', '--charms-dir', str(tmp_path), '--no-patch', '--status', 'failed'])
+    assert rc == 2
+    assert '--status requires --from-results' in capsys.readouterr().err
