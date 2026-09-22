@@ -262,12 +262,12 @@ def test_every_flavour_can_be_patched(flavour: str, extras: set[str]):
         assert "extras = ['testing']" in git
         assert 'version = "==2.17.0", extras = [\'testing\']' in version
         assert "extras = ['testing']" in path
-    else:
+    elif flavour == 'pep621':
         assert 'ops[testing]==2.17.0' in version
-    if flavour == 'pep621':
         assert 'ops[testing] @ git+https://example.com/operator@main' in git
         assert 'ops[testing] @ file:///opt/operator' in path
-    if flavour == 'uv':
+    elif flavour == 'uv':
+        assert 'ops[testing]==2.17.0' in version
         # uv redirects the source in [tool.uv.sources] and leaves the
         # requirement alone, so the extra stays wherever the charm already
         # declared it rather than being written again here.
@@ -391,8 +391,6 @@ def test_lock_runs_without_hyrums_own_virtualenv(
     monkeypatch.setattr(common.subprocess, 'run', recorder)
     monkeypatch.setenv('HYRUM_SENTINEL', 'kept')
     common.run_lock(tmp_path, ['poetry', 'lock'], 60)
-    # Not `or {}`: an env that was never passed would then read as an env with
-    # no VIRTUAL_ENV in it, and this test would pass against the bug.
     assert recorder.env is not None
     assert 'VIRTUAL_ENV' not in recorder.env
     # The rest of the environment still has to reach the subprocess.
