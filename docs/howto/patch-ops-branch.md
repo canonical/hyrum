@@ -89,3 +89,5 @@ hyrum check unit --no-patch --workers 8
 ```
 
 This skips the dependency rewrite entirely and runs against whatever each charm already pins.
+
+For what each status in the summary means, see the [output reference](../reference/output).

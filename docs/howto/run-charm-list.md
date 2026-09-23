@@ -110,3 +110,5 @@ echo "Exit code: $?"
 ## Suppress known problem charms
 
 If some repositories reliably fail for reasons unrelated to the change you are testing, exclude them with `hyrum.toml`. See [How to suppress known results](suppress-results).
+
+For what each status in the summary means, see the [output reference](../reference/output).

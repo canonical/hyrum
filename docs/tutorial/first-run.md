@@ -148,3 +148,4 @@ After the run you will find files like `~/hyrum-logs/charm-apt-mirror.log` conta
 - [How to compare two runs](../howto/compare-runs)
 - [How to reclaim disk space](../howto/reclaim-disk-space)
 - [CLI reference](../reference/cli)
+- [Output reference](../reference/output)
