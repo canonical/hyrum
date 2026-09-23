@@ -121,6 +121,37 @@ def _counts(outcomes: list[pool.Outcome]) -> tuple[collections.Counter[str], int
     return counts, total, ran
 
 
+def _skip_kinds(outcomes: list[pool.Outcome]) -> collections.Counter[str]:
+    """Count the skipped outcomes by the kind of skip, for the sub-rows.
+
+    Only the patchers attach a kind: the filter rejects that
+    :func:`pool.add_skipped` folds in carry none. Count those as ``filtered``
+    rather than dropping them, so the sub-rows always sum to the ``skipped``
+    row they sit under.
+    """
+    return collections.Counter(
+        o.skip_reason_kind.value if o.skip_reason_kind is not None else 'filtered'
+        for o in outcomes
+        if o.status == 'skipped'
+    )
+
+
+def _not_run_breakdown(counts: collections.Counter[str]) -> str:
+    """Render the ``(2 skipped, 1 no_target)`` tail of the summary line.
+
+    Shared by both renderers: "2 not run" alone doesn't say whether the charms
+    were filtered out, had nothing to run, or blew up in the patcher, and that
+    is the first thing a reader wants - markdown most of all, since it is the
+    format that ends up somewhere nobody can re-run the tally.
+    """
+    parts = [
+        f'{counts.get(s, 0)} {s}'
+        for s in ('skipped', 'no_target', 'runner_error', 'patcher_error')
+        if counts.get(s, 0)
+    ]
+    return f' ({", ".join(parts)})' if parts else ''
+
+
 def render(
     outcomes: Iterable[pool.Outcome],
     *,
@@ -140,7 +171,9 @@ def render(
 
     counts, total, ran = _counts(outcomes)
 
-    title = f'hyrum: {target}'
+    # A file saved by an older hyrum carries no metadata, so `show` can get
+    # here with no target; "hyrum: " with nothing after it reads as a bug.
+    title = f'hyrum: {target}' if target else 'hyrum run'
     print(f'{_BOLD}{title}{_RESET}' if use_colour else title, file=stream)
 
     def of_all(count: int) -> str:
@@ -159,10 +192,7 @@ def render(
         count = counts.get(status, 0)
         rows.append(_Row(status, str(count), of_all(count), of_runs(status, count)))
         if status == 'skipped' and count:
-            skip_kinds: collections.Counter[str] = collections.Counter(
-                o.skip_reason_kind.value for o in outcomes if o.skip_reason_kind is not None
-            )
-            for kind, kind_count in sorted(skip_kinds.items()):
+            for kind, kind_count in sorted(_skip_kinds(outcomes).items()):
                 rows.append(_Row(f'  {kind}', str(kind_count), of_all(kind_count), not_applicable))
     table = _format_table(
         rows,
@@ -180,12 +210,7 @@ def render(
             return f'{_BOLD}{text}{_RESET}' if use_colour else text
 
         not_run = total - ran
-        breakdown_parts = [
-            f'{counts.get(s, 0)} {s}'
-            for s in ('skipped', 'no_target', 'runner_error', 'patcher_error')
-            if counts.get(s, 0)
-        ]
-        breakdown = f' ({", ".join(breakdown_parts)})' if breakdown_parts else ''
+        breakdown = _not_run_breakdown(counts)
         print(
             f'{emph(str(passed_n))} of {emph(str(ran))} runs passed '
             f'({emph(pct)} of runs); {not_run} not run{breakdown}.',
@@ -227,34 +252,56 @@ def render_markdown(
     """Print a markdown tally of ``outcomes``, mirroring :func:`render`'s text table."""
     outcomes = list(outcomes)
     out: TextIO = stream if stream is not None else sys.stdout
+    # Same reason as the text renderer: markdown goes to the same stdout, and a
+    # stream that can't encode an em dash shouldn't blow up mid-table.
+    not_applicable = _em_dash(out)
 
     counts, total, ran = _counts(outcomes)
 
     print(f'# hyrum: {target}' if target else '# hyrum run', file=out)
     print(file=out)
 
-    if not no_headers:
-        print('| Status | Count | % of all | % of runs |', file=out)
-        print('| --- | --- | --- | --- |', file=out)
+    # The delimiter row is what makes this a table rather than four lines of
+    # literal pipes, so `--no-headers` empties the header cells instead of
+    # dropping the pair: a table with empty header cells still renders.
+    print(
+        '|  |  |  |  |' if no_headers else '| Status | Count | % of all | % of runs |',
+        file=out,
+    )
+    print('| --- | --- | --- | --- |', file=out)
+
+    def _of_all(count: int) -> str:
+        return _percent.format_pct(count / total) if total else not_applicable
+
     for status in pool.OUTCOME_STATUSES:
         count = counts.get(status, 0)
-        of_all = _percent.format_pct(count / total) if total else _NOT_APPLICABLE
         # Only the statuses that come from a charm actually being run have a
         # share of the runs; for the others the cell would be a category error
         # rather than a zero.
         of_runs = (
-            _percent.format_pct(count / ran)
-            if status in _RAN_STATUSES and ran
-            else _NOT_APPLICABLE
+            _percent.format_pct(count / ran) if status in _RAN_STATUSES and ran else not_applicable
         )
-        print(f'| {status} | {count} | {of_all} | {of_runs} |', file=out)
+        print(f'| {status} | {count} | {_of_all(count)} | {of_runs} |', file=out)
+        if status == 'skipped' and count:
+            # The text table indents its sub-rows with two literal spaces;
+            # GFM collapses those inside a cell, so this needs the entity.
+            for kind, kind_count in sorted(_skip_kinds(outcomes).items()):
+                print(
+                    f'| &nbsp;&nbsp;{kind} | {kind_count} | {_of_all(kind_count)} '
+                    f'| {not_applicable} |',
+                    file=out,
+                )
 
     print(file=out)
     if ran:
         passed_n = counts.get('passed', 0)
         pct = _percent.format_pct(passed_n / ran)
         not_run = total - ran
-        print(f'**{passed_n}** of **{ran}** runs passed (**{pct}**); {not_run} not run.', file=out)
+        print(
+            f'**{passed_n}** of **{ran}** runs passed (**{pct}**); '
+            f'{not_run} not run{_not_run_breakdown(counts)}.',
+            file=out,
+        )
     else:
         print('No runs executed.', file=out)
 
@@ -268,7 +315,7 @@ def render_markdown(
             print(file=out)
             for outcome in sorted(offenders, key=lambda o: str(o.repo)):
                 detail = outcome.error or outcome.skip_reason or ''
-                trailer = f' — {detail}' if detail else ''
+                trailer = f' {not_applicable} {detail}' if detail else ''
                 print(f'- {relative(outcome.repo, base)}{trailer}', file=out)
 
         skipped = [o for o in outcomes if o.status == 'skipped']
@@ -278,4 +325,4 @@ def render_markdown(
             print(file=out)
             for outcome in sorted(skipped, key=lambda o: str(o.repo)):
                 reason = outcome.skip_reason or ''
-                print(f'- {relative(outcome.repo, base)} — {reason}', file=out)
+                print(f'- {relative(outcome.repo, base)} {not_applicable} {reason}', file=out)

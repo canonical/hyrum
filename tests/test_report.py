@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import pathlib
+import re
 
 from hyrum import _patchers as patchers
 from hyrum import _pool as pool
@@ -256,10 +257,52 @@ def test_render_markdown_table_has_one_row_per_status(tmp_path: pathlib.Path):
     assert '| failed | 0 |' in out
 
 
-def test_render_markdown_no_headers_suppresses_header_row(tmp_path: pathlib.Path):
+def test_render_markdown_no_headers_keeps_the_delimiter_row(tmp_path: pathlib.Path):
+    """Without the delimiter row it is not a table, just lines of pipes."""
     out = _render_markdown([], base=tmp_path, no_headers=True)
     assert '| Status | Count | % of all | % of runs |' not in out
-    assert '| passed | 0 |' in out
+    assert '| --- | --- | --- | --- |' in out
+    # The empty header row that the delimiter needs above it.
+    assert '|  |  |  |  |' in out
+
+
+def test_render_markdown_breaks_down_the_skips_like_the_text_table(tmp_path: pathlib.Path):
+    """A tally that only says "2 not run" doesn't say why, and markdown is the
+    format that ends up somewhere the reader can't re-run it."""
+    kind = patchers.PatcherSkipReason.NO_PYPROJECT
+    outcomes = [
+        pool.Outcome(repo=tmp_path / 'ran', status='passed'),
+        pool.Outcome(repo=tmp_path / 'a', status='skipped', skip_reason_kind=kind),
+        pool.Outcome(repo=tmp_path / 'b', status='skipped', skip_reason_kind=kind),
+    ]
+    out = _render_markdown(outcomes, base=tmp_path)
+    assert f'| &nbsp;&nbsp;{kind.value} | 2 |' in out
+    assert '2 not run (2 skipped).' in out
+
+
+def test_skip_sub_rows_sum_to_the_skipped_row(tmp_path: pathlib.Path):
+    """Only the patchers attach a kind, so a filter reject has none; if those
+    aren't counted the sub-rows quietly come up short of the row above them."""
+    kind = patchers.PatcherSkipReason.NO_PYPROJECT
+    outcomes = [
+        pool.Outcome(repo=tmp_path / 'a', status='skipped', skip_reason_kind=kind),
+        pool.Outcome(repo=tmp_path / 'b', status='skipped', skip_reason_kind=kind),
+    ]
+    pool.add_skipped(outcomes, [(tmp_path / 'c', 'filtered out')])
+    assert report._skip_kinds(outcomes) == {kind.value: 2, 'filtered': 1}
+    text = _render(outcomes, base=tmp_path)
+    assert re.search(rf'^\s+{kind.value}\s+2\b', text, re.MULTILINE)
+    assert re.search(r'^\s+filtered\s+1\b', text, re.MULTILINE)
+    markdown = _render_markdown(outcomes, base=tmp_path)
+    assert f'| &nbsp;&nbsp;{kind.value} | 2 |' in markdown
+    assert '| &nbsp;&nbsp;filtered | 1 |' in markdown
+
+
+def test_render_without_a_target_says_hyrum_run(tmp_path: pathlib.Path):
+    """`show` on a file an older hyrum saved has no target to name."""
+    out = _render([], base=tmp_path, target='')
+    assert out.splitlines()[0] == 'hyrum run'
+    assert 'hyrum:' not in out
 
 
 def test_render_markdown_reports_no_runs_executed(tmp_path: pathlib.Path):
