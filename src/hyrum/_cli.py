@@ -648,6 +648,21 @@ def _positive_int(value: str) -> int:
     return number
 
 
+def _regex(value: str) -> str:
+    """Argparse ``type`` for a --repo pattern: reject a bad regex at parse time.
+
+    Compiled and thrown away -- the callers keep taking the pattern as a string.
+    Without this a typo like ``--repo '['`` escapes as a raw ``re.error``
+    traceback from wherever the pattern is first compiled, which is neither of
+    the two places the user typed it.
+    """
+    try:
+        re.compile(value)
+    except re.error as exc:
+        raise argparse.ArgumentTypeError(f'{value!r} is not a valid regex: {exc}') from None
+    return value
+
+
 def _non_negative_int(value: str) -> int:
     try:
         number = int(value)
@@ -947,7 +962,9 @@ def _add_check_subparser(
             'read today). [default: hyrum.toml]'
         ),
     )
-    parser.add_argument('--repo', default='.*', help='Regex on the repo name. [default: .*]')
+    parser.add_argument(
+        '--repo', type=_regex, default='.*', help='Regex on the repo name. [default: .*]'
+    )
     parser.add_argument(
         '--limit',
         type=_non_negative_int,
@@ -1265,6 +1282,7 @@ def _add_get_charms_subparser(
     )
     parser.add_argument(
         '--repo',
+        type=_regex,
         default='.*',
         help='Regex on the repo name. [default: .*]',
     )
@@ -1272,7 +1290,11 @@ def _add_get_charms_subparser(
         '--limit',
         type=_non_negative_int,
         default=0,
-        help='Stop after selecting this many charms to clone or pull (0 = all).',
+        help=(
+            'Clone at most this many charms that are not in the destination yet '
+            '(0 = every match, pulling the ones already there). Charms already '
+            'cloned are skipped, so repeated runs fetch the next slice.'
+        ),
     )
     parser.add_argument('--quiet', action='store_true', help='Suppress non-error output.')
     parser.set_defaults(func=_run_get_charms)
@@ -1575,15 +1597,47 @@ def _run_get_charms(args: argparse.Namespace) -> int:
         sys.exit(f'hyrum: error: Charm list not found: {source}')
 
     dest = args.dest or _default_charms_dir()
-    dest.mkdir(parents=True, exist_ok=True)
 
     with source.open(newline='', encoding='utf-8') as f:
         rows: list[get_charms.CharmRow] = list(csv.DictReader(f))  # type: ignore[arg-type]
-    rows = get_charms.select_rows(rows, repo=args.repo, limit=args.limit)
+
+    # These four "nothing to do" messages go to stderr rather than through
+    # logger: --quiet is ERROR, so a warning would leave a run that did nothing
+    # indistinguishable from one that did the work -- and --quiet is exactly
+    # what the unattended runs this subcommand exists for are invoked with.
+    # They are also kept apart, because "the CSV is empty" and "your --repo
+    # matched nothing" send the reader to different places.
     if not rows:
-        logger.warning('No charms in %s match --repo %r; nothing to do.', source, args.repo)
+        print(f'hyrum: {source} lists no charms; nothing to do.', file=sys.stderr)
         return 0
-    asyncio.run(get_charms.process_rows(rows, dest, workers=args.workers, timeout=args.timeout))
+    if not any((row.get('Repository') or '').strip() for row in rows):
+        print(f'hyrum: no row in {source} has a Repository; nothing to do.', file=sys.stderr)
+        return 0
+
+    selected = get_charms.select_rows(rows, repo=args.repo)
+    if not selected:
+        print(
+            f'hyrum: no charms in {source} match --repo {args.repo!r}; nothing to do.',
+            file=sys.stderr,
+        )
+        return 0
+    if args.limit:
+        # Existing checkouts are skipped before the limit is counted, so that
+        # `--limit 50` run twice fetches a hundred charms rather than the same
+        # fifty twice.
+        selected = get_charms.select_rows(selected, limit=args.limit, skip_existing_in=dest)
+        if not selected:
+            print(
+                f'hyrum: every charm matching --repo {args.repo!r} is already in {dest}; '
+                'nothing to do.',
+                file=sys.stderr,
+            )
+            return 0
+
+    dest.mkdir(parents=True, exist_ok=True)
+    asyncio.run(
+        get_charms.process_rows(selected, dest, workers=args.workers, timeout=args.timeout)
+    )
     return 0
 
 
