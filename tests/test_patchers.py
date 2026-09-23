@@ -569,6 +569,234 @@ def test_pyproject_poetry_leaves_scenario_alone_when_absent(
         assert 'ops-scenario' not in patched
 
 
+def test_pyproject_poetry_injects_into_the_group_that_declared_ops(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    """ops declared only in a named group is patched back into that group.
+
+    The strip pass walks named groups, so the original declaration always
+    came out. Injecting into the base table instead would move the dep to a
+    scope the charm never installs — and with no base table at all, as here,
+    it would vanish entirely.
+    """
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [tool.poetry]
+        name = "c"
+        version = "0"
+        description = ""
+        authors = ["x <x@x>"]
+        package-mode = false
+
+        [tool.poetry.group.charm.dependencies]
+        python = "^3.10"
+        ops = "^2.10"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        patched = _read(py)
+        assert 'ops = "^2.10"' not in patched
+        group_body = patched.split('[tool.poetry.group.charm.dependencies]', 1)[1]
+        assert 'ops = {git = "https://github.com/canonical/operator", rev = "fix/X"}' in group_body
+
+
+def test_pyproject_poetry_injects_into_every_declaring_table(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    """ops declared in both the base table and a group is patched in both."""
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [tool.poetry]
+        name = "c"
+        version = "0"
+        description = ""
+        authors = ["x <x@x>"]
+
+        [tool.poetry.dependencies]
+        python = "^3.10"
+        ops = "^2.10"
+
+        [tool.poetry.group.unit.dependencies]
+        pytest = "*"
+        ops = "^2.10"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        patched = _read(py)
+        assert 'ops = "^2.10"' not in patched
+        assert patched.count('ops = {git = "https://github.com/canonical/operator"') == 2
+
+
+def test_pyproject_poetry_keeps_a_companion_in_the_table_that_declared_it(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    """ops-scenario goes back where the charm had it, not everywhere ops is.
+
+    Writing it into the base table as well hands the charm a dependency it
+    deliberately scoped to its unit group: a run that should have failed on
+    the missing declaration passes instead.
+    """
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [tool.poetry]
+        name = "c"
+        version = "0"
+        description = ""
+        authors = ["x <x@x>"]
+
+        [tool.poetry.dependencies]
+        python = "^3.10"
+        ops = "^2.10"
+
+        [tool.poetry.group.unit.dependencies]
+        pytest = "*"
+        ops = "^2.10"
+        ops-scenario = "^7"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        patched = _read(py)
+        base_body, group_body = patched.split('[tool.poetry.group.unit.dependencies]', 1)
+        assert 'ops-scenario' not in base_body
+        assert 'ops-scenario = {git =' in group_body
+        assert patched.count('ops = {git =') == 2
+
+
+def test_pyproject_poetry_companion_follows_ops_when_undeclared(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    """A charm that asks for ops[testing] never declared the companion itself."""
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [tool.poetry]
+        name = "c"
+        version = "0"
+        description = ""
+        authors = ["x <x@x>"]
+
+        [tool.poetry.group.unit.dependencies]
+        ops = {version = "^2.17", extras = ["testing"]}
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        group_body = _read(py).split('[tool.poetry.group.unit.dependencies]', 1)[1]
+        assert 'ops-scenario = {git =' in group_body
+
+
+def test_pyproject_poetry_keeps_a_companion_in_dev_dependencies(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    """The legacy dev-dependencies table is one Poetry resolves from too."""
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [tool.poetry]
+        name = "c"
+        version = "0"
+        description = ""
+        authors = ["x <x@x>"]
+
+        [tool.poetry.dependencies]
+        python = "^3.10"
+        ops = "^2.10"
+
+        [tool.poetry.dev-dependencies]
+        ops-scenario = "^7"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        patched = _read(py)
+        base_body, dev_body = patched.split('[tool.poetry.dev-dependencies]', 1)
+        assert 'ops-scenario' not in base_body
+        assert 'ops-scenario = {git =' in dev_body
+
+
+def test_pyproject_poetry_raises_when_there_is_nowhere_to_put_ops(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    """A [project] array under a [tool.poetry] file is not a table Poetry reads.
+
+    The declaration is stripped and there is no base table to fall back on, so
+    the charm would run against whatever ops its lockfile already pins and
+    report that as a result for the ops under test. A patcher error says so;
+    the pool records it distinctly from a test failure.
+    """
+    # Stubbed so that a regression fails the assertion rather than running a
+    # real `poetry lock` against the unpatched file.
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "c"
+        dependencies = [
+            "ops>=2.10",
+        ]
+
+        [tool.poetry]
+        package-mode = false
+
+        [tool.poetry.group.unit.dependencies]
+        pytest = "*"
+    """)
+    )
+    with (
+        pytest.raises(patchers.PatcherError, match=r'no \[tool\.poetry\.dependencies\] table'),
+        patchers.OpsSourcePatcher(ops_branch).apply(tmp_path),
+    ):
+        pass
+
+
+def test_pyproject_poetry_injection_does_not_add_blank_lines(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    """The patched file is what a person reads when triaging a failure."""
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [tool.poetry]
+        name = "c"
+        version = "0"
+        description = ""
+        authors = ["x <x@x>"]
+
+        [tool.poetry.dependencies]
+        python = "^3.10"
+        ops = "^2.10"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        patched = _read(py)
+    assert '[tool.poetry.dependencies]\nops = {git =' in patched
+
+
+def test_strip_ops_declarations_reports_the_tables_it_stripped_from():
+    text = textwrap.dedent("""\
+        [tool.poetry.dependencies]
+        ops = "^2.10"
+
+        [tool.poetry.group.unit.dependencies]
+        pytest = "*"
+        ops = "^2.10"
+
+        [tool.poetry.group.lint.dependencies]
+        ruff = "*"
+    """)
+    stripped, sections = ops_source._strip_ops_declarations(text)
+    assert 'ops = "^2.10"' not in stripped
+    assert sections == ['tool.poetry.dependencies', 'tool.poetry.group.unit.dependencies']
+
+
 # ---- OpsSource: PyPI version mode -------------------------------------------
 
 

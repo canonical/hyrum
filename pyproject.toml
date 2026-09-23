@@ -1,6 +1,6 @@
 [project]
 name = "hyrum"
-version = "1.0.0a1"
+version = "1.0.0b1"
 description = "Bulk-run checks across many charm repositories with a dependency swapped out."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,7 +16,7 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
 ]
 dependencies = [
-    "packaging>=24.0",
+    "packaging>=26.3",
 ]
 
 [project.scripts]
@@ -36,15 +36,15 @@ packages = ["src/hyrum"]
 # ---------------------------------------------------------------------------
 [dependency-groups]
 lint = [
-    "ruff>=0.16.0",
+    "ruff>=0.16.4",
     "codespell>=2.4.3",
-    "zizmor>=1.28.0",
+    "zizmor>=1.29.0",
     "pyright>=1.1.411",
 ]
 unit = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "coverage>=7.15.2",
+    "coverage>=7.15.4",
 ]
 
 [tool.uv]

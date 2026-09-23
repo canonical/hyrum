@@ -3,7 +3,9 @@
 Reads ``charm-list/charms.csv`` (or another path given via ``--source``) and
 ensures each row has an up-to-date checkout in ``--dest``: missing
 repositories are cloned (shallow, single-branch), existing ones are pulled.
-Network work runs concurrently via ``asyncio``.
+``select_rows`` narrows the list first, so a slow or unstable link can
+populate the collection a slice at a time. Network work runs concurrently
+via ``asyncio``.
 
 The ``git`` CLI is invoked as a subprocess, so it inherits whatever
 authentication the calling shell has configured.
@@ -16,6 +18,7 @@ import contextlib
 import logging
 import os
 import pathlib
+import re
 import shutil
 import signal
 import typing
@@ -79,6 +82,39 @@ def find_default_source() -> pathlib.Path | None:
     return None
 
 
+def select_rows(
+    rows: typing.Iterable[CharmRow],
+    *,
+    repo: str = '.*',
+    limit: int = 0,
+) -> list[CharmRow]:
+    """Return the subset of ``rows`` to clone or pull.
+
+    ``repo`` is a case-insensitive regex matched against the checkout's
+    folder name. ``limit`` caps how many rows are selected, counted after
+    ``repo`` has been applied so that it bounds the work done rather than
+    the rows looked at; ``0`` selects every match.
+
+    Rows with no ``Repository`` cannot be named, so they are dropped here
+    rather than counted against ``limit``. ``process_rows`` guards against
+    them too, for callers that build a row list without this function; the
+    warning is not emitted twice, because such rows never reach it.
+    """
+    pattern = re.compile(repo, re.IGNORECASE)
+    selected: list[CharmRow] = []
+    for row in rows:
+        if limit > 0 and len(selected) >= limit:
+            break
+        repository = (row.get('Repository') or '').rstrip('/')
+        if not repository:
+            logger.warning('Skipping row without Repository: %r', row)
+            continue
+        branch = row.get('Branch (if not the default)') or None
+        if pattern.match(_folder_leaf(repository, branch)):
+            selected.append(row)
+    return selected
+
+
 async def process_rows(
     rows: typing.Iterable[CharmRow],
     dest: pathlib.Path,
@@ -87,6 +123,16 @@ async def process_rows(
     timeout: float = DEFAULT_TIMEOUT,
 ) -> None:
     """Clone or pull each repository row concurrently.
+
+    Rows that resolve to a checkout directory an earlier row already claimed
+    are skipped: without that, two rows for one repository become two workers
+    racing for the same destination, and one of them fails with either "could
+    not create work tree dir" or "already exists and is not an empty
+    directory" depending on which lost. Deduplication is keyed on the
+    directory rather than the URL so two spellings of one repository, or two
+    rows for one charm listed under different teams, collapse as well. The
+    rows themselves are left alone: a charm listed twice under two teams is
+    real metadata.
 
     ``workers`` caps how many ``git`` subprocesses run at once so a large
     charm list can't exhaust the process file-descriptor limit. ``timeout``
@@ -106,6 +152,8 @@ async def process_rows(
             return await _clone(repo_path, name, repository, branch, timeout=timeout)
 
     tasks: list[tuple[str, asyncio.Task[bool]]] = []
+    claimed: dict[pathlib.Path, str] = {}
+    duplicates = 0
     async with asyncio.TaskGroup() as tg:
         for row in rows:
             if not row.get('Repository'):
@@ -115,6 +163,13 @@ async def process_rows(
             name = _repo_label(repository)
             branch = row.get('Branch (if not the default)') or None
             repo_path = repo_folder(dest, repository, branch)
+            if repo_path in claimed:
+                logger.debug(
+                    'Skipping %s: %s already claims %s', name, claimed[repo_path], repo_path
+                )
+                duplicates += 1
+                continue
+            claimed[repo_path] = name
             if repo_path.exists():
                 tasks.append((name, tg.create_task(_pull_bounded(repo_path, name))))
             else:
@@ -126,6 +181,8 @@ async def process_rows(
     failures = [name for name, task in tasks if not task.result()]
     succeeded = len(tasks) - len(failures)
     logger.info('get-charms: %d succeeded, %d failed.', succeeded, len(failures))
+    if duplicates:
+        logger.info('get-charms: %d rows skipped as duplicates of an earlier row.', duplicates)
     if failures:
         logger.warning('Failed: %s', ', '.join(failures))
 
@@ -138,10 +195,14 @@ def _repo_label(repository: str) -> str:
 
 def repo_folder(dest: pathlib.Path, repository: str, branch: str | None) -> pathlib.Path:
     """Return the directory inside ``dest`` for ``repository``, namespaced by owner."""
-    parts = repository.rstrip('/').rsplit('/', 2)
-    owner, base_name = parts[-2], parts[-1]
-    leaf = f'{base_name}-{branch}' if branch else base_name
-    return dest / owner / leaf
+    owner = repository.rstrip('/').rsplit('/', 2)[-2]
+    return dest / owner / _folder_leaf(repository, branch)
+
+
+def _folder_leaf(repository: str, branch: str | None) -> str:
+    """Return the checkout's folder name: the repo name, plus any branch suffix."""
+    base_name = repository.rstrip('/').rsplit('/', 2)[-1]
+    return f'{base_name}-{branch}' if branch else base_name
 
 
 class _TimeoutError(Exception):

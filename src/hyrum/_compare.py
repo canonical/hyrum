@@ -7,7 +7,7 @@ import pathlib
 import sys
 from typing import TextIO
 
-from hyrum import _ansi
+from hyrum import _ansi, _percent
 from hyrum import _pool as pool
 
 # Version of the `hyrum compare --format json` payload, independent of the
@@ -154,7 +154,7 @@ def _drift_sentence(result: CompareResult) -> str:
 def _fmt_pct(rate: float | None) -> str:
     # One decimal, to match the percentage-point delta: at whole-number
     # precision a single regression across a few hundred charms is invisible.
-    return 'n/a' if rate is None else f'{rate * 100:.1f}%'
+    return 'n/a' if rate is None else _percent.format_pct(rate, decimals=1)
 
 
 def render(result: CompareResult, *, file: TextIO | None = None) -> None:
@@ -204,9 +204,10 @@ def _short(repo: str) -> str:
     """Shorten a charm key for the table.
 
     Keys saved by current hyrum are already charms-dir-relative
-    (``owner/charm``) and pass through unchanged. Absolute paths from older
-    results files keep their last two segments so different owners' charms
-    of the same name stay distinguishable.
+    (``owner/charm``, or deeper for a charm inside a monorepo) and pass
+    through unchanged. Absolute paths from older results files keep their
+    last two segments so different owners' charms of the same name stay
+    distinguishable.
     """
     path = pathlib.PurePosixPath(repo)
     if not path.is_absolute():
