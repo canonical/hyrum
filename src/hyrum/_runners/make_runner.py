@@ -3,14 +3,17 @@
 GNU make has no dedicated exit code for "target does not exist": it
 emits exit code 2 along with ``No rule to make target '<target>'`` on
 stderr, which is the same exit code it uses for other errors. We
-detect the "no such target" case from the stderr message so the tool
-can record it as a skip rather than a failure — matching tox's 254
+detect the "no such target" case from that message so the tool can
+record it as a skip rather than a failure — matching tox's 254
 behaviour.
 
 We probe targets with ``make -nq <target>`` (dry-run, question-mode)
 before invoking the real recipe: it has no side effects, returns 2 if
 the target does not exist, and lets us distinguish that case cleanly
-even when the Makefile is non-trivial.
+even when the Makefile is non-trivial. The probe keeps its two streams
+on separate pipes, because it reads stderr as a signal rather than for
+a human; the real invocation merges them so the captured transcript
+keeps its order.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import pathlib
+import re
 import time
 from collections.abc import Sequence
 
@@ -25,10 +29,13 @@ from hyrum._runners import base
 
 logger = logging.getLogger(__name__)
 
-_NO_RULE_MARKERS = (
-    b'No rule to make target',
-    b'no rule to make target',
-)
+# make prefixes its own diagnostics with `make:`, so anchoring to that keeps
+# recipe output that happens to mention a missing target from being read as
+# one - the real invocation captures stdout and stderr on one pipe, so the
+# recipe's own output reaches this check too. A sub-make's `make[1]:` prefix
+# is deliberately not matched: a nested target being absent does not mean the
+# target we asked for is.
+_NO_RULE_RE = re.compile(rb'(?mi)^make: \*\*\* No rule to make target\b')
 
 
 class MakeRunner:
@@ -70,13 +77,15 @@ class MakeRunner:
                 *argv,
                 cwd=repo.resolve(),
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                # Same pipe for both streams so the captured transcript keeps
+                # the order make and its recipes actually wrote in.
+                stderr=asyncio.subprocess.STDOUT,
             )
         except OSError as exc:
             logger.error('could not launch %s in %s: %s', argv[0], repo, exc)
             return base.launch_failure(repo, runner=self.name, target=target, argv=argv, exc=exc)
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
+            output, _ = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
         except TimeoutError:
             await _kill_and_drain(proc, repo)
             return base.RunResult(
@@ -89,12 +98,11 @@ class MakeRunner:
             )
 
         duration = time.monotonic() - started
-        stdout = base.strip_ansi(stdout)
-        stderr = base.strip_ansi(stderr)
+        output = base.strip_ansi(output)
         rc = proc.returncode
         if rc == 0:
             status = base.RunStatus.PASSED
-        elif _looks_like_missing_target(stderr):
+        elif _looks_like_missing_target(output):
             status = base.RunStatus.NO_TARGET
         else:
             status = base.RunStatus.FAILED
@@ -105,8 +113,7 @@ class MakeRunner:
             status=status,
             returncode=rc,
             duration_s=duration,
-            stdout=stdout,
-            stderr=stderr,
+            output=output,
         )
 
     async def _target_missing(self, repo: pathlib.Path, target: str) -> bool:
@@ -131,8 +138,8 @@ class MakeRunner:
         return _looks_like_missing_target(stderr)
 
 
-def _looks_like_missing_target(stderr: bytes) -> bool:
-    return any(marker in stderr for marker in _NO_RULE_MARKERS)
+def _looks_like_missing_target(output: bytes) -> bool:
+    return _NO_RULE_RE.search(output) is not None
 
 
 async def _kill_and_drain(proc: asyncio.subprocess.Process, repo: pathlib.Path) -> None:

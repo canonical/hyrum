@@ -28,7 +28,7 @@ Then inspect individual log files:
 cat logs/charm-apt-mirror.log
 ```
 
-The log file starts with a metadata header (`=== meta ===`) followed by `=== stdout ===` and `=== stderr ===` sections.
+The log file starts with a metadata header (`=== meta ===`) followed by an `=== output ===` section holding the runner's stdout and stderr merged, in the order they were written.
 
 ## Re-read a run you already have
 

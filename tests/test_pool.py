@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import pathlib
 
 import pytest
 
+from hyrum import _locks
 from hyrum import _patchers as patchers
 from hyrum import _pool as pool
 from hyrum import _runners as runners
@@ -16,13 +19,11 @@ class StubRunner:
         self,
         status: runners.RunStatus = runners.RunStatus.PASSED,
         returncode: int = 0,
-        stdout: bytes = b'',
-        stderr: bytes = b'',
+        output: bytes = b'',
     ):
         self.status = status
         self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
+        self.output = output
         self.seen: list[pathlib.Path] = []
 
     async def run(self, repo: pathlib.Path, target: str) -> runners.RunResult:
@@ -34,8 +35,7 @@ class StubRunner:
             status=self.status,
             returncode=self.returncode,
             duration_s=0.01,
-            stdout=self.stdout,
-            stderr=self.stderr,
+            output=self.output,
         )
 
 
@@ -101,7 +101,7 @@ async def test_run_pool_handles_runner_exception_as_patcher_error(tmp_path: path
 
 async def test_run_one_runner_error_is_not_a_test_failure(tmp_path: pathlib.Path):
     runner = StubRunner(runners.RunStatus.RUNNER_ERROR, returncode=None)
-    runner.stderr = b"could not run 'make': [Errno 2] No such file or directory: 'make'"
+    runner.output = b"could not run 'make': [Errno 2] No such file or directory: 'make'"
     outcome = await pool.run_one(tmp_path, 'unit', patcher=patchers.NullPatcher(), runner=runner)
     assert outcome.status == 'runner_error'
     # Not attributed to the patcher, and the cause survives into the report.
@@ -116,7 +116,9 @@ async def test_log_dir_dumps_runner_output(tmp_path: pathlib.Path):
     repo.mkdir(parents=True)
     log_dir = tmp_path / 'logs'
     runner = StubRunner(
-        runners.RunStatus.FAILED, returncode=2, stdout=b'pytest ran\n', stderr=b'oops\n'
+        runners.RunStatus.FAILED,
+        returncode=2,
+        output=b'collecting ...\npytest ran\noops\n',
     )
     outcome = await pool.run_one(
         repo,
@@ -133,8 +135,11 @@ async def test_log_dir_dumps_runner_output(tmp_path: pathlib.Path):
     content = log.read_text()
     assert 'status: failed' in content
     assert 'returncode: 2' in content
-    assert 'pytest ran' in content
-    assert 'oops' in content
+    # One transcript, in the order the runner captured it — no per-stream
+    # sections to reassemble.
+    assert '=== output ===\ncollecting ...\npytest ran\noops\n' in content
+    assert '=== stdout ===' not in content
+    assert '=== stderr ===' not in content
 
 
 async def test_log_dir_dumps_patcher_error(tmp_path: pathlib.Path):
@@ -188,3 +193,59 @@ def test_add_skipped_appends():
 )
 def test_passed(outcomes, expected):
     assert pool.passed(outcomes) is expected
+
+
+class LockObservingPatcher:
+    """Records whether the charm's lock was held while the patch was applied."""
+
+    def __init__(self, lock_file: pathlib.Path):
+        self._lock_file = lock_file
+        self.locked_during_patch: bool | None = None
+
+    @contextlib.contextmanager
+    def apply(self, repo: pathlib.Path):
+        self.locked_during_patch = _is_locked(self._lock_file)
+        yield
+
+
+def _is_locked(path: pathlib.Path) -> bool:
+    if not path.exists():
+        return False
+    with path.open('r') as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(handle, fcntl.LOCK_UN)
+    return False
+
+
+async def test_run_one_holds_the_charm_lock_across_the_patch(tmp_path: pathlib.Path):
+    repo = tmp_path / 'a-charm'
+    repo.mkdir()
+    lock_root = _locks.lock_root_for(tmp_path)
+    lock_file = _locks.lock_path(repo, lock_root=lock_root, base=tmp_path)
+    patcher = LockObservingPatcher(lock_file)
+    outcome = await pool.run_one(
+        repo,
+        'unit',
+        patcher=patcher,
+        runner=StubRunner(),
+        log_base=tmp_path,
+        lock_root=lock_root,
+    )
+    assert outcome.status == 'passed'
+    # The window that matters starts before the patcher touches the tree.
+    assert patcher.locked_during_patch is True
+    # And it ends when the charm is done, so the next run is not shut out.
+    assert not _is_locked(lock_file)
+
+
+async def test_run_one_without_a_lock_root_takes_no_lock(tmp_path: pathlib.Path):
+    repo = tmp_path / 'a-charm'
+    repo.mkdir()
+    outcome = await pool.run_one(
+        repo, 'unit', patcher=patchers.NullPatcher(), runner=StubRunner(), log_base=tmp_path
+    )
+    assert outcome.status == 'passed'
+    assert not _locks.lock_root_for(tmp_path).exists()

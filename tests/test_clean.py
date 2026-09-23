@@ -196,3 +196,68 @@ def test_an_unreadable_owner_does_not_look_like_a_cache(
     with caplog.at_level(logging.ERROR, logger=clean.logger.name):
         assert not clean.looks_like_a_cache(tmp_path)
     assert any('Could not check' in m for m in caplog.messages)
+
+
+def _artefact(path: pathlib.Path) -> clean.Artefact:
+    return clean.Artefact(path=path, size=0, is_dir=True)
+
+
+def test_group_by_charm_puts_each_artefact_under_its_charm(tmp_path: pathlib.Path):
+    alpha = tmp_path / 'alpha'
+    beta = tmp_path / 'beta'
+    one = _artefact(alpha / '.tox')
+    two = _artefact(alpha / 'src' / '__pycache__')
+    three = _artefact(beta / '.venv')
+
+    groups, unowned = clean.group_by_charm([one, two, three], [alpha, beta])
+
+    assert dict(groups) == {alpha: [one, two], beta: [three]}
+    assert unowned == []
+
+
+def test_group_by_charm_gives_a_monorepo_subcharm_its_own_artefacts(tmp_path: pathlib.Path):
+    """The innermost charm wins, because that is the one a run locks.
+
+    Grouping by the enclosing git checkout instead would name a lock no run
+    ever holds, and exclude nothing.
+    """
+    outer = tmp_path / 'kfp-operators'
+    ui = outer / 'charms' / 'kfp-ui'
+    api = outer / 'charms' / 'kfp-api'
+    ui_tox = _artefact(ui / '.tox')
+    api_tox = _artefact(api / '.tox')
+    top = _artefact(outer / '__pycache__')
+
+    groups, unowned = clean.group_by_charm([ui_tox, api_tox, top], [ui, api, outer])
+
+    assert dict(groups) == {ui: [ui_tox], api: [api_tox], outer: [top]}
+    assert unowned == []
+
+
+def test_group_by_charm_reports_what_no_charm_owns(tmp_path: pathlib.Path):
+    alpha = tmp_path / 'alpha'
+    stray = _artefact(tmp_path / '__pycache__')
+    mine = _artefact(alpha / '.tox')
+
+    groups, unowned = clean.group_by_charm([stray, mine], [alpha])
+
+    assert dict(groups) == {alpha: [mine]}
+    assert unowned == [stray]
+
+
+def test_group_by_charm_keeps_the_outermost_first_order(tmp_path: pathlib.Path):
+    """Removing a directory has to happen before anything inside it."""
+    alpha = tmp_path / 'alpha'
+    outer = _artefact(alpha / '.tox')
+    inner = _artefact(alpha / '.tox' / 'py311' / '__pycache__')
+
+    groups, _ = clean.group_by_charm([outer, inner], [alpha])
+
+    assert dict(groups)[alpha] == [outer, inner]
+
+
+def test_group_by_charm_with_no_charms_owns_nothing(tmp_path: pathlib.Path):
+    stray = _artefact(tmp_path / 'somewhere' / '.venv')
+    groups, unowned = clean.group_by_charm([stray], [])
+    assert groups == []
+    assert unowned == [stray]

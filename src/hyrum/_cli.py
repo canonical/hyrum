@@ -21,7 +21,7 @@ from collections.abc import Sequence
 
 import packaging.requirements
 
-from hyrum import _clean, _compare, _enumerate, _results, _version
+from hyrum import _clean, _compare, _enumerate, _locks, _results, _version
 from hyrum import _config as config_loader
 from hyrum import _filters as filt
 from hyrum import _frameworks as frameworks
@@ -30,6 +30,7 @@ from hyrum import _patchers as patchers
 from hyrum import _pool as pool
 from hyrum import _report as report
 from hyrum import _runners as runners
+from hyrum import _selection as selection
 from hyrum._runners import make_runner, tox
 
 logger = logging.getLogger('hyrum')
@@ -589,6 +590,7 @@ def _select_repos(
     repo_re: str,
     limit: int,
     framework: str | None,
+    from_results: filt.Filter | None = None,
 ) -> tuple[list[pathlib.Path], list[tuple[pathlib.Path, str]]]:
     """Return (repos to run, list of (repo, skip-reason) pairs).
 
@@ -598,6 +600,10 @@ def _select_repos(
     cap applied before filtering makes small values select nothing at all.
     Charms passed over on the way to the cap still land in ``skipped``, so
     the summary stays honest about what was looked at.
+
+    ``from_results`` (built by :func:`hyrum._selection.load_selection`) is
+    one more link in the chain, intersecting with every other filter here
+    and applied before ``limit`` like the rest of them.
     """
     chain: list[filt.Filter] = [
         filt.not_legacy,
@@ -614,6 +620,8 @@ def _select_repos(
             )
 
         chain.append(framework_filter)
+    if from_results is not None:
+        chain.append(from_results)
 
     repos: list[pathlib.Path] = []
     skipped: list[tuple[pathlib.Path, str]] = []
@@ -648,6 +656,19 @@ def _non_negative_int(value: str) -> int:
     if number < 0:
         raise argparse.ArgumentTypeError(f'{value!r} is not a non-negative integer')
     return number
+
+
+def _parse_status_arg(value: str) -> tuple[str, ...]:
+    """Parse one ``--status`` occurrence: a comma-separated list of status/group names."""
+    tokens = tuple(part.strip() for part in value.split(',') if part.strip())
+    if not tokens:
+        raise argparse.ArgumentTypeError('--status: empty value')
+    valid = selection.known_selectors()
+    for token in tokens:
+        if token not in valid:
+            choices = ', '.join(sorted(valid))
+            raise argparse.ArgumentTypeError(f'--status: {token!r} is not one of: {choices}')
+    return tokens
 
 
 def _default_charms_dir() -> pathlib.Path:
@@ -775,17 +796,34 @@ class _RollingSavePlan(_DirectorySavePlan):
 _SavePlan = _NoSavePlan | _PathSavePlan | _TimestampedSavePlan | _RollingSavePlan
 
 
+_NARROWED_ROLLING_WARNING = (
+    'hyrum: warning: this run is narrowed by --from-results, so the rolling '
+    'results it saves are not a fleet baseline: every charm it did not run is '
+    'recorded as `skipped`, and a later `hyrum compare` against it reads those '
+    'charms as never having passed.'
+)
+
+
 def _resolve_save_plan(
     *,
     no_save: bool,
     save: pathlib.Path | None,
     auto_save: pathlib.Path | None,
     save_config: config_loader.SaveConfig | None,
+    narrowed: bool = False,
 ) -> _SavePlan:
     """Fold the CLI flags and config default into a single :class:`_SavePlan`.
 
     Precedence: explicit CLI flag > config file > built-in default (auto-save
     to ``~/.cache/hyrum/results/``).
+
+    ``narrowed`` says the run only looks at some of the cache (``--from-results``).
+    Such a run must not silently become the rolling baseline the next comparison
+    trusts, because the charms it skipped are saved as `skipped` and
+    ``passed -> skipped`` is not a regression to ``compare``. So the *built-in*
+    rolling default is dropped for a narrowed run; a rolling save the user asked
+    for, by flag or by config, still happens, with a warning saying what the
+    file is and is not.
     """
     if no_save:
         return _NoSavePlan()
@@ -794,10 +832,26 @@ def _resolve_save_plan(
             return _TimestampedSavePlan(save)
         return _PathSavePlan(save)
     if auto_save is not None:
+        if narrowed:
+            print(_NARROWED_ROLLING_WARNING, file=sys.stderr)
         return _RollingSavePlan(auto_save)
     # No CLI save flag: consult the config file, else fall back to auto-save.
     if save_config is not None:
-        return _plan_from_config(save_config)
+        plan = _plan_from_config(save_config)
+        if narrowed and isinstance(plan, _RollingSavePlan):
+            print(_NARROWED_ROLLING_WARNING, file=sys.stderr)
+        return plan
+    if narrowed:
+        # The built-in default only: nobody asked for this file, so a narrowed
+        # run writes nothing rather than overwriting the fleet's baseline.
+        # `--auto-save`, `--save` or `[save]` all still do what they say.
+        print(
+            'hyrum: warning: --from-results narrows the run, so the default rolling '
+            'save is off (it would record every charm this run skipped as `skipped`, '
+            'replacing the fleet baseline). Pass --save or --auto-save to save anyway.',
+            file=sys.stderr,
+        )
+        return _NoSavePlan()
     return _RollingSavePlan(_default_auto_save_dir())
 
 
@@ -906,6 +960,32 @@ def _add_check_subparser(
         choices=list(frameworks.supported_frameworks()),
         default=None,
         help='Only run for charms using this testing framework.',
+    )
+    parser.add_argument(
+        '--from-results',
+        type=pathlib.Path,
+        default=None,
+        help=(
+            'Only run charms named in this saved results file (for example, one written '
+            'by --save/--auto-save). Always a filesystem path: no default location, run id, '
+            'or target-name lookup. Intersects with --repo, --framework and [ignore] like '
+            'every other filter, and is applied before --limit. Defaults --status to failing.'
+        ),
+    )
+    parser.add_argument(
+        '--status',
+        dest='status',
+        action='append',
+        type=_parse_status_arg,
+        default=[],
+        help=(
+            'With --from-results, only select charms whose saved outcome is one of these. '
+            'Repeatable and comma-separated; repeats and commas union together. Accepts the '
+            'outcome statuses (passed, failed, no_target, timeout, runner_error, '
+            'patcher_error, skipped) plus two groups: failing (reached the runner or the '
+            'patcher and did not come out clean) and not-passing (everything but passed). '
+            'Requires --from-results. [default with --from-results: failing]'
+        ),
     )
     parser.add_argument(
         '--workers',
@@ -1026,9 +1106,19 @@ def _add_check_subparser(
         type=pathlib.Path,
         default=None,
         help=(
-            "Write each charm's runner stdout/stderr to a per-charm file under "
-            'this directory. Useful for triaging failures without rerunning. '
+            "Write each charm's runner output (stdout and stderr merged, in the "
+            'order they were written) to a per-charm file under this directory. '
+            'Useful for triaging failures without rerunning. '
             'File names use the repo path with `/` flattened to `__`.'
+        ),
+    )
+    parser.add_argument(
+        '--no-lock',
+        action='store_true',
+        help=(
+            'Do not take a per-charm lock. Two runs sharing a charms directory then '
+            'patch the same charm at the same time, and each reports results for '
+            'whichever patch won, so only use this when nothing else is running.'
         ),
     )
     parser.add_argument(
@@ -1220,6 +1310,15 @@ def _add_clean_subparser(
         action='store_true',
         help='Clean a directory that does not look like a charms directory.',
     )
+    parser.add_argument(
+        '--no-lock',
+        action='store_true',
+        help=(
+            "Do not take a per-charm lock before removing that charm's artefacts. "
+            'A concurrent check run then has its .tox or .venv deleted mid-run, so '
+            'only use this when nothing else is running.'
+        ),
+    )
     parser.add_argument('--quiet', action='store_true', help='Suppress non-error output.')
     parser.set_defaults(func=_run_clean)
     return parser
@@ -1294,6 +1393,7 @@ def _run_check(args: argparse.Namespace) -> int:
         save=args.save_path,
         auto_save=auto_save_dir,
         save_config=cfg.save,
+        narrowed=args.from_results is not None,
     )
     # Reject an unusable save target now, not after a multi-hour run.
     if not save_plan.validate():
@@ -1303,14 +1403,55 @@ def _run_check(args: argparse.Namespace) -> int:
     if args.host_env_defaults:
         _apply_host_env_defaults(args.target)
 
+    status_tokens = [token for group in args.status for token in group]
+    if status_tokens and args.from_results is None:
+        # Exit 2 rather than 1: this is bad input, like a malformed
+        # --from-results file, and `hyrum compare` already spells that 2.
+        print('hyrum: error: --status requires --from-results', file=sys.stderr)
+        return 2
+    from_results: selection.Selection | None = None
+    if args.from_results is not None:
+        statuses = selection.expand_statuses(status_tokens or ['failing'])
+        try:
+            from_results = selection.load_selection(args.from_results, statuses, cache=charms_dir)
+        except ValueError as exc:
+            print(f'hyrum: error: {exc}', file=sys.stderr)
+            return 2
+
     repos, skipped = _select_repos(
         charms_dir,
         config=cfg,
         repo_re=args.repo,
         limit=args.limit,
         framework=args.framework,
+        from_results=from_results.filter if from_results is not None else None,
     )
     logger.info('Selected %d charm(s); skipping %d up-front.', len(repos), len(skipped))
+
+    if from_results is not None:
+        missing = selection.unmatched(
+            from_results, [*repos, *(repo for repo, _ in skipped)], base=charms_dir
+        )
+        if missing:
+            logger.info(
+                '%d charm(s) named in %s are not present in %s '
+                '(not cloned; see `hyrum get-charms`).',
+                len(missing),
+                args.from_results,
+                charms_dir,
+            )
+        if not repos:
+            # Every way of selecting nothing lands here: a file naming charms
+            # this cache doesn't have, a file with no charm in a wanted status,
+            # an empty file. Running zero charms would otherwise be reported as
+            # a clean run.
+            print(
+                f'hyrum: error: no charm in {charms_dir} matched --from-results '
+                f'{args.from_results} with --status '
+                f'{", ".join(sorted(from_results.statuses))}; nothing to run.',
+                file=sys.stderr,
+            )
+            return 2
 
     if args.no_patch and args.patches:
         raise SystemExit('--no-patch is mutually exclusive with --patch')
@@ -1363,6 +1504,7 @@ def _run_check(args: argparse.Namespace) -> int:
             workers=args.workers,
             log_dir=args.log_dir,
             log_base=charms_dir,
+            lock_root=None if args.no_lock else _locks.lock_root_for(charms_dir),
         )
     )
     pool.add_skipped(results, skipped)
@@ -1466,22 +1608,44 @@ def _run_clean(args: argparse.Namespace) -> int:
     except (FileNotFoundError, NotADirectoryError) as exc:
         sys.exit(f'hyrum: error: --charms-dir: {exc}')
 
-    removed = 0
-    reclaimed = 0
-    failed = 0
-    for artefact in artefacts:
-        relative = report.relative(artefact.path, charms_dir)
-        if args.dry_run:
-            logger.info('Would remove %s (%s)', relative, _clean.format_size(artefact.size))
-            removed += 1
-            reclaimed += artefact.size
-            continue
-        logger.debug('Removing %s (%s)', relative, _clean.format_size(artefact.size))
-        if _clean.remove(artefact):
-            removed += 1
-            reclaimed += artefact.size
-        else:
-            failed += 1
+    def dispose(batch: list[_clean.Artefact]) -> tuple[int, int, int]:
+        """Remove ``batch``, returning ``(removed, reclaimed, failed)``."""
+        removed = reclaimed = failed = 0
+        for artefact in batch:
+            relative = report.relative(artefact.path, charms_dir)
+            if args.dry_run:
+                logger.info('Would remove %s (%s)', relative, _clean.format_size(artefact.size))
+                removed += 1
+                reclaimed += artefact.size
+                continue
+            logger.debug('Removing %s (%s)', relative, _clean.format_size(artefact.size))
+            if _clean.remove(artefact):
+                removed += 1
+                reclaimed += artefact.size
+            else:
+                failed += 1
+        return removed, reclaimed, failed
+
+    # A dry run removes nothing, so it does not wait on a lock: blocking a
+    # read-only report behind a live run would be the surprising behaviour.
+    # Real removal does wait, per charm, because .tox and .venv are exactly
+    # what a concurrent run is using.
+    lock_root = None if args.no_lock or args.dry_run else _locks.lock_root_for(charms_dir)
+    groups, unowned = _clean.group_by_charm(
+        artefacts, _enumerate.iter_charm_repos(charms_dir) if lock_root is not None else ()
+    )
+    removed = reclaimed = failed = 0
+    for charm, batch in groups:
+        with _locks.charm_lock(charm, lock_root=lock_root, base=charms_dir):
+            counts = dispose(batch)
+        removed += counts[0]
+        reclaimed += counts[1]
+        failed += counts[2]
+    # Nothing owns these, so there is no lock that would mean anything.
+    counts = dispose(unowned)
+    removed += counts[0]
+    reclaimed += counts[1]
+    failed += counts[2]
 
     if not args.quiet:
         verb = 'Would reclaim' if args.dry_run else 'Reclaimed'

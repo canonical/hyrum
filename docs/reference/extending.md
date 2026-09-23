@@ -39,7 +39,7 @@ class Runner(Protocol):
 
 `detect` returns `True` if the runner believes it can run in the given repo (for example, `ToxRunner.detect` checks for `tox.ini`). `runners.auto()` calls each runner's `detect` to select the right one per charm.
 
-`RunResult` is a frozen dataclass carrying the repo path, runner name, target name, status, return code, duration, and captured stdout/stderr. The stdout and stderr are preserved in memory for the duration of the run so they can be written to `--log-dir` immediately after.
+`RunResult` is a frozen dataclass carrying the repo path, runner name, target name, status, return code, duration, and captured output. Runners capture stderr into the stdout pipe, so the output is a single transcript in the order the process wrote it. It is preserved in memory for the duration of the run so it can be written to `--log-dir` immediately after.
 
 ## Room for more patchers
 

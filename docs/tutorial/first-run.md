@@ -138,7 +138,7 @@ Use `--log-dir` to write each charm's runner output to a file for offline triage
 hyrum check unit --no-patch --log-dir ~/hyrum-logs
 ```
 
-After the run you will find files like `~/hyrum-logs/charm-apt-mirror.log` containing the metadata, stdout, and stderr for that charm's run.
+After the run you will find files like `~/hyrum-logs/charm-apt-mirror.log` containing the metadata and output (stdout and stderr merged) for that charm's run.
 
 ## Next steps
 

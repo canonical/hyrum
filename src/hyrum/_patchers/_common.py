@@ -41,6 +41,44 @@ def _norm(name: str) -> str:
     return re.sub(r'[-_.]+', '-', name).lower()
 
 
+def _pep621_dep_strings(data: dict[str, Any]) -> list[str]:
+    """Return every PEP 621 dependency string declared in ``data``.
+
+    Validates the shapes on the way. Without the checks, an
+    ``optional-dependencies`` written as an array raises ``AttributeError``,
+    which the pool reports as a crashed patcher rather than a malformed
+    pyproject with a reason, and a ``dependencies`` written as a string
+    iterates its characters and quietly finds nothing declared.
+    """
+    project: Any = data.get('project', {})
+    if not isinstance(project, dict):
+        raise base.PatcherSkip(
+            base.PatcherSkipReason.MALFORMED_PYPROJECT,
+            '[project] is not a table',
+        )
+    deps: Any = project.get('dependencies', [])
+    if not isinstance(deps, list):
+        raise base.PatcherSkip(
+            base.PatcherSkipReason.MALFORMED_PYPROJECT,
+            '[project].dependencies is not an array',
+        )
+    lines = [str(dep) for dep in deps]
+    optional: Any = project.get('optional-dependencies', {})
+    if not isinstance(optional, dict):
+        raise base.PatcherSkip(
+            base.PatcherSkipReason.MALFORMED_PYPROJECT,
+            '[project.optional-dependencies] is not a table',
+        )
+    for extra_name, opts in optional.items():
+        if not isinstance(opts, list):
+            raise base.PatcherSkip(
+                base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                f'[project.optional-dependencies].{extra_name} is not an array',
+            )
+        lines.extend(str(dep) for dep in opts)
+    return lines
+
+
 def collect_pyproject_pkg_extras(data: dict[str, Any], pkg_name: str) -> set[str]:
     """Collect all extras declared on ``pkg_name`` across every dep section."""
     extras: set[str] = set()
@@ -82,12 +120,8 @@ def collect_pyproject_pkg_extras(data: dict[str, Any], pkg_name: str) -> set[str
         if isinstance(dep, dict) and 'extras' in dep:
             extras.update(str(e) for e in dep['extras'])
 
-    project: dict[str, Any] = data.get('project', {})
-    for dep_str in project.get('dependencies', []):
-        extras.update(_extras_from_pep508_line(str(dep_str)))
-    for opts in project.get('optional-dependencies', {}).values():
-        for dep_str in opts:
-            extras.update(_extras_from_pep508_line(str(dep_str)))
+    for dep_str in _pep621_dep_strings(data):
+        extras.update(_extras_from_pep508_line(dep_str))
 
     # PEP 735 [dependency-groups]: same shape as optional-dependencies but at
     # top-level. Used by uv-managed charms that don't put deps under [project].
@@ -154,14 +188,9 @@ def pkg_is_declared(data: dict[str, Any], pkg_name: str) -> bool:
             if _norm(str(name)) == target:
                 return True
 
-    project: dict[str, Any] = data.get('project', {})
-    for dep_str in project.get('dependencies', []):
-        if _matches_pep508(str(dep_str)):
+    for dep_str in _pep621_dep_strings(data):
+        if _matches_pep508(dep_str):
             return True
-    for opts in project.get('optional-dependencies', {}).values():
-        for dep_str in opts:
-            if _matches_pep508(str(dep_str)):
-                return True
 
     if 'dependency-groups' in data:
         dep_groups: Any = data['dependency-groups']

@@ -25,6 +25,12 @@ The pool is a simple queue-based design:
 
 The pool deliberately does not use `asyncio.Semaphore` or structured concurrency beyond `asyncio.gather` on the consumer tasks. The queue approach means each worker is idle for at most one charm at a time and work is distributed evenly as workers complete.
 
+## Sharing a charms directory
+
+Patching a charm means rewriting its working tree, so two runs over one charms directory would otherwise interleave: the second takes the first's patched tree for the original, and each then reports results for whichever patch won. `check` therefore takes an advisory lock per charm, held from the patch to the restore, and a second run waits for that charm rather than joining it. Locks live in `<charms-dir>/.hyrum-locks/`. `--no-lock` turns this off, at the cost of that guarantee.
+
+`clean` takes the same lock, for the same reason from the other side: the artefacts it reclaims — `.tox`, `.venv`, tool caches — are the ones a running check is using, so removing them mid-run would break it. It locks each charm before removing that charm's artefacts, and has its own `--no-lock`. `--dry-run` removes nothing and so waits for nothing.
+
 ## Outcome statuses and attribution
 
 `pool.Outcome` normalises across three paths through the pool:

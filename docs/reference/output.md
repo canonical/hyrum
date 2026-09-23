@@ -109,10 +109,8 @@ target: unit
 status: passed
 returncode: 0
 duration_s: 12.34
-=== stdout ===
-<tox stdout>
-=== stderr ===
-<tox stderr>
+=== output ===
+<tox output, stdout and stderr merged in the order they were written>
 ```
 
 ### Patcher error log format

@@ -51,6 +51,14 @@ hyrum check [OPTIONS] TARGET
 : Only process charms that use the specified testing framework. Framework detection checks dependency declarations first, then falls back to AST scanning of test files.
 : Default: (no filter; all frameworks)
 
+`--from-results PATH`
+: Only run charms named in this saved results file (for example, one written by `--save` or `--auto-save`). Always a filesystem path: there is no default location, run id, or target-name lookup. Intersects with `--repo`, `--framework`, and `[ignore]` like every other filter, and is applied before `--limit`. A narrowed run turns off the default rolling save, since it would record every charm the run skipped as `skipped`; pass `--save` or `--auto-save` to save anyway.
+: Default: (not set)
+
+`--status STATUS[,STATUS...]`
+: With `--from-results`, only select charms whose saved outcome is one of these. Repeatable and comma-separated. Accepts the outcome statuses (`passed`, `failed`, `no_target`, `timeout`, `runner_error`, `patcher_error`, `skipped`) plus two groups: `failing` (reached the runner or the patcher and did not come out clean) and `not-passing` (everything but `passed`). Requires `--from-results`.
+: Default: `failing` (with `--from-results`)
+
 ### Runner
 
 `--runner {auto,tox,make}`
@@ -113,6 +121,10 @@ hyrum check [OPTIONS] TARGET
 : When enabled, hyrum wraps `poetry lock` with `uv run --python X.Y` so that the lock command runs under an interpreter that satisfies the charm's declared `requires-python`. Requires `uv` on PATH.
 : Default: `--auto-python`
 
+`--no-lock`
+: Do not take a per-charm lock. Two runs sharing a charms directory then patch the same charm at the same time, and each reports results for whichever patch won, so only use this when nothing else is running.
+: Default: off (lock each charm from patch to restore)
+
 ### Preflight
 
 `--preflight / --no-preflight`
@@ -128,7 +140,7 @@ hyrum check [OPTIONS] TARGET
 ### Logging and output
 
 `--log-dir PATH`
-: Directory to write per-charm log files. Each file contains the runner's stdout, stderr, and run metadata. File names use the charm's path relative to the charms directory with `/` replaced by `__`.
+: Directory to write per-charm log files. Each file contains the run metadata and the runner's output (stdout and stderr merged, in the order they were written). File names use the charm's path relative to the charms directory with `/` replaced by `__`.
 : Default: (not set; logs are not written)
 
 `--quiet`
@@ -193,6 +205,9 @@ Remove the build artefacts a `check` run leaves in each charm — `.tox`, `.venv
 
 `--force`
 : Clean a directory that does not look like a charms directory. Without this, hyrum refuses, so that a mistyped `--charms-dir` cannot recursively delete something else.
+
+`--no-lock`
+: Do not take a per-charm lock before removing that charm's artefacts. A concurrent `check` run then has its `.tox` or `.venv` deleted mid-run, so only use this when nothing else is running.
 
 `--quiet`
 : Suppress non-error output.
@@ -297,7 +312,7 @@ Exits `0` whatever the run contained: `show` displays a run, it does not gate on
 |------|---------|
 | `0`  | All non-skipped charms passed (or `--no-fail` was set, or `hyrum get-charms` succeeded, or `hyrum compare` found no regressions) |
 | `1`  | At least one charm resulted in `failed`, `timeout`, `runner_error`, or `patcher_error`; or the results file could not be written; or `hyrum compare` found a regression under `--fail-on-regression` |
-| `2`  | Bad input, reported before or instead of a run: the save target given to `hyrum check` is unusable (a missing or unwritable directory, or a path that is a directory when a file is expected, checked before the run starts); or `hyrum compare` or `hyrum show` could not read a results file; or the two runs given to `hyrum compare` have no charms in common, so there is nothing to compare |
+| `2`  | Bad input, reported before or instead of a run: the save target given to `hyrum check` is unusable (a missing or unwritable directory, or a path that is a directory when a file is expected, checked before the run starts); or `--status` was given without `--from-results`, the `--from-results` file could not be read, or no charm matched it; or `hyrum compare` or `hyrum show` could not read a results file; or the two runs given to `hyrum compare` have no charms in common, so there is nothing to compare |
 
 ## Environment variables
 
