@@ -6,7 +6,7 @@ myst:
 
 # How to filter a run
 
-A run covers every charm in the charms directory unless you narrow it. Use `--repo`, `--framework`, and `--limit` to check a single charm, a group of them, or just the first few — for a quick sanity-check, or to debug one failure without waiting for a full fleet run.
+A run covers every charm in the charms directory unless you narrow it. Use `--repo`, `--framework`, `--from-results`, and `--limit` to check a single charm, a group of them, or just the first few — for a quick sanity-check, or to debug one failure without waiting for a full fleet run.
 
 These instructions assume the charms directory is already populated. See [How to run against the charm list](run-charm-list) if it is not.
 
@@ -41,6 +41,23 @@ hyrum check unit --no-patch --framework scenario
 
 Supported values for `--framework`: `scenario`, `jubilant`.
 
+## Rerun the charms that failed last time
+
+To go back over only the charms that failed in an earlier run, point `--from-results` at that run's saved results file:
+
+```text
+hyrum check unit --from-results ~/.cache/hyrum/results/unit.auto.json
+```
+
+By default this selects the charms whose saved outcome was `failed`, `timeout`, `runner_error`, or `patcher_error`. Use `--status` to pick other outcomes; it is repeatable and comma-separated, and accepts `not-passing` for everything except `passed`:
+
+```text
+# Rerun only the charms that timed out:
+hyrum check unit --from-results ~/.cache/hyrum/results/unit.auto.json --status timeout
+```
+
+A run narrowed this way does not update the rolling results, since it would record every charm it did not run as `skipped`. Pass `--save PATH` to keep its results.
+
 ## Limit by count
 
 `--limit N` stops once *N* charms have been selected to run, taken in the order hyrum discovers them, which is alphabetical:
@@ -59,3 +76,5 @@ The filters compose, so you can pin a pattern and cap the count together:
 ```text
 hyrum check unit --no-patch --repo apt --limit 1
 ```
+
+For what each status in the summary means, see the [output reference](../reference/output).
