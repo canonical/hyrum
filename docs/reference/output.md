@@ -17,7 +17,7 @@ Each charm produces exactly one outcome. The possible statuses are:
 | `no_target`     | The requested tox environment or make target does not exist in this charm. Not counted as a failure. |
 | `timeout`       | The runner was killed after `--timeout` seconds (default: 1800). The charm may have a very slow test suite, or it may be hanging. |
 | `runner_error`  | The runner itself could not be launched — for example, `make` is not installed. This is a host problem, not a charm result. `--preflight` (on by default) catches a missing runner before the run starts, so this status usually means the executable disappeared mid-run or is not executable. |
-| `patcher_error` | The patch could not be applied — for example, the charm's `pyproject.toml` could not be parsed, or `poetry lock` failed unrecoverably. This is distinct from a runner failure: it points to an infrastructure problem, not a charm test failure. |
+| `patcher_error` | The patch could not be applied — for example, the charm's `pyproject.toml` could not be parsed, or `poetry lock` failed. This is distinct from a runner failure: it points to an infrastructure problem, not a charm test failure. |
 | `skipped`       | Excluded before the run began (by `--repo`, `--framework`, `[ignore]` in `hyrum.toml`, no Python source, a legacy reactive/hooks layout, or no `tox.ini`/`Makefile`), or skipped by a patcher that had nothing to do. |
 
 A non-passing status says what happened, not what to do about it. See [How to triage a run](../howto/triage-a-run) for getting at the detail behind a result with `--verbose` and `--log-dir`.
