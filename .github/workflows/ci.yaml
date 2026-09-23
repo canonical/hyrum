@@ -43,7 +43,9 @@ jobs:
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
         with:
           enable-cache: true
-      - run: uv python install ${{ matrix.python }}
+      - env:
+          UV_PYTHON: ${{ matrix.python }}
+        run: uv python install "$UV_PYTHON"
       - env:
           UV_PYTHON: ${{ matrix.python }}
         run: make unit
