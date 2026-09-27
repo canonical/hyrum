@@ -1,0 +1,45 @@
+# Install development tools.
+snap install --classic astral-uv
+
+# `make` is the command runner for hyrum's own targets, and the runner backend
+# for the charms that don't use tox. The rest are what the charms in the
+# curated list need in order to build their C and Rust extensions from source:
+# without them a charm fails with a missing gcc, Python.h, or ffi.h rather than
+# with a real result. See "Host prerequisites" in README.md.
+apt-get update -qq
+apt-get install -yqq \
+    build-essential \
+    git \
+    libffi-dev \
+    libmariadb-dev \
+    libpq-dev \
+    pkg-config \
+    python3-dev
+
+# `hyrum check` runs each charm's test suite, which is arbitrary third-party
+# code. Workshop mounts the project directory into every workshop read-write,
+# so code running as the `workshop` user can write to the hyrum checkout on the
+# host. Run the checks as a separate user instead: /project is 0775
+# workshop:workshop, so another user can read the checkout but not modify it.
+# The uid is fixed because the cache mount in sdk.yaml has to name it.
+useradd --create-home --uid 1500 --shell /bin/bash hyrum-check
+# The workshop user needs to read the saved results out of the check user's
+# home directory; useradd's default 0750 would stop it.
+chmod 0755 /home/hyrum-check
+
+# Both users run hyrum and the charm runner backends, so neither the virtual
+# environment nor the tools can live under /home/workshop (0750) -- and they
+# can't live in /project, which is the host mount all of this is keeping the
+# third-party code away from.
+mkdir -p /opt/hyrum
+chown workshop:workshop /opt/hyrum
+
+# Workshop's SDK guidance is /etc/profile.d for system-wide variables. (The
+# uv tools' own ~/.local/bin needs no entry: Ubuntu's stock ~/.profile already
+# prepends it.)
+cat <<'EOF' >> /etc/profile.d/hyrum.sh
+case ":$PATH:" in
+    *:/opt/hyrum/bin:*) ;;
+    *) PATH="/opt/hyrum/bin:$PATH" ;;
+esac
+EOF
