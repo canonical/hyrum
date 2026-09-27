@@ -24,7 +24,7 @@ User journey context: initial setup, run configuration, execution
 -->
 
 **[Install hyrum](install)**
-: Install hyrum from PyPI with uv, plus the host build packages needed for a clean fleet signal.
+: Install hyrum from PyPI with uv or run it in the repository's workshop, plus the host build packages needed for a clean fleet signal.
 
 **[Run against the charm list](run-charm-list)**
 : Use `hyrum get-charms` to populate the charms directory, then run across many charms.

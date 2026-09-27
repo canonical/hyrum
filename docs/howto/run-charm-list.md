@@ -9,7 +9,7 @@ myst:
 The `charm-list/` directory in the hyrum repository contains CSV files listing known charm repositories. Use `hyrum get-charms` to clone or refresh them, then run `hyrum check` across the whole fleet.
 
 ```{warning}
-A fleet run executes the unit tests of every charm in the list on your machine. Those tests run with your user's privileges and may not mock every side effect — they may write or delete files, install packages, modify `crontab`, download arbitrary content, or reach out to the network. **Always run fleet-scale checks inside an isolated VM** (for example, [Multipass](https://canonical.com/multipass) or an LXD virtual machine).
+A fleet run executes the unit tests of every charm in the list on your machine. Those tests run with your user's privileges and may not mock every side effect — they may write or delete files, install packages, modify `crontab`, download arbitrary content, or reach out to the network. **Always run fleet-scale checks inside an isolated VM** (for example, [Multipass](https://canonical.com/multipass) or an LXD virtual machine), or [in the repository's workshop](#run-hyrum-in-a-workshop), which runs the checks in a container as a user that cannot modify the host.
 ```
 
 ## Populate the charms directory

@@ -73,8 +73,8 @@ def _resolve_log_level(*, quiet: bool, verbosity: str | None) -> int:
 
 
 # Environment variables hyrum sets by default to dodge well-known host build
-# issues that aren't charm regressions. The README's host-prereqs section is
-# the source of truth for why each one is here.
+# issues that aren't charm regressions. The host prerequisites section of
+# docs/howto/install.md is the source of truth for why each one is here.
 _HOST_ENV_DEFAULTS: dict[str, str] = {
     # PyO3 < 0.23 (still pinned by pydantic-core in older charms) refuses to
     # build against Python 3.14 unless the stable-ABI escape hatch is set.
