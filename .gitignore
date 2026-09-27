@@ -32,3 +32,6 @@ results-*.json
 
 # uv
 .python-version
+
+# Workshop
+.workshop.lock
