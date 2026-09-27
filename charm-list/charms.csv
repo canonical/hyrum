@@ -284,7 +284,6 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/blackbox-exporter-operator,,auto-discover
 ,https://github.com/canonical/cassandra-operator,,auto-discover
 ,https://github.com/canonical/certbot-k8s-operator,,auto-discover
-,https://github.com/canonical/certificate-transfer-interface,,auto-discover
 ,https://github.com/canonical/charm-advanced-routing,,auto-discover
 ,https://github.com/canonical/charm-ceph-nvme,,auto-discover
 ,https://github.com/canonical/charm-juju-backup-all,,auto-discover
@@ -406,7 +405,6 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/sysbench-operator,,auto-discover
 ,https://github.com/canonical/template-connect-integrator,,auto-discover
 ,https://github.com/canonical/tenant-service-operator,,auto-discover
-,https://github.com/canonical/tls-certificates-interface,,auto-discover
 ,https://github.com/canonical/tls-certificates-interface-demo,,auto-discover
 ,https://github.com/canonical/tls-constraints-operator,,auto-discover
 ,https://github.com/canonical/tls-truststore-operator,,auto-discover
