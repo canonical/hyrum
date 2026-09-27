@@ -189,6 +189,33 @@ async def test_tox_runner_passes_executable_through(tmp_path: pathlib.Path, spaw
     assert argv[:4] == ('uvx', 'tox', '-e', 'lint')
 
 
+def _tox_overrides(spawner_call_kwargs: dict[str, object]) -> list[str]:
+    env = spawner_call_kwargs['env']
+    assert isinstance(env, dict)
+    return env['TOX_OVERRIDE'].split(';')
+
+
+async def test_tox_runner_tells_tox_not_to_write_a_venv_redirect(
+    tmp_path: pathlib.Path, spawner, monkeypatch
+):
+    monkeypatch.delenv('TOX_OVERRIDE', raising=False)
+    fake = spawner(FakeProc(returncode=0))
+    await runners.ToxRunner().run(tmp_path, 'unit')
+    assert _tox_overrides(fake.kwargs[0]) == ['tox.venv_redirect=false']
+
+
+async def test_tox_runner_keeps_existing_tox_overrides(
+    tmp_path: pathlib.Path, spawner, monkeypatch
+):
+    monkeypatch.setenv('TOX_OVERRIDE', 'testenv:unit.pass_env+=FOO;')
+    fake = spawner(FakeProc(returncode=0))
+    await runners.ToxRunner().run(tmp_path, 'unit')
+    assert _tox_overrides(fake.kwargs[0]) == [
+        'testenv:unit.pass_env+=FOO',
+        'tox.venv_redirect=false',
+    ]
+
+
 # ---- MakeRunner --------------------------------------------------------------
 
 
@@ -207,6 +234,15 @@ async def test_make_runner_pass(tmp_path: pathlib.Path, spawner):
     spawner(FakeProc(returncode=0), FakeProc(returncode=0))
     result = await runners.MakeRunner().run(tmp_path, 'unit')
     assert result.status is runners.RunStatus.PASSED
+
+
+async def test_make_runner_tells_a_nested_tox_not_to_write_a_venv_redirect(
+    tmp_path: pathlib.Path, spawner, monkeypatch
+):
+    monkeypatch.delenv('TOX_OVERRIDE', raising=False)
+    fake = spawner(FakeProc(returncode=0), FakeProc(returncode=0))
+    await runners.MakeRunner().run(tmp_path, 'unit')
+    assert _tox_overrides(fake.kwargs[1]) == ['tox.venv_redirect=false']
 
 
 async def test_make_runner_no_target_via_probe(tmp_path: pathlib.Path, spawner):

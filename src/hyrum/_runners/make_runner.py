@@ -80,6 +80,7 @@ class MakeRunner:
                 # Same pipe for both streams so the captured transcript keeps
                 # the order make and its recipes actually wrote in.
                 stderr=asyncio.subprocess.STDOUT,
+                env=base.subprocess_env(),
             )
         except OSError as exc:
             logger.error('could not launch %s in %s: %s', argv[0], repo, exc)

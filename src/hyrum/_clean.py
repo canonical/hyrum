@@ -34,7 +34,9 @@ ARTEFACT_DIRS = frozenset({
 # Suffixes matched against a directory name rather than a whole name, for the
 # ones that carry the package name (`hyrum.egg-info`).
 ARTEFACT_DIR_SUFFIXES = ('.egg-info',)
-ARTEFACT_FILES = frozenset({'.coverage'})
+# tox writes `.venv` as a PEP 832 redirect file pointing into `.tox`, which is
+# gone once `.tox` is, and uv refuses to lock a project with a file there.
+ARTEFACT_FILES = frozenset({'.coverage', '.venv'})
 # `coverage run --parallel-mode`, and pytest-cov under xdist, write one
 # `.coverage.<host>.<pid>.<random>` per worker per run rather than a single
 # `.coverage`, and they are exactly as reproducible as the file they combine
