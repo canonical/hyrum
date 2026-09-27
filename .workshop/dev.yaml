@@ -7,4 +7,10 @@ actions:
   format: make format
   lint: make lint ARGS="$*"
   unit: make unit ARGS="$*"
+  # `hyrum check` runs each charm's tests -- third-party code -- so run hyrum
+  # as `hyrum-check`, which can read the /project mount of the host checkout
+  # but not write to it (see hooks/setup-base). sudo resets PATH, which would
+  # lose /opt/hyrum/bin (tox, poetry). The umask keeps new cache files group
+  # writable, so the workshop user can clear them. The `hyrum` after the
+  # script becomes its $0, and the action's arguments follow as "$@".
   hyrum: sudo -u hyrum-check env PATH="$PATH" sh -c 'umask 002; exec /opt/hyrum/venv/bin/hyrum "$@"' hyrum "$@"
