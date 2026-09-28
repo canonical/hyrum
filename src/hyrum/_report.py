@@ -139,10 +139,10 @@ def _skip_kinds(outcomes: list[pool.Outcome]) -> collections.Counter[str]:
 def _not_run_breakdown(counts: collections.Counter[str]) -> str:
     """Render the ``(2 skipped, 1 no_target)`` tail of the summary line.
 
-    Shared by both renderers: "2 not run" alone doesn't say whether the charms
-    were filtered out, had nothing to run, or blew up in the patcher, and that
-    is the first thing a reader wants - markdown most of all, since it is the
-    format that ends up somewhere nobody can re-run the tally.
+    Shared by both renderers so the summary says why charms did not run:
+    filtered out, nothing to run, or the runner or patcher failed. That is the
+    first thing a reader wants - markdown most of all, since it is the format
+    that ends up somewhere nobody can re-run the tally.
     """
     parts = [
         f'{counts.get(s, 0)} {s}'
@@ -171,8 +171,8 @@ def render(
 
     counts, total, ran = _counts(outcomes)
 
-    # A file saved by an older hyrum carries no metadata, so `show` can get
-    # here with no target; "hyrum: " with nothing after it reads as a bug.
+    # A file saved by an older version of hyrum carries no metadata, so `show`
+    # can get here with no target; "hyrum: " with nothing after it reads as a bug.
     title = f'hyrum: {target}' if target else 'hyrum run'
     print(f'{_BOLD}{title}{_RESET}' if use_colour else title, file=stream)
 

@@ -1598,11 +1598,8 @@ def _run_show(args: argparse.Namespace) -> int:
     renderer = report.render_markdown if args.output_format == 'markdown' else report.render
     renderer(
         loaded.outcomes,
-        # `_results.save` stores each repo as an `owner/name` identity already,
-        # so there is no prefix left to strip and nothing for a base to do.
-        # Passing `meta.charms_dir` here looked like it made verbose paths
-        # relative to the run's own cache; it never matched, and every path came
-        # out of `_relative`'s fallback.
+        # Repos in a saved run are already `owner/name` identities rather than
+        # paths under a cache, so there is no prefix for a base to strip.
         base=pathlib.Path(),
         target=loaded.meta.target,
         list_offenders=args.verbose,

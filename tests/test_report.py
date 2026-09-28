@@ -261,9 +261,8 @@ def test_render_markdown_no_headers_keeps_the_delimiter_row(tmp_path: pathlib.Pa
     """Without the delimiter row it is not a table, just lines of pipes."""
     out = _render_markdown([], base=tmp_path, no_headers=True)
     assert '| Status | Count | % of all | % of runs |' not in out
-    assert '| --- | --- | --- | --- |' in out
-    # The empty header row that the delimiter needs above it.
-    assert '|  |  |  |  |' in out
+    # An empty header row, which the delimiter needs directly above it.
+    assert '|  |  |  |  |\n| --- | --- | --- | --- |' in out
 
 
 def test_render_markdown_breaks_down_the_skips_like_the_text_table(tmp_path: pathlib.Path):
