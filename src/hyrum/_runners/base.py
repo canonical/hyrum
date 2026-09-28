@@ -34,7 +34,8 @@ from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
 # tox 4.64 writes a PEP 832 ``.venv`` redirect file into the project root after
-# a run. uv doesn't read redirect files, and refuses to lock a project whose
+# a run, for charms that declare a ``dev`` env or install the project editable.
+# uv doesn't read redirect files, and refuses to lock a project whose
 # ``.venv`` is a file, so one left by a baseline run breaks the relock in the
 # patched run that follows. tox before 4.64 has no such setting and ignores it.
 _TOX_NO_VENV_REDIRECT = 'tox.venv_redirect=false'
