@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import os
 import pathlib
 
 import pytest
@@ -202,6 +203,7 @@ async def test_tox_runner_tells_tox_not_to_write_a_venv_redirect(
     fake = spawner(FakeProc(returncode=0))
     await runners.ToxRunner().run(tmp_path, 'unit')
     assert _tox_overrides(fake.kwargs[0]) == ['tox.venv_redirect=false']
+    assert fake.kwargs[0]['env']['PATH'] == os.environ['PATH']
 
 
 async def test_tox_runner_keeps_existing_tox_overrides(
