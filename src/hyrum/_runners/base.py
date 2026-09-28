@@ -132,10 +132,8 @@ def subprocess_env() -> dict[str, str]:
     Used for make as well as tox, since some charms' Makefiles call tox.
     """
     env = dict(os.environ)
-    existing = env.get('TOX_OVERRIDE', '').strip().rstrip(';')
-    env['TOX_OVERRIDE'] = (
-        f'{existing};{_TOX_NO_VENV_REDIRECT}' if existing else _TOX_NO_VENV_REDIRECT
-    )
+    overrides = [o.strip() for o in env.get('TOX_OVERRIDE', '').split(';') if o.strip()]
+    env['TOX_OVERRIDE'] = ';'.join([*overrides, _TOX_NO_VENV_REDIRECT])
     return env
 
 
