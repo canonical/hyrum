@@ -53,6 +53,8 @@ mode = "timestamped"
 path = "~/hyrum-runs"
 ```
 
+To run a patched check against only the charms that passed in the baseline, see {ref}`filter-a-run-passed-baseline`.
+
 ## Read the comparison
 
 ```text
