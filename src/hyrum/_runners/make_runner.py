@@ -126,6 +126,9 @@ class MakeRunner:
                 cwd=repo.resolve(),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                # make still runs ``+`` recipe lines under -n and -q, so a
+                # ``+tox`` recipe would run here too.
+                env=base.subprocess_env(),
             )
         except OSError:
             # make can't be launched; let the real invocation report it as a
