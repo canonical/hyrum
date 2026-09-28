@@ -1759,13 +1759,12 @@ def _run_show(args: argparse.Namespace) -> int:
 
     summary = loaded.meta.summary()
     print(f'{args.path} — {summary}' if summary else str(args.path))
-    # A run's own charms dir travels with it, so verbose paths are relative to
-    # where the run was made, not wherever `show` happens to be invoked from.
-    base = pathlib.Path(loaded.meta.charms_dir) if loaded.meta.charms_dir else pathlib.Path()
     renderer = report.render_markdown if args.output_format == 'markdown' else report.render
     renderer(
         loaded.outcomes,
-        base=base,
+        # Repos in a saved run are already `owner/name` identities rather than
+        # paths under a cache, so there is no prefix for a base to strip.
+        base=pathlib.Path(),
         target=loaded.meta.target,
         list_offenders=args.verbose,
         no_headers=args.no_headers,
