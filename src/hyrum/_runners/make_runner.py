@@ -80,6 +80,7 @@ class MakeRunner:
                 # Same pipe for both streams so the captured transcript keeps
                 # the order make and its recipes actually wrote in.
                 stderr=asyncio.subprocess.STDOUT,
+                env=base.subprocess_env(),
             )
         except OSError as exc:
             logger.error('could not launch %s in %s: %s', argv[0], repo, exc)
@@ -125,6 +126,9 @@ class MakeRunner:
                 cwd=repo.resolve(),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                # make still runs ``+`` recipe lines under -n and -q, so a
+                # ``+tox`` recipe would run here too.
+                env=base.subprocess_env(),
             )
         except OSError:
             # make can't be launched; let the real invocation report it as a

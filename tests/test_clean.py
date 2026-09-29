@@ -42,6 +42,12 @@ def test_finds_the_usual_build_artefacts(tmp_path: pathlib.Path):
     }
 
 
+def test_finds_a_venv_redirect_file(tmp_path: pathlib.Path):
+    repo = _charm(tmp_path, 'a-charm')
+    (repo / '.venv').write_text('.tox/unit\n')
+    assert _artefacts(tmp_path) == {'a-charm/.venv'}
+
+
 def test_leaves_the_checkout_alone(tmp_path: pathlib.Path):
     repo = _charm(tmp_path, 'a-charm')
     # A charm is free to have a __pycache__ inside .git, and .git is not ours

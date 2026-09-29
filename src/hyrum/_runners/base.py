@@ -26,11 +26,19 @@ from __future__ import annotations
 
 import dataclasses
 import enum
+import os
 import pathlib
 import re
 import shlex
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
+
+# tox 4.64 writes a PEP 832 ``.venv`` redirect file into the project root after
+# a run, for charms that declare a ``dev`` env or install the project editable.
+# uv doesn't read redirect files, and refuses to lock a project whose
+# ``.venv`` is a file, so one left by a baseline run breaks the relock in the
+# patched run that follows. tox before 4.64 has no such setting and ignores it.
+_TOX_NO_VENV_REDIRECT = 'tox.venv_redirect=false'
 
 # Matches ANSI CSI escape sequences (the `ESC[…<final>` family pytest and
 # friends emit for colour). tox sets PY_COLORS=1 for its subprocesses and
@@ -116,6 +124,17 @@ def launch_failure(
         duration_s=0.0,
         output=f'could not run {argv[0]!r}: {exc}'.encode(),
     )
+
+
+def subprocess_env() -> dict[str, str]:
+    """Return hyrum's environment, with tox told not to write into the checkout.
+
+    Used for make as well as tox, since some charms' Makefiles call tox.
+    """
+    env = dict(os.environ)
+    overrides = [o.strip() for o in env.get('TOX_OVERRIDE', '').split(';') if o.strip()]
+    env['TOX_OVERRIDE'] = ';'.join([*overrides, _TOX_NO_VENV_REDIRECT])
+    return env
 
 
 def split_executable(executable: str | Sequence[str]) -> list[str]:
