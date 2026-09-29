@@ -120,7 +120,9 @@ curl -sSfL -o charm-list/charms.csv \
 hyrum get-charms
 
 # --repo and --limit narrow that down, for populating the cache
-# a slice at a time:
+# a slice at a time. --limit counts only charms that aren't in the
+# cache yet, so running the same command again fetches the next
+# slice rather than re-pulling the last one:
 hyrum get-charms --repo '^ubuntu-' --limit 50
 
 # Run `tox -e unit` across every charm in the default cache
