@@ -201,10 +201,10 @@ def truncate(s: str) -> str:
     return s
 
 
-def _pytest_failed_count(stdout: bytes) -> int:
+def _pytest_failed_count(output: bytes) -> int:
     """Number of failed tests in the last pytest summary line (0 if none)."""
     last: re.Match[bytes] | None = None
-    for m in _PYTEST_SUMMARY_RE.finditer(stdout):
+    for m in _PYTEST_SUMMARY_RE.finditer(output):
         last = m
     if last is None:
         return 0
@@ -212,7 +212,7 @@ def _pytest_failed_count(stdout: bytes) -> int:
     return int(failed) if failed else 0
 
 
-def _pytest_counts(stdout: bytes) -> tuple[str, bool] | None:
+def _pytest_counts(output: bytes) -> tuple[str, bool] | None:
     """Return (summary, all_passed) if pytest printed a summary line.
 
     ``all_passed`` is true when the summary line carries a ``passed`` count
@@ -221,7 +221,7 @@ def _pytest_counts(stdout: bytes) -> tuple[str, bool] | None:
     pytest-cov teardown, …).
     """
     last: re.Match[bytes] | None = None
-    for m in _PYTEST_SUMMARY_RE.finditer(stdout):
+    for m in _PYTEST_SUMMARY_RE.finditer(output):
         last = m
     if last is None:
         return None
@@ -300,13 +300,15 @@ def _resolver_or_build(buf: bytes) -> str | None:
 
 
 def from_run_output(
-    stdout: bytes,
-    stderr: bytes,
+    output: bytes,
     *,
     status: str,
     returncode: int | None,
 ) -> str:
-    """Return a one-line summary for a finished runner invocation."""
+    """Return a one-line summary for a finished runner invocation.
+
+    ``output`` is the runner's merged stdout and stderr.
+    """
     if status == 'passed':
         return ''
     if status == 'timeout':
@@ -314,16 +316,14 @@ def from_run_output(
     if status == 'no_target':
         return 'target not present'
 
-    stdout = _runners_base.strip_ansi(stdout)
-    stderr = _runners_base.strip_ansi(stderr)
+    combined = _runners_base.strip_ansi(output)
     if status == 'runner_error':
-        # The runner never started, so there is no output to mine — stderr
-        # carries the launch error the runner recorded for us.
-        detail = stderr.decode('utf-8', 'replace').strip()
+        # The runner never started, so there is no real output to mine — the
+        # captured buffer carries the launch error the runner recorded for us.
+        detail = combined.decode('utf-8', 'replace').strip()
         return truncate(detail or 'runner could not be launched')
-    combined = stdout + b'\n' + stderr
 
-    counts_result = _pytest_counts(stdout)
+    counts_result = _pytest_counts(combined)
     counts = counts_result[0] if counts_result else None
     tests_all_passed = counts_result[1] if counts_result else False
     exc = _first_exception(combined)
@@ -351,9 +351,9 @@ def from_run_output(
         # With multiple failures, the first exception's full message can't
         # represent all of them — collapse to ``ClassName xN`` if we know the
         # count, otherwise just the short class name.
-        if _pytest_failed_count(stdout) > 1:
+        if _pytest_failed_count(combined) > 1:
             short = _shortname(exc.split(':', 1)[0])
-            return truncate(f'{counts}; {short} x{_pytest_failed_count(stdout)}')
+            return truncate(f'{counts}; {short} x{_pytest_failed_count(combined)}')
         return truncate(f'{counts}; {exc}')
     if counts:
         return truncate(counts)

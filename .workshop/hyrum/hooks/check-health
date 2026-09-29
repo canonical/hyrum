@@ -1,0 +1,18 @@
+# Workshop creates the cache mount owned by the workshop user (uid/gid on the
+# plug don't survive the container's id mapping), but the checks run as
+# `hyrum-check`, so hand it over here -- this is the last hook to run as root
+# before the SDK is marked ready.
+#
+# The group stays `workshop`, with setgid and group write, for two reasons: the
+# workshop user has to be able to clear the cache, and after a `workshop
+# remount` onto a host directory the group is what maps back to the host user.
+# Owning it as `hyrum-check` alone would leave the host directory owned by an
+# unmapped uid, which the person who remounted it could read but not delete.
+chown -R hyrum-check:workshop /home/hyrum-check/.cache/hyrum
+chmod 2775 /home/hyrum-check/.cache/hyrum
+
+if sudo -u hyrum-check test -w /home/hyrum-check/.cache/hyrum; then
+    workshopctl set-health okay
+else
+    workshopctl set-health error
+fi

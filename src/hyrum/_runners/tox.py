@@ -46,13 +46,16 @@ class ToxRunner:
                 *argv,
                 cwd=repo.resolve(),
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                # Same pipe for both streams so the captured transcript keeps
+                # the order tox and its subprocesses actually wrote in.
+                stderr=asyncio.subprocess.STDOUT,
+                env=base.subprocess_env(),
             )
         except OSError as exc:
             logger.error('could not launch %s in %s: %s', argv[0], repo, exc)
             return base.launch_failure(repo, runner=self.name, target=target, argv=argv, exc=exc)
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
+            output, _ = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
         except TimeoutError:
             await _kill_and_drain(proc, repo)
             return base.RunResult(
@@ -79,8 +82,7 @@ class ToxRunner:
             status=status,
             returncode=rc,
             duration_s=duration,
-            stdout=base.strip_ansi(stdout),
-            stderr=base.strip_ansi(stderr),
+            output=base.strip_ansi(output),
         )
 
 
