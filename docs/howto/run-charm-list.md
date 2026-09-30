@@ -1,7 +1,7 @@
 ---
 myst:
   html_meta:
-    description: Use hyrum get-charms to populate the charms directory from the bundled CSV, then run hyrum across the whole fleet.
+    description: Use hyrum get-charms to populate the charms directory from a charm-list CSV, then run hyrum across the whole fleet.
 ---
 
 # How to run against the charm list

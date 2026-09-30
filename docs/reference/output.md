@@ -284,15 +284,7 @@ Pass rates are fractions between 0 and 1 here, rather than the rounded percentag
 
 ## Exit codes
 
-| Code | Condition |
-|------|-----------|
-| `0`  | All non-skipped charms passed (or `--no-fail` was set). |
-| `1`  | At least one charm resulted in `failed`, `timeout`, `runner_error`, or `patcher_error`, or the results file could not be written. |
-| `2`  | The save target is unusable. Checked before the run starts, so a long run is not lost at the end. |
-
-`no_target` and `skipped` outcomes do not affect the exit code.
-
-`hyrum compare` exits `1` when `--fail-on-regression` is set and there are new failures or new errors. It exits `2` when a results file cannot be read, and also when `--fail-on-regression` is set over two runs with no charms in common, since the gate cannot be evaluated and exiting `0` would green-light a meaningless comparison. Otherwise it exits `0`. `hyrum show` exits `2` when it cannot read the file and `0` otherwise: it displays a run, it does not gate on one.
+`no_target` and `skipped` outcomes do not affect the exit code. For what each exit code means, see [Exit codes](#exit-codes) in the CLI reference.
 
 ## Quiet mode
 

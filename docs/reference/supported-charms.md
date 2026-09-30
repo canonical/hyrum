@@ -33,7 +33,9 @@ Most charms use neither a given charm library nor its vendored ancestor, so char
 
 ## Detectable frameworks
 
-| `--framework` | Detected by |
+Values accepted by `hyrum check --framework`:
+
+| Framework | Detected by |
 |---|---|
 | `scenario` | An `ops[testing]` or `ops-scenario` dependency, falling back to AST analysis of test files |
 | `jubilant` | A `jubilant` dependency |

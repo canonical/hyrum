@@ -29,7 +29,7 @@ uv tool install --prerelease=allow hyrum
 ## Quick start
 
 ```text
-# Populate ~/.cache/hyrum/charms from a charm-list CSV:
+# Clone every repository listed in ./charms.csv into ~/.cache/hyrum/charms:
 hyrum get-charms
 
 # Run tox -e unit across every charm, with ops patched to a development branch:

@@ -247,7 +247,7 @@ Each repository is cloned to `<dest>/<owner>/<name>`, where `<owner>` and `<name
 ### Options
 
 `--source PATH`
-: Path to the charm-list CSV. Only the `Repository` column (required) and `Branch (if not the default)` column (optional) are read; any other column, such as those in the bundled `charm-list/charms.csv`, is ignored.
+: Path to the charm-list CSV. Only the `Repository` column (required) and `Branch (if not the default)` column (optional) are read; any other column, such as those in the repository's `charm-list/charms.csv`, is ignored.
 : Default: `charms.csv` or `charm-list/charms.csv` in the current directory.
 
 `--dest PATH`
@@ -306,6 +306,7 @@ Exits `0` whatever the run contained: `show` displays a run, it does not gate on
 `--help`
 : Print the help text and exit. Available on each subcommand as well.
 
+(exit-codes)=
 ## Exit codes
 
 | Code | Meaning |
@@ -323,12 +324,12 @@ Exits `0` whatever the run contained: `show` displays a run, it does not gate on
 : When set to a non-empty value (any value, not just `1`), suppresses ANSI colour in the summary table even on a tty. Setting it to the empty string leaves colour enabled.
 
 `TOX_OVERRIDE`
-: Read and appended to by `--host-env-defaults` so that tox `pass_env` entries propagate into the testenv. See [Host prerequisites](../howto/install).
+: Read and appended to by `--host-env-defaults` so that tox `pass_env` entries propagate into the testenv. See [Host prerequisites for fleet runs](#host-prerequisites-for-fleet-runs).
 
 ## Examples
 
 ```text
-# Populate the default charms directory from the bundled CSV:
+# Clone every repository listed in ./charms.csv into the default charms directory:
 hyrum get-charms
 
 # Run tox -e unit with ops patched to a dev branch, 8 workers:

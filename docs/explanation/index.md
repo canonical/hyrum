@@ -1,7 +1,7 @@
 # Explanation
 
 ```{toctree}
-:maxdepth: 1
+:hidden:
 
 hyrums-law
 design

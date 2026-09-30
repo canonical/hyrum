@@ -1,7 +1,7 @@
 # Tutorial
 
 ```{toctree}
-:maxdepth: 1
+:hidden:
 
 first-run
 ```
