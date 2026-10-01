@@ -5,7 +5,8 @@ snap install --classic astral-uv
 # for the charms that don't use tox. The rest are what the charms in the
 # curated list need in order to build their C and Rust extensions from source:
 # without them a charm fails with a missing gcc, Python.h, or ffi.h rather than
-# with a real result. See "Host prerequisites" in README.md.
+# with a real result. See "Host prerequisites for fleet runs" in
+# docs/howto/install.md.
 apt-get update -qq
 apt-get install -yqq \
     build-essential \
