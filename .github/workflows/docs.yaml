@@ -71,17 +71,8 @@ jobs:
         run: make -C docs woke
 
   deploy:
-    # GitHub Pages is not enabled for the canonical organisation, so the site is
-    # published from a fork instead: any push to a 'docs/**' branch on a fork
-    # replaces the preview, which reviewers can read alongside the pull request.
-    # Until Pages is enabled upstream, this must not run on canonical/hyrum at
-    # all: `configure-pages` with `enablement: true` asks the API to turn Pages
-    # on, which the organisation does not allow, so a push to main would fail
-    # the Docs workflow rather than publish anything. Drop the
-    # repository_owner conditions here and in the build job once Pages is
-    # enabled upstream.
     name: Deploy to GitHub Pages
-    if: github.event_name == 'push' && github.repository_owner != 'canonical'
+    if: github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -91,13 +82,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      # Turns Pages on for the fork the first time this runs, so publishing a
-      # preview needs no manual repository setup.
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b  # v5.0.0
-        with:
-          enablement: true
-
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128  # v5.0.0
