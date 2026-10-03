@@ -88,7 +88,7 @@ Most of this is enforced by CI checks.
 
 Releases are published to PyPI by the `publish` workflow, which runs on any `v*` tag.
 
-1. Open a pull request that sets `version` in `pyproject.toml` to the new version, with the `uv.lock` update that `uv lock` produces, and get it merged.
+1. Open a pull request that sets `version` in `pyproject.toml` and `__version__` in `src/hyrum/_version.py` to the new version, with the `uv.lock` update that `uv lock` produces, and get it merged.
 2. Tag the resulting commit on `main` and push the tag:
 
    ```bash
