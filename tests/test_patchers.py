@@ -1050,6 +1050,82 @@ def test_pyproject_uv_path_emits_path_source(tmp_path: pathlib.Path, ops_path: p
         assert 'subdirectory' not in patched
 
 
+def test_pyproject_uv_path_installs_in_compat_editable_mode(
+    tmp_path: pathlib.Path, ops_path: patchers.OpsSource
+):
+    # setuptools' default editable install is an import hook that Pyright can't
+    # follow; compat mode puts a plain path in the .pth instead.
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops>=2.10",
+        ]
+
+        [tool.uv]
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+        assert parsed['tool']['uv']['config-settings-package'] == {
+            'ops': {'editable_mode': 'compat'},
+            'ops-scenario': {'editable_mode': 'compat'},
+        }
+
+
+def test_pyproject_uv_path_merges_into_existing_config_settings_package(
+    tmp_path: pathlib.Path, ops_path: patchers.OpsSource
+):
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops>=2.10",
+        ]
+
+        [tool.uv.config-settings-package]
+        ops = { editable_mode = "strict" }
+        other = { foo = "bar" }
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+        assert parsed['tool']['uv']['config-settings-package'] == {
+            'ops': {'editable_mode': 'compat'},
+            'ops-scenario': {'editable_mode': 'compat'},
+            'other': {'foo': 'bar'},
+        }
+
+
+def test_pyproject_uv_git_leaves_config_settings_alone(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
+):
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops>=2.10",
+        ]
+
+        [tool.uv]
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        assert 'config-settings-package' not in _read(py)
+
+
 # ---- error paths -------------------------------------------------------------
 
 

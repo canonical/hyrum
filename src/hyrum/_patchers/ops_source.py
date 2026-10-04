@@ -509,9 +509,12 @@ def _line_declares_poetry_pkg(stripped: str, pkg_name: str, pep_re: re.Pattern[s
 
 _UV_SOURCES_OPS_LINE_RE = re.compile(r'^(ops|ops-scenario|ops-tracing)\s*=')
 
+_UV_SOURCES = 'tool.uv.sources'
+_UV_CONFIG_SETTINGS_PACKAGE = 'tool.uv.config-settings-package'
 
-def _strip_uv_sources_ops_entries(text: str) -> str:
-    """Remove ``ops``/``ops-scenario``/``ops-tracing`` entries from ``[tool.uv.sources]``.
+
+def _strip_uv_sources_ops_entries(text: str, section_name: str = _UV_SOURCES) -> str:
+    """Remove ``ops``/``ops-scenario``/``ops-tracing`` entries from a ``[tool.uv.*]`` table.
 
     Makes :func:`_patch_pyproject_uv` idempotent. If a previous run (or a sibling
     process sharing the charm cache) has left ``ops = { git = … }`` lines behind,
@@ -525,7 +528,7 @@ def _strip_uv_sources_ops_entries(text: str) -> str:
             section = header.group(1).strip()
             out_lines.append(raw)
             continue
-        if section == 'tool.uv.sources':
+        if section == section_name:
             stripped = raw.split('#', 1)[0].strip()
             if _UV_SOURCES_OPS_LINE_RE.match(stripped):
                 continue
@@ -772,16 +775,21 @@ def _patch_pyproject_uv(
 
     out = _rewrite_pep508_ops_strings(original, ops)
     out = _strip_uv_sources_ops_entries(out)
+    out = _add_to_uv_table(out, _UV_SOURCES, source_lines)
 
-    block = '\n'.join(source_lines)
-    if '[tool.uv.sources]' in out:
-        out = out.replace(
-            '[tool.uv.sources]',
-            f'[tool.uv.sources]\n{block}',
-            1,
+    if ops.kind == 'path':
+        # A path source is installed editable (see ``OpsSource.uv_source_inline``),
+        # and setuptools' default editable install is an import hook that
+        # Python follows but static checkers like Pyright do not, so every
+        # ``import ops`` fails to resolve. ``compat`` mode writes a plain path
+        # into the ``.pth`` instead. Only ``ops`` and ``ops-scenario`` build
+        # with setuptools; ``ops-tracing``'s hatchling build is already a path.
+        out = _strip_uv_sources_ops_entries(out, _UV_CONFIG_SETTINGS_PACKAGE)
+        out = _add_to_uv_table(
+            out,
+            _UV_CONFIG_SETTINGS_PACKAGE,
+            [f'{pkg} = {{ editable_mode = "compat" }}' for pkg in ('ops', 'ops-scenario')],
         )
-    else:
-        out = out.rstrip('\n') + f'\n\n[tool.uv.sources]\n{block}\n'
 
     dep_entries = ', '.join(f'"{d}"' for d in companion_direct)
     # PEP 621 project deps. Anchored at start-of-line so we don't match
@@ -822,6 +830,15 @@ def _patch_pyproject_uv(
         out,
     )
     return out
+
+
+def _add_to_uv_table(text: str, section_name: str, lines: Sequence[str]) -> str:
+    """Add ``lines`` to the ``[section_name]`` table, creating it at the end if absent."""
+    block = '\n'.join(lines)
+    header = f'[{section_name}]'
+    if header in text:
+        return text.replace(header, f'{header}\n{block}', 1)
+    return text.rstrip('\n') + f'\n\n{header}\n{block}\n'
 
 
 _BASE_POETRY_DEPS = 'tool.poetry.dependencies'
