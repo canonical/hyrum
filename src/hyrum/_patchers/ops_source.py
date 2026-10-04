@@ -20,6 +20,7 @@ places and breaking lockfile assumptions).
 
 from __future__ import annotations
 
+import configparser
 import contextlib
 import dataclasses
 import itertools
@@ -209,6 +210,16 @@ class OpsSource:
         return '{' + ', '.join(parts) + '}'
 
 
+@dataclasses.dataclass(frozen=True)
+class _ToxPatch:
+    """What patching a charm's ``tox.ini`` touched."""
+
+    patched: frozenset[pathlib.Path]
+    """``tox.ini`` and the requirements files its ``deps`` include, where changed."""
+    declares_ops: bool
+    """Whether ``tox.ini`` declares ops (or a companion), directly or by inclusion."""
+
+
 class OpsSourcePatcher:
     """Point a charm at a development ``ops`` source for the duration of a run."""
 
@@ -221,26 +232,66 @@ class OpsSourcePatcher:
         requirements = repo / 'requirements.txt'
         pyproject = repo / 'pyproject.toml'
 
-        if requirements.exists():
-            yield from self._apply_requirements(repo, requirements)
-        elif pyproject.exists():
-            yield from self._apply_pyproject(repo, pyproject)
-        else:
-            raise base.PatcherError(f'{repo} has neither requirements.txt nor pyproject.toml')
+        # The tox ``deps`` go first: many charms declare ops (or just its
+        # extras) only there, and whether they do decides what counts as a
+        # charm with no ops declaration at all.
+        with self._apply_tox(repo) as tox:
+            if requirements.exists():
+                yield from self._apply_requirements(repo, requirements, tox.patched)
+            elif pyproject.exists():
+                yield from self._apply_pyproject(repo, pyproject, tox.declares_ops)
+            elif tox.declares_ops:
+                yield
+            else:
+                raise base.PatcherError(f'{repo} has neither requirements.txt nor pyproject.toml')
+
+    @contextlib.contextmanager
+    def _apply_tox(self, repo: pathlib.Path) -> Generator[_ToxPatch, None, None]:
+        """Patch ops in ``tox.ini``'s ``deps``, and in the requirements files they include."""
+        tox_ini = repo / 'tox.ini'
+        if not tox_ini.exists():
+            yield _ToxPatch(patched=frozenset(), declares_ops=False)
+            return
+        original = tox_ini.read_text()
+        new_text, declares_ops, includes = _patch_tox_ini(original, self.ops)
+        snapshots: dict[pathlib.Path, str | None] = {}
+        if new_text != original:
+            snapshots[tox_ini] = original
+        for include in _resolve_tox_includes(includes, repo, original):
+            text = include.read_text()
+            # Only an include that names ops: appending ops to, say, a lint
+            # env's requirements would install it where the charm does not.
+            if include not in snapshots and _requirements_declare_ops(text):
+                snapshots[include] = text
+                declares_ops = True
+        try:
+            if tox_ini in snapshots:
+                tox_ini.write_text(new_text)
+            for path in snapshots:
+                if path != tox_ini:
+                    _patch_requirements_file(path, self.ops)
+            yield _ToxPatch(patched=frozenset(snapshots), declares_ops=declares_ops)
+        finally:
+            for path, original_text in snapshots.items():
+                restore(path, original_text)
 
     def _apply_requirements(
-        self, repo: pathlib.Path, requirements: pathlib.Path
+        self,
+        repo: pathlib.Path,
+        requirements: pathlib.Path,
+        already_patched: frozenset[pathlib.Path] = frozenset(),
     ) -> Generator[None, None, None]:
-        snapshots: dict[pathlib.Path, str | None] = {requirements: requirements.read_text()}
+        snapshots: dict[pathlib.Path, str | None] = {}
         # Sibling requirements files often pin ops too; patch them all.
-        for sibling in itertools.chain(
+        for path in itertools.chain(
+            (requirements,),
             repo.glob('requirements-*.txt'),
             repo.glob('*-requirements.txt'),
             repo.glob('requirements*.in'),
         ):
-            if sibling in snapshots:
+            if path in snapshots or path.resolve() in already_patched:
                 continue
-            snapshots[sibling] = sibling.read_text()
+            snapshots[path] = path.read_text()
         try:
             for path in snapshots:
                 _patch_requirements_file(path, self.ops)
@@ -250,7 +301,7 @@ class OpsSourcePatcher:
                 restore(path, original)
 
     def _apply_pyproject(
-        self, repo: pathlib.Path, pyproject: pathlib.Path
+        self, repo: pathlib.Path, pyproject: pathlib.Path, ops_in_tox: bool = False
     ) -> Generator[None, None, None]:
         poetry_lock = repo / 'poetry.lock'
         uv_lock = repo / 'uv.lock'
@@ -279,6 +330,10 @@ class OpsSourcePatcher:
                 new_text = _patch_pyproject_poetry(original_text, self.ops, ops_extras)
             elif flavour == 'pep621':
                 new_text = _patch_pyproject_pep621(original_text, self.ops, ops_extras)
+            elif ops_in_tox:
+                # A pyproject.toml that only holds tool config: the charm
+                # declares ops in tox.ini, which is already patched.
+                new_text = original_text
             else:
                 raise base.PatcherError(
                     f'{pyproject} has no recognisable [project] or [tool.poetry] deps'
@@ -384,6 +439,195 @@ def _patch_requirements_file(path: pathlib.Path, ops: OpsSource) -> None:
                 kept.append(ops.pep508_dep(pkg, subdir=subdir))
 
     path.write_text('\n'.join(kept) + '\n')
+
+
+def _requirement_names_ops(line: str) -> str | None:
+    """Which of ``ops`` and its companions a requirement line declares, if any.
+
+    The operator repo's own git URL, with no PEP 508 name in front of it, is
+    taken to be ``ops``: that is the package at its root.
+    """
+    if line.startswith('git+https://github.com/canonical/operator'):
+        return 'ops'
+    try:
+        req = packaging.requirements.Requirement(line)
+    except packaging.requirements.InvalidRequirement:
+        return None
+    companions = {pkg for pkg, _ in _COMPANION_PACKAGES.values()}
+    if req.name == 'ops' or req.name in companions:
+        return req.name
+    return None
+
+
+def _requirements_declare_ops(text: str) -> bool:
+    """Does a requirements file declare ``ops`` or one of its companions?"""
+    return any(
+        _requirement_names_ops(raw.split('#', 1)[0].strip()) is not None
+        for raw in text.splitlines()
+    )
+
+
+_INI_SECTION_RE = re.compile(r'^\[([^\]]+)\]\s*$')
+_INI_KEY_RE = re.compile(r'^(?P<key>[^\s=:#;][^=:]*?)\s*[=:]\s*(?P<value>.*)$')
+
+_TOX_FACTOR_RE = re.compile(
+    r"""
+    ^ (?P<factors> [\w.*?!{},-]+ (?: \s*,\s* [\w.*?!{},-]+ )* )  # e.g. lint, py3{10,11}-unit
+    \s* : (?: \s+ | $ )   # tox only takes the colon as a factor marker before a space
+    """,
+    re.VERBOSE,
+)
+_TOX_COMMENT_RE = re.compile(r'\s*(?<!\\)#.*')
+"""A comment in a tox.ini value: tox strips any unescaped ``#``, not only ``' #'``."""
+
+_TOX_INCLUDE_RE = re.compile(r'^(?:-r|--requirement)(?:\s*=\s*|\s*)(?P<path>\S+)$')
+
+
+def _patch_tox_ini(original: str, ops: OpsSource) -> tuple[str, bool, list[str]]:
+    """Point the ops lines in every ``deps`` of a ``tox.ini`` at ``ops``.
+
+    A ``deps`` entry that declares ``ops`` is rewritten in place, keeping its
+    extras and any tox factor prefix (``unit: ops[testing]``), and is followed
+    by the companions those extras pull in, unless the same ``deps`` declares
+    them itself. Without the companions, pip resolves ``ops[testing]`` from
+    the patched source and then looks on PyPI for the development version of
+    ``ops-scenario`` that it pins.
+
+    Returns the new text, whether ``ops`` or a companion is declared at all,
+    and the raw paths of the requirements files that the ``deps`` include.
+    """
+    out: list[str] = []
+    includes: list[str] = []
+    declares_ops = False
+    in_deps = False
+    # Companions to add after the ops line, keyed by the line's position in
+    # ``out``; added once the block is complete, so that a companion the
+    # charm declares further down is rewritten rather than repeated.
+    pending: list[tuple[int, str, set[str]]] = []
+    declared: set[str] = set()
+
+    def flush() -> None:
+        for index, lead, extras in reversed(pending):
+            added = [
+                f'{lead}{_tox_escape(ops.pep508_dep(pkg, subdir=subdir))}\n'
+                for extra, (pkg, subdir) in _COMPANION_PACKAGES.items()
+                if extra in extras and pkg not in declared
+            ]
+            out[index + 1 : index + 1] = added
+        pending.clear()
+        declared.clear()
+
+    for raw in original.splitlines(keepends=True):
+        stripped = raw.strip()
+        if _INI_SECTION_RE.match(raw):
+            flush()
+            in_deps = False
+            out.append(raw)
+            continue
+        if raw[:1] not in ('', ' ', '\t') and not stripped.startswith(('#', ';')):
+            # Not indented, so not a continuation: a new key.
+            flush()
+            key = _INI_KEY_RE.match(raw)
+            in_deps = key is not None and key.group('key').strip() == 'deps'
+            if key is None or not in_deps:
+                out.append(raw)
+                continue
+            value = key.group('value')
+            lead = raw[: key.start('value')]
+            continuation = '    '
+        elif in_deps and stripped and not stripped.startswith(('#', ';')):
+            value = raw.strip()
+            lead = raw[: len(raw) - len(raw.lstrip())]
+            continuation = lead
+        else:
+            out.append(raw)
+            continue
+
+        factors = _TOX_FACTOR_RE.match(value)
+        prefix = factors.group(0) if factors else ''
+        entry = _TOX_COMMENT_RE.sub('', value[len(prefix) :]).replace('\\#', '#').strip()
+        include = _TOX_INCLUDE_RE.match(entry)
+        if include:
+            includes.append(include.group('path'))
+        name = _requirement_names_ops(entry)
+        if name is None:
+            out.append(raw)
+            continue
+        declares_ops = True
+        if name == 'ops':
+            extras = _ops_extras_from_pep508_line(entry)
+            dep = ops.pep508_dep('ops', extras=sorted(extras))
+            out.append(f'{lead}{prefix}{_tox_escape(dep)}\n')
+            if ops.overrides_companions():
+                pending.append((len(out) - 1, f'{continuation}{prefix}', extras))
+            continue
+        if not ops.overrides_companions():
+            out.append(raw)
+            continue
+        declared.add(name)
+        subdir = next(sub for pkg, sub in _COMPANION_PACKAGES.values() if pkg == name)
+        out.append(f'{lead}{prefix}{_tox_escape(ops.pep508_dep(name, subdir=subdir))}\n')
+    flush()
+    return ''.join(out), declares_ops, includes
+
+
+def _tox_escape(dep: str) -> str:
+    """Escape ``#`` so tox does not strip a ``#subdirectory=`` URL fragment."""
+    return dep.replace('#', '\\#')
+
+
+_TOX_SUBSTITUTION_RE = re.compile(
+    r"""
+    \{ (?:
+        \[ (?P<section> [^\]]+ ) \] (?P<key> [^{}]+ )  # a reference: {[vars]reqs_path}
+        | (?P<name> [^{}]* )                            # a name: {toxinidir}, {/}
+    ) \}
+    """,
+    re.VERBOSE,
+)
+
+
+def _resolve_tox_includes(
+    raw_paths: Sequence[str], repo: pathlib.Path, tox_text: str
+) -> list[pathlib.Path]:
+    """Resolve the ``-r`` paths of tox ``deps`` to requirements files in ``repo``.
+
+    Handles the substitutions charms use in these paths: ``{toxinidir}``,
+    ``{tox_root}``, and ``{[section]key}`` references. A path with any other
+    substitution, or that does not lead to a file inside ``repo``, is skipped.
+    """
+    parser = configparser.ConfigParser(interpolation=None, strict=False)
+    try:
+        parser.read_string(tox_text)
+    except configparser.Error:
+        parser = configparser.ConfigParser(interpolation=None)
+
+    def substitute(match: re.Match[str]) -> str:
+        if match.group('name') in ('toxinidir', 'tox_root'):
+            return str(repo)
+        if match.group('name') == '/':
+            return '/'
+        section, key = match.group('section'), match.group('key')
+        if section and parser.has_option(section, key):
+            return parser.get(section, key).strip()
+        return match.group(0)
+
+    resolved: list[pathlib.Path] = []
+    root = repo.resolve()
+    for raw in raw_paths:
+        text = raw
+        for _ in range(10):
+            substituted = _TOX_SUBSTITUTION_RE.sub(substitute, text)
+            if substituted == text:
+                break
+            text = substituted
+        if '{' in text:
+            logger.debug('cannot resolve tox include %r in %s', raw, repo)
+            continue
+        path = (repo / text).resolve()
+        if path.is_file() and path.is_relative_to(root) and path not in resolved:
+            resolved.append(path)
+    return resolved
 
 
 def _collect_pyproject_ops_extras(data: dict[str, Any]) -> set[str]:
