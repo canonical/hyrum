@@ -1272,7 +1272,10 @@ def test_poetry_lock_not_wrapped_when_no_python_constraint(tmp_path: pathlib.Pat
     assert captured['cmd'] == ('poetry', 'lock')
 
 
-def test_uv_lock_passes_python_when_requires_python_present(tmp_path: pathlib.Path, monkeypatch):
+def test_uv_lock_not_pinned_to_the_minimum_python(tmp_path: pathlib.Path, monkeypatch):
+    # Regression: ``uv lock --python 3.10`` fails for a charm with a group
+    # that needs a newer Python (``opcli ; python_version >= '3.12'``), even
+    # though the universal lock that plain ``uv lock`` produces is fine.
     captured: dict[str, object] = {}
 
     def fake_lock(repo, cmd, timeout, **kw):
@@ -1285,9 +1288,14 @@ def test_uv_lock_passes_python_when_requires_python_present(tmp_path: pathlib.Pa
         [project]
         name = "c"
         version = "0"
-        requires-python = ">=3.12,<4.0"
+        requires-python = ">=3.10"
         dependencies = [
           "ops>=2.10",
+        ]
+
+        [dependency-groups]
+        tooling = [
+          "opcli[cli] ; python_version >= '3.12'",
         ]
 
         [tool.uv]
@@ -1297,39 +1305,41 @@ def test_uv_lock_passes_python_when_requires_python_present(tmp_path: pathlib.Pa
     ops = patchers.OpsSource(branch='b')
     with patchers.OpsSourcePatcher(ops).apply(tmp_path):
         pass
-    assert captured['cmd'] == ('uv', 'lock', '--python', '3.12')
+    assert captured['cmd'] == ('uv', 'lock')
 
 
-def test_uv_lock_python_reflects_patched_requires_python(tmp_path: pathlib.Path, monkeypatch):
-    # Regression: ``_patch_pyproject_uv`` bumps ``requires-python`` from
-    # 3.8/3.9 to 3.10 (ops's floor). We must derive ``--python`` from the
-    # patched pyproject, not the original, or uv aborts with "interpreter
-    # resolved to Python 3.8 … incompatible with project requirement >=3.10".
-    captured: dict[str, object] = {}
+def test_failed_uv_relock_is_a_patcher_error(tmp_path: pathlib.Path, monkeypatch):
+    # A uv charm keeps its stale lock when the relock fails, and its own
+    # ``uv run --locked`` then refuses it: that is hyrum failing to apply the
+    # patch, not the charm failing under it.
+    class _Result:
+        returncode = 1
+        stdout = b''
+        stderr = b'No solution found'
 
-    def fake_lock(repo, cmd, timeout, **kw):
-        captured['cmd'] = tuple(cmd)
-
-    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
+    monkeypatch.setattr('hyrum._patchers._common.subprocess.run', lambda *a, **kw: _Result())
     py = tmp_path / 'pyproject.toml'
-    py.write_text(
-        textwrap.dedent("""\
+    original = textwrap.dedent("""\
         [project]
         name = "c"
         version = "0"
-        requires-python = "~=3.8"
+        requires-python = ">=3.10"
         dependencies = [
           "ops>=2.10",
         ]
 
         [tool.uv]
     """)
-    )
+    py.write_text(original)
     (tmp_path / 'uv.lock').write_text('# original\n')
     ops = patchers.OpsSource(branch='b')
-    with patchers.OpsSourcePatcher(ops).apply(tmp_path):
+    with (
+        pytest.raises(patchers.PatcherError, match='No solution found'),
+        patchers.OpsSourcePatcher(ops).apply(tmp_path),
+    ):
         pass
-    assert captured['cmd'] == ('uv', 'lock', '--python', '3.10')
+    assert py.read_text() == original
+    assert (tmp_path / 'uv.lock').read_text() == '# original\n'
 
 
 def test_uv_lock_unpinned_when_auto_python_disabled(tmp_path: pathlib.Path, monkeypatch):

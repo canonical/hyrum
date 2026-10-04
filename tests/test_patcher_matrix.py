@@ -381,6 +381,26 @@ def test_a_failed_lock_does_not_leave_a_stale_lockfile(
     assert lockfile.exists() is lock_survives
 
 
+@pytest.mark.parametrize(
+    ('result', 'message'),
+    [
+        (_Completed(1, b'no solution found'), 'uv lock failed: no solution found'),
+        (subprocess.TimeoutExpired(cmd='uv', timeout=1), 'uv lock timed out after 60s'),
+        (FileNotFoundError(2, 'No such file or directory', 'uv'), 'uv not found'),
+    ],
+)
+def test_a_failed_lock_with_nothing_to_remove_is_a_patcher_error(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, result: Any, message: str
+):
+    # Without a lockfile to fall back from, the charm would run against its
+    # stale lock and fail for a reason that has nothing to do with the patch.
+    lockfile = tmp_path / 'uv.lock'
+    lockfile.write_text('version = 1\n')
+    monkeypatch.setattr(common.subprocess, 'run', _Recorder(result))
+    with pytest.raises(base.PatcherError, match=message):
+        common.run_lock(tmp_path, ['uv', 'lock'], 60)
+
+
 def test_lock_runs_without_hyrums_own_virtualenv(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
