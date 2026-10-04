@@ -772,6 +772,8 @@ def _patch_pyproject_uv(
         # ``uv lock`` / ``uv sync``. tox-uv's ``uv-venv-runner`` installs the
         # group's strings with ``uv pip install``, where a bare name resolves
         # from PyPI and lands on a companion release that doesn't match ops.
+        # This is added even when the array already has the companion, as a
+        # backstop for an entry the in-place rewrite didn't match.
         companion_direct.append(ops.pep508_dep(pkg, subdir=subdir))
 
     out = _rewrite_pep508_ops_strings(original, ops)

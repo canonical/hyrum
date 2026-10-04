@@ -1093,6 +1093,8 @@ def test_pyproject_uv_path_emits_path_source(tmp_path: pathlib.Path, ops_path: p
         companion = tmp_path / 'operator' / 'testing'
         assert f'ops-scenario = {{ path = "{companion}", editable = true }}' in patched
         assert 'subdirectory' not in patched
+        deps = tomllib.loads(patched)['project']['dependencies']
+        assert f'ops-scenario @ file://{companion}' in deps
 
 
 # ---- error paths -------------------------------------------------------------
