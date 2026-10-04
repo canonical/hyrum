@@ -1073,7 +1073,6 @@ def test_pyproject_uv_path_installs_in_compat_editable_mode(
         parsed = tomllib.loads(_read(py))
         assert parsed['tool']['uv']['config-settings-package'] == {
             'ops': {'editable_mode': 'compat'},
-            'ops-scenario': {'editable_mode': 'compat'},
         }
 
 
@@ -1100,7 +1099,6 @@ def test_pyproject_uv_path_merges_into_existing_config_settings_package(
         parsed = tomllib.loads(_read(py))
         assert parsed['tool']['uv']['config-settings-package'] == {
             'ops': {'editable_mode': 'compat'},
-            'ops-scenario': {'editable_mode': 'compat'},
             'other': {'foo': 'bar'},
         }
 

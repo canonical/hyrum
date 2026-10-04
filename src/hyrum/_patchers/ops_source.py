@@ -507,13 +507,13 @@ def _line_declares_poetry_pkg(stripped: str, pkg_name: str, pep_re: re.Pattern[s
     )
 
 
-_UV_SOURCES_OPS_LINE_RE = re.compile(r'^(ops|ops-scenario|ops-tracing)\s*=')
+_UV_OPS_KEY_RE = re.compile(r'^(ops|ops-scenario|ops-tracing)\s*=')
 
 _UV_SOURCES = 'tool.uv.sources'
 _UV_CONFIG_SETTINGS_PACKAGE = 'tool.uv.config-settings-package'
 
 
-def _strip_uv_sources_ops_entries(text: str, section_name: str = _UV_SOURCES) -> str:
+def _strip_uv_table_ops_entries(text: str, section_name: str = _UV_SOURCES) -> str:
     """Remove ``ops``/``ops-scenario``/``ops-tracing`` entries from a ``[tool.uv.*]`` table.
 
     Makes :func:`_patch_pyproject_uv` idempotent. If a previous run (or a sibling
@@ -530,7 +530,7 @@ def _strip_uv_sources_ops_entries(text: str, section_name: str = _UV_SOURCES) ->
             continue
         if section == section_name:
             stripped = raw.split('#', 1)[0].strip()
-            if _UV_SOURCES_OPS_LINE_RE.match(stripped):
+            if _UV_OPS_KEY_RE.match(stripped):
                 continue
         out_lines.append(raw)
     return ''.join(out_lines)
@@ -774,21 +774,21 @@ def _patch_pyproject_uv(
         companion_direct.append(pkg)
 
     out = _rewrite_pep508_ops_strings(original, ops)
-    out = _strip_uv_sources_ops_entries(out)
+    out = _strip_uv_table_ops_entries(out)
     out = _add_to_uv_table(out, _UV_SOURCES, source_lines)
 
     if ops.kind == 'path':
         # A path source is installed editable (see ``OpsSource.uv_source_inline``),
-        # and setuptools' default editable install is an import hook that
-        # Python follows but static checkers like Pyright do not, so every
-        # ``import ops`` fails to resolve. ``compat`` mode writes a plain path
-        # into the ``.pth`` instead. Only ``ops`` and ``ops-scenario`` build
-        # with setuptools; ``ops-tracing``'s hatchling build is already a path.
-        out = _strip_uv_sources_ops_entries(out, _UV_CONFIG_SETTINGS_PACKAGE)
+        # and setuptools' default editable install of a flat-layout project is an
+        # import hook that Python follows but static checkers like Pyright do not,
+        # so every ``import ops`` fails to resolve. ``compat`` mode writes a plain
+        # path into the ``.pth`` instead, at the cost of putting the whole
+        # checkout root on ``sys.path``, so its top-level directories (``test``,
+        # ``testing``, ``docs``, …) also resolve. ``ops-scenario`` (src layout)
+        # and ``ops-tracing`` (hatchling) already get a plain path.
+        out = _strip_uv_table_ops_entries(out, _UV_CONFIG_SETTINGS_PACKAGE)
         out = _add_to_uv_table(
-            out,
-            _UV_CONFIG_SETTINGS_PACKAGE,
-            [f'{pkg} = {{ editable_mode = "compat" }}' for pkg in ('ops', 'ops-scenario')],
+            out, _UV_CONFIG_SETTINGS_PACKAGE, ['ops = { editable_mode = "compat" }']
         )
 
     dep_entries = ', '.join(f'"{d}"' for d in companion_direct)
