@@ -755,9 +755,9 @@ def test_pyproject_poetry_keeps_dependency_groups_ops_in_place(
 ):
     """ops in [dependency-groups] stays there, not in [tool.poetry.dependencies].
 
-    Poetry only uses that table to add detail to packages declared in a
+    From Poetry 2.2, that table only adds detail to packages declared in a
     group, so a declaration moved there is ignored and the lock keeps its
-    old ops.
+    old ops. (Earlier versions ignore [dependency-groups] altogether.)
     """
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
@@ -791,6 +791,42 @@ def test_pyproject_poetry_keeps_dependency_groups_ops_in_place(
         assert parsed['tool']['poetry']['dependencies'] == {'python': '^3.12'}
 
 
+@pytest.mark.parametrize(
+    'last_entry',
+    [
+        '"ops>=2.17"',
+        '"ops>=2.17"  # the framework',
+        '"ops>=2.17",  # the framework',
+    ],
+)
+def test_pyproject_poetry_rewrites_ops_as_the_last_array_entry(
+    tmp_path: pathlib.Path, ops_path: patchers.OpsSource, monkeypatch, last_entry: str
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent(f"""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+            "pyyaml",
+            {last_entry}
+        ]
+
+        [tool.poetry]
+        package-mode = false
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+        assert parsed['project']['dependencies'] == [
+            'pyyaml',
+            f'ops @ file://{tmp_path / "operator"}',
+        ]
+
+
 def test_pyproject_poetry_rewrites_a_declared_companion_in_place(
     tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
 ):
@@ -811,6 +847,74 @@ def test_pyproject_poetry_rewrites_a_declared_companion_in_place(
             'ops-scenario @ git+https://github.com/canonical/operator@fix/X#subdirectory=testing',
             'pytest',
         ]
+
+
+def test_pyproject_poetry_adds_companion_beside_underscore_spelling(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [dependency-groups]
+        unit = ["ops[testing]", "ops_scenario>=7"]
+
+        [tool.poetry]
+        package-mode = false
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        assert tomllib.loads(_read(py))['dependency-groups']['unit'] == [
+            'ops-scenario @ git+https://github.com/canonical/operator@fix/X#subdirectory=testing',
+            'ops[testing] @ git+https://github.com/canonical/operator@fix/X',
+            'ops_scenario>=7',
+        ]
+
+
+def test_pyproject_poetry_mixed_case_ops_is_an_error(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    (tmp_path / 'pyproject.toml').write_text(
+        textwrap.dedent("""\
+        [dependency-groups]
+        unit = ["Ops>=2.10"]
+
+        [tool.poetry]
+        package-mode = false
+
+        [tool.poetry.dependencies]
+        python = "^3.12"
+    """)
+    )
+    with (
+        pytest.raises(patchers.PatcherError, match=r'Ops>=2\.10 in \[dependency-groups\] unit'),
+        patchers.OpsSourcePatcher(ops_branch).apply(tmp_path),
+    ):
+        pass
+
+
+def test_pyproject_poetry_invalid_patched_toml_is_a_patcher_error(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    monkeypatch.setattr(
+        'hyrum._patchers.ops_source._inject_after_sections', lambda text, blocks: text + '[[['
+    )
+    (tmp_path / 'pyproject.toml').write_text(
+        textwrap.dedent("""\
+        [dependency-groups]
+        unit = ["ops>=2.10"]
+
+        [tool.poetry]
+        package-mode = false
+    """)
+    )
+    with (
+        pytest.raises(patchers.PatcherError, match='not valid TOML'),
+        patchers.OpsSourcePatcher(ops_branch).apply(tmp_path),
+    ):
+        pass
 
 
 def test_pyproject_poetry_pypi_leaves_array_companions_alone(

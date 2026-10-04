@@ -33,6 +33,7 @@ from typing import Any
 
 import packaging.requirements
 import packaging.specifiers
+import packaging.utils
 
 from hyrum._patchers import _common, base
 from hyrum._patchers._common import (
@@ -586,7 +587,8 @@ _OPS_PEP508_RE = re.compile(
     (\[[^\]"]*\])?  # capture the optional extras, e.g. [testing]
     [^"]*           # rest of the spec: version, marker, URL, ...
     "               # closing quote
-    (?= \s* [,\]] ) # array-element context: comma or closing bracket follows
+    (?= \s* (?: [,\]\#] | $ ) )  # array-element context: a comma, closing bracket,
+                                 # comment, or line end follows
     """,
     re.VERBOSE,
 )
@@ -594,7 +596,7 @@ _OPS_SCENARIO_PEP508_RE = re.compile(
     r"""
     "  \s* ops-scenario (?![\w-])  # the package name, not a longer namesake
     [^"]*  "                       # rest of the spec, then closing quote
-    (?= \s* [,\]] )                # array-element context
+    (?= \s* (?: [,\]\#] | $ ) )    # array-element context
     """,
     re.VERBOSE,
 )
@@ -602,7 +604,7 @@ _OPS_TRACING_PEP508_RE = re.compile(
     r"""
     "  \s* ops-tracing (?![\w-])
     [^"]*  "
-    (?= \s* [,\]] )
+    (?= \s* (?: [,\]\#] | $ ) )
     """,
     re.VERBOSE,
 )
@@ -920,8 +922,15 @@ def _patch_pep508_arrays_for_poetry(text: str, parsed: dict[str, Any], ops: OpsS
         return text
     for table, key, entries in _pep508_dep_arrays(parsed):
         reqs = list(_pep508_requirements(entries))
+        # Not canonicalised: the rewrite only matches ``ops-scenario`` as spelt,
+        # so an ``ops_scenario`` entry needs the direct reference added alongside.
         declared = {req.name for req in reqs}
-        extras = {extra for req in reqs if req.name == 'ops' for extra in req.extras}
+        extras = {
+            extra
+            for req in reqs
+            if packaging.utils.canonicalize_name(req.name) == 'ops'
+            for extra in req.extras
+        }
         missing = [
             ops.pep508_dep(pkg, subdir=subdir)
             for extra, (pkg, subdir) in _COMPANION_PACKAGES.items()
@@ -937,7 +946,7 @@ def _unpatched_pep508_ops(parsed: dict[str, Any], ops: OpsSource) -> list[str]:
     unpatched: list[str] = []
     for table, key, entries in _pep508_dep_arrays(parsed):
         for req in _pep508_requirements(entries):
-            if req.name != 'ops':
+            if packaging.utils.canonicalize_name(req.name) != 'ops':
                 continue
             expected = packaging.requirements.Requirement(
                 ops.pep508_dep('ops', extras=sorted(req.extras))
@@ -952,7 +961,7 @@ def _patch_pyproject_poetry(
 ) -> str:
     content = _patch_pep508_arrays_for_poetry(original, parsed, ops)
     in_pep508_arrays = any(
-        req.name == 'ops'
+        packaging.utils.canonicalize_name(req.name) == 'ops'
         for _, _, entries in _pep508_dep_arrays(parsed)
         for req in _pep508_requirements(entries)
     )
@@ -1000,7 +1009,11 @@ def _patch_pyproject_poetry(
                 blocks[section] = blocks.get(section, '') + line
 
     content = _inject_after_sections(content, blocks)
-    unpatched = _unpatched_pep508_ops(tomllib.loads(content), ops)
+    try:
+        patched = tomllib.loads(content)
+    except tomllib.TOMLDecodeError as exc:
+        raise base.PatcherError(f'the patched pyproject.toml is not valid TOML: {exc}') from exc
+    unpatched = _unpatched_pep508_ops(patched, ops)
     if unpatched:
         raise base.PatcherError(
             f'could not rewrite the ops dependency in place: {", ".join(unpatched)}'
