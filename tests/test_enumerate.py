@@ -213,7 +213,8 @@ def test_a_root_harness_runs_charms_that_cannot_run_by_themselves(
 
     The walk stops at ``charms/worker``, which has no manifest, and never sees
     ``charms/worker/k8s``, which has no runner. The root's ``tox.ini`` is what
-    runs the tests.
+    runs the tests. The root's ``pyproject.toml`` is a symlink to the charm's,
+    as it is in k8s-operator, but enumeration only needs the file to exist.
     """
     repo = owner / 'k8s-operator'
     make_charm(repo / 'charms' / 'worker', tox=False, python=False)
