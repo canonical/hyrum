@@ -20,6 +20,7 @@ aws-integrator
 azure-integrator
 barbican
 barbican-vault
+bingo
 canal
 canonical-kubernetes-canal
 canonical-livepatch-onprem
@@ -72,6 +73,7 @@ etcd
 flannel
 ganglia-node
 gcp-integrator
+geth
 giraph
 gitlab-runner
 glance
