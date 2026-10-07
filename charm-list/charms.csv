@@ -581,3 +581,4 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://git.launchpad.net/landscape-charm,,auto
 ,https://github.com/canonical/loki-operators,,auto
 ,https://github.com/canonical/mimir-operators,,auto
+,https://github.com/reductstore/reductstore-k8s,,auto
