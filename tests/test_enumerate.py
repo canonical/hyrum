@@ -224,16 +224,38 @@ def test_a_root_harness_runs_charms_that_cannot_run_by_themselves(
 
 
 def test_a_root_harness_is_not_used_when_a_charm_can_run_by_itself(
-    owner: pathlib.Path, cache: pathlib.Path
+    owner: pathlib.Path, cache: pathlib.Path, caplog: pytest.LogCaptureFixture
 ):
-    """A monorepo's charms keep their own outcomes when they have their own harness."""
+    """A monorepo's charms keep their own outcomes when they have their own harness.
+
+    The charms without one are then skipped, which is logged so that the root
+    harness being passed over is visible.
+    """
     repo = owner / 'operators'
     make_charm(repo / 'charms' / 'alpha')
     make_charm(repo / 'charms' / 'beta', tox=False)
     (repo / 'tox.ini').write_text('[tox]\nenvlist = unit\n')
     (repo / 'pyproject.toml').write_text('[project]\nname = "operators"\nversion = "0"\n')
-    found = [p.name for p in _enumerate.iter_charm_repos(cache)]
+    with caplog.at_level(logging.INFO, logger='hyrum._enumerate'):
+        found = [p.name for p in _enumerate.iter_charm_repos(cache)]
     assert found == ['alpha', 'beta']
+    assert len(caplog.records) == 1
+    assert f'Not running the root harness in {repo}' in caplog.text
+    assert 'the 1 without one will be skipped' in caplog.text
+
+
+def test_a_root_harness_is_not_logged_when_every_charm_can_run_by_itself(
+    owner: pathlib.Path, cache: pathlib.Path, caplog: pytest.LogCaptureFixture
+):
+    repo = owner / 'operators'
+    make_charm(repo / 'charms' / 'alpha')
+    make_charm(repo / 'charms' / 'beta')
+    (repo / 'tox.ini').write_text('[tox]\nenvlist = unit\n')
+    (repo / 'pyproject.toml').write_text('[project]\nname = "operators"\nversion = "0"\n')
+    with caplog.at_level(logging.INFO, logger='hyrum._enumerate'):
+        found = [p.name for p in _enumerate.iter_charm_repos(cache)]
+    assert found == ['alpha', 'beta']
+    assert caplog.text == ''
 
 
 @pytest.mark.parametrize('root_file', ['tox.ini', 'pyproject.toml'])

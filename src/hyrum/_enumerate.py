@@ -184,9 +184,18 @@ def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
         # charms would all be skipped, so run the root instead. A charm that
         # can run by itself is still run by itself, since that keeps its
         # outcome separate from the others'.
-        if charms and _is_runnable(repo) and not any(_is_runnable(c) for c in charms):
-            yield repo
-            continue
+        if charms and _is_runnable(repo):
+            stranded = sum(1 for c in charms if not _is_runnable(c))
+            if stranded == len(charms):
+                yield repo
+                continue
+            if stranded:
+                logger.info(
+                    'Not running the root harness in %s, since some of its charms '
+                    'have their own; the %d without one will be skipped',
+                    repo,
+                    stranded,
+                )
         yield from charms
         if not charms:
             logger.warning(
