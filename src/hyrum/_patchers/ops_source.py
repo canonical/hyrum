@@ -217,7 +217,7 @@ class _ToxPatch:
     """What patching a charm's ``tox.ini`` touched."""
 
     patched: frozenset[pathlib.Path]
-    """``tox.ini`` and the requirements files its ``deps`` include, where changed."""
+    """Resolved paths of ``tox.ini`` and the requirements files it includes, where changed."""
     declares_ops: bool
     """Whether ``tox.ini`` declares ops (or a companion), directly or by inclusion."""
 
@@ -270,7 +270,10 @@ class OpsSourcePatcher:
             for path in snapshots:
                 if path != tox_ini:
                     _patch_requirements_file(path, self.ops)
-            yield _ToxPatch(patched=frozenset(snapshots), declares_ops=declares_ops)
+            yield _ToxPatch(
+                patched=frozenset(path.resolve() for path in snapshots),
+                declares_ops=declares_ops,
+            )
         finally:
             for path, original_text in snapshots.items():
                 restore(path, original_text)
