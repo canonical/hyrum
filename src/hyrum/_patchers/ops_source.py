@@ -608,6 +608,8 @@ def _resolve_tox_includes(
     try:
         parser.read_string(tox_text)
     except configparser.Error:
+        # Use an empty parser rather than a partly read one, so that no
+        # ``{[section]key}`` reference resolves and those includes are skipped.
         parser = configparser.ConfigParser(interpolation=None)
 
     def substitute(match: re.Match[str]) -> str:
