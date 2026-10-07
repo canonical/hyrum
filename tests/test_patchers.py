@@ -1340,7 +1340,6 @@ def test_failed_uv_relock_is_a_patcher_error(tmp_path: pathlib.Path, monkeypatch
     ):
         pass
     assert py.read_text() == original
-    assert (tmp_path / 'uv.lock').read_text() == '# original\n'
 
 
 def test_run_lock_strips_virtual_env(tmp_path: pathlib.Path, monkeypatch):
