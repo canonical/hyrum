@@ -81,7 +81,7 @@ def _is_bundle_dir(path: pathlib.Path) -> bool:
     return (path / 'bundle.yaml').exists()
 
 
-def _is_runnable(path: pathlib.Path) -> bool:
+def _has_harness(path: pathlib.Path) -> bool:
     """Return whether ``path`` has both a runner and a Python manifest."""
     return filt.has_runnable_target(path) is None and filt.has_python(path) is None
 
@@ -192,8 +192,8 @@ def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
         # charms would all be skipped, so run the root instead. A charm that
         # can run by itself is still run by itself, since that keeps its
         # outcome separate from the others'.
-        if _is_runnable(repo):
-            stranded = sum(1 for c in charms if not _is_runnable(c))
+        if _has_harness(repo):
+            stranded = sum(1 for c in charms if not _has_harness(c))
             if stranded == len(charms):
                 yield repo
                 continue
