@@ -245,13 +245,19 @@ def test_tox_without_ops_and_tool_only_pyproject_raises(
         pass
 
 
-def test_tox_ops_without_requirements_or_pyproject(
+def test_tox_ops_without_requirements_or_pyproject_raises(
     tmp_path: pathlib.Path, ops_main: patchers.OpsSource
 ):
+    """The ``has_python`` filter skips this shape, so the patcher never sees it from the CLI."""
+    original = '[testenv]\ndeps =\n    ops\n'
     tox_ini = tmp_path / 'tox.ini'
-    tox_ini.write_text('[testenv]\ndeps =\n    ops\n')
-    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
-        assert 'git+' in _read(tox_ini)
+    tox_ini.write_text(original)
+    with (
+        pytest.raises(patchers.PatcherError, match='has neither'),
+        patchers.OpsSourcePatcher(ops_main).apply(tmp_path),
+    ):
+        pass
+    assert _read(tox_ini) == original
 
 
 def test_tox_included_requirements_patched(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):

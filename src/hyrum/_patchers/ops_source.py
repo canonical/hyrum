@@ -242,8 +242,6 @@ class OpsSourcePatcher:
                 yield from self._apply_requirements(repo, requirements, tox.patched)
             elif pyproject.exists():
                 yield from self._apply_pyproject(repo, pyproject, tox.declares_ops)
-            elif tox.declares_ops:
-                yield
             else:
                 raise base.PatcherError(f'{repo} has neither requirements.txt nor pyproject.toml')
 
