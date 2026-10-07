@@ -1596,6 +1596,32 @@ def test_charmlib_patcher_uv_extras_reapplied(tmp_path: pathlib.Path, monkeypatc
         assert 'subdirectory = "nginx_k8s"' in patched
 
 
+def test_charmlib_patcher_failed_uv_relock_is_a_patcher_error(tmp_path: pathlib.Path, monkeypatch):
+    class _Result:
+        returncode = 1
+        stdout = b''
+        stderr = b'No solution found'
+
+    monkeypatch.setattr('hyrum._patchers._common.subprocess.run', lambda *a, **kw: _Result())
+    charm_dir = tmp_path / 'charm'
+    charm_dir.mkdir()
+    py = charm_dir / 'pyproject.toml'
+    original = (
+        '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
+        'dependencies = [\n  "charmlibs-nginx-k8s>=1.0",\n]\n'
+        '[tool.uv]\ndev-dependencies = []\n'
+    )
+    py.write_text(original)
+    (charm_dir / 'uv.lock').write_text('# original\n')
+    src = patchers.CharmlibSource(pkg_name='nginx_k8s', branch='mybranch')
+    with (
+        pytest.raises(patchers.PatcherError, match='No solution found'),
+        patchers.CharmlibPatcher(src).apply(charm_dir),
+    ):
+        pass
+    assert py.read_text() == original
+
+
 # ---- CharmlibPatcher: git dep rewriting via shared _patch_git_dep helper ----
 
 
