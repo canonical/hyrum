@@ -179,12 +179,20 @@ def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
             yield from _iter_bundle(repo)
             continue
         charms = list(_iter_monorepo(repo, _MAX_DEPTH))
+        if not charms:
+            logger.warning(
+                'No charm found in %s (no charmcraft.yaml or metadata.yaml '
+                'within %d directory levels)',
+                repo,
+                _MAX_DEPTH,
+            )
+            continue
         # Some monorepos keep one test harness at the root for the charms
         # below it, which have no runner or manifest of their own. Those
         # charms would all be skipped, so run the root instead. A charm that
         # can run by itself is still run by itself, since that keeps its
         # outcome separate from the others'.
-        if charms and _is_runnable(repo):
+        if _is_runnable(repo):
             stranded = sum(1 for c in charms if not _is_runnable(c))
             if stranded == len(charms):
                 yield repo
@@ -197,10 +205,3 @@ def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
                     stranded,
                 )
         yield from charms
-        if not charms:
-            logger.warning(
-                'No charm found in %s (no charmcraft.yaml or metadata.yaml '
-                'within %d directory levels)',
-                repo,
-                _MAX_DEPTH,
-            )
