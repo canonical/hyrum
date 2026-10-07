@@ -62,6 +62,8 @@ _COMPANION_PACKAGES: dict[str, tuple[str, str]] = {
     'tracing': ('ops-tracing', 'tracing'),
 }
 
+_SUBDIRECTORY_RE = re.compile(r'[#&]subdirectory=([^&\s]+)')
+
 
 @dataclasses.dataclass(frozen=True)
 class OpsSource:
@@ -445,10 +447,18 @@ def _requirement_names_ops(line: str) -> str | None:
     """Which of ``ops`` and its companions a requirement line declares, if any.
 
     The operator repo's own git URL, with no PEP 508 name in front of it, is
-    taken to be ``ops``: that is the package at its root.
+    taken to be ``ops``: that is the package at its root. With a
+    ``subdirectory`` fragment, it is the companion that lives there, or
+    nothing if no companion does.
     """
     if line.startswith('git+https://github.com/canonical/operator'):
-        return 'ops'
+        subdir = _SUBDIRECTORY_RE.search(line)
+        if subdir is None:
+            return 'ops'
+        return next(
+            (pkg for pkg, sub in _COMPANION_PACKAGES.values() if sub == subdir.group(1)),
+            None,
+        )
     try:
         req = packaging.requirements.Requirement(line)
     except packaging.requirements.InvalidRequirement:

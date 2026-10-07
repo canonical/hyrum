@@ -164,6 +164,33 @@ def test_tox_deps_declared_companion_rewritten_not_repeated(
         )
 
 
+def test_tox_deps_operator_url_with_subdirectory_is_the_companion(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
+    tox_ini = tmp_path / 'tox.ini'
+    tox_ini.write_text(
+        '[testenv]\ndeps =\n    ops\n'
+        '    git+https://github.com/canonical/operator@main\\#subdirectory=testing\n'
+    )
+    (tmp_path / 'requirements.txt').write_text('requests\n')
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        assert _read(tox_ini).splitlines()[2:] == [
+            '    ops @ git+https://github.com/canonical/operator',
+            '    ops-scenario @ git+https://github.com/canonical/operator\\#subdirectory=testing',
+        ]
+
+
+def test_tox_deps_operator_url_with_unknown_subdirectory_untouched(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
+    line = '    git+https://github.com/canonical/operator@main\\#subdirectory=docs'
+    tox_ini = tmp_path / 'tox.ini'
+    tox_ini.write_text(f'[testenv]\ndeps =\n    ops\n{line}\n')
+    (tmp_path / 'requirements.txt').write_text('requests\n')
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        assert _read(tox_ini).splitlines()[3] == line
+
+
 def test_tox_deps_value_on_key_line(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):
     tox_ini = tmp_path / 'tox.ini'
     tox_ini.write_text('[testenv]\ndeps = ops[testing]\ncommands = pytest\n')
