@@ -445,7 +445,10 @@ def run_lock(
     lockfile is deleted so the runner can install without it. Without it,
     the charm would run against its stale lockfile and fail for a reason
     that has nothing to do with the patched source, so a failed lock
-    raises :class:`~hyrum._patchers.base.PatcherError` instead.
+    raises :class:`~hyrum._patchers.base.PatcherError` instead. This
+    includes a lock that fails because the charm doesn't resolve against
+    the patched source. That is a charm result rather than a host problem,
+    but it is still reported as a patcher error (canonical/hyrum#179).
     """
     # Strip ``VIRTUAL_ENV`` so the charm's lock isn't pinned to hyrum's own
     # venv. Poetry in particular reads ``VIRTUAL_ENV`` to decide the project's
