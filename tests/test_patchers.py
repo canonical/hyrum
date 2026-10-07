@@ -300,9 +300,14 @@ def test_tox_included_requirements_patched_once(
     (tmp_path / 'tox.ini').write_text(_TOX_UNIT_EXTRAS)
     req = tmp_path / 'requirements.txt'
     req.write_text('ops[tracing]==2.22.0\n')
+    # A sibling that tox doesn't include is still patched by the requirements path.
+    dev = tmp_path / 'requirements-dev.txt'
+    dev.write_text('ops==2.22.0\n')
     with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
         assert _read(req).count('ops-tracing') == 1
+        assert _read(dev) == 'ops @ git+https://github.com/canonical/operator\n'
     assert _read(req) == 'ops[tracing]==2.22.0\n'
+    assert _read(dev) == 'ops==2.22.0\n'
 
 
 # ---- pyproject.toml: PEP 621 (no uv, no poetry) ------------------------------
