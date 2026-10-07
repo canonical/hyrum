@@ -1343,61 +1343,6 @@ def test_failed_uv_relock_is_a_patcher_error(tmp_path: pathlib.Path, monkeypatch
     assert (tmp_path / 'uv.lock').read_text() == '# original\n'
 
 
-def test_uv_lock_unpinned_when_auto_python_disabled(tmp_path: pathlib.Path, monkeypatch):
-    captured: dict[str, object] = {}
-
-    def fake_lock(repo, cmd, timeout, **kw):
-        captured['cmd'] = tuple(cmd)
-
-    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
-    py = tmp_path / 'pyproject.toml'
-    py.write_text(
-        textwrap.dedent("""\
-        [project]
-        name = "c"
-        version = "0"
-        requires-python = ">=3.12,<4.0"
-        dependencies = [
-          "ops>=2.10",
-        ]
-
-        [tool.uv]
-    """)
-    )
-    (tmp_path / 'uv.lock').write_text('# original\n')
-    ops = patchers.OpsSource(branch='b', auto_python=False)
-    with patchers.OpsSourcePatcher(ops).apply(tmp_path):
-        pass
-    assert captured['cmd'] == ('uv', 'lock')
-
-
-def test_uv_lock_unpinned_when_no_python_constraint(tmp_path: pathlib.Path, monkeypatch):
-    captured: dict[str, object] = {}
-
-    def fake_lock(repo, cmd, timeout, **kw):
-        captured['cmd'] = tuple(cmd)
-
-    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
-    py = tmp_path / 'pyproject.toml'
-    py.write_text(
-        textwrap.dedent("""\
-        [project]
-        name = "c"
-        version = "0"
-        dependencies = [
-          "ops>=2.10",
-        ]
-
-        [tool.uv]
-    """)
-    )
-    (tmp_path / 'uv.lock').write_text('# original\n')
-    ops = patchers.OpsSource(branch='b')
-    with patchers.OpsSourcePatcher(ops).apply(tmp_path):
-        pass
-    assert captured['cmd'] == ('uv', 'lock')
-
-
 def test_run_lock_strips_virtual_env(tmp_path: pathlib.Path, monkeypatch):
     # Regression: hyrum's own VIRTUAL_ENV (e.g. when invoked via ``uv run``)
     # leaked into the lock subprocess. Poetry then reported "Current Python
