@@ -297,9 +297,8 @@ class OpsSourcePatcher:
                 )
             # Only re-lock when uv.lock is checked in; otherwise the charm
             # regenerates it on demand and our re-lock would be wasted work.
-            # No ``--python``: the uv lock is universal, and pinning it to the
-            # minimum Python fails for charms with a dependency group that
-            # needs a newer one.
+            # No ``--python``: the uv lock is universal, so it doesn't need an
+            # interpreter pin.
             elif flavour == 'uv' and uv_lock.exists():
                 run_lock(
                     repo,

@@ -1273,9 +1273,10 @@ def test_poetry_lock_not_wrapped_when_no_python_constraint(tmp_path: pathlib.Pat
 
 
 def test_uv_lock_not_pinned_to_the_minimum_python(tmp_path: pathlib.Path, monkeypatch):
-    # Regression: ``uv lock --python 3.10`` fails for a charm with a group
-    # that needs a newer Python (``opcli ; python_version >= '3.12'``), even
-    # though the universal lock that plain ``uv lock`` produces is fine.
+    # Regression: with older uv (0.9.x), ``uv lock --python 3.10`` fails for a
+    # charm with a group that needs a newer Python (``opcli ; python_version
+    # >= '3.12'``), even though the universal lock that plain ``uv lock``
+    # produces is fine.
     captured: dict[str, object] = {}
 
     def fake_lock(repo, cmd, timeout, **kw):
