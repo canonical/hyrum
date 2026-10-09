@@ -28,11 +28,12 @@ import pathlib
 import re
 import shlex
 import tomllib
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
 from typing import Any
 
 import packaging.requirements
 import packaging.specifiers
+import packaging.utils
 
 from hyrum._patchers import _common, base
 from hyrum._patchers._common import (
@@ -276,7 +277,7 @@ class OpsSourcePatcher:
             if flavour == 'uv':
                 new_text = _patch_pyproject_uv(original_text, parsed, self.ops, ops_extras)
             elif flavour == 'poetry':
-                new_text = _patch_pyproject_poetry(original_text, self.ops, ops_extras)
+                new_text = _patch_pyproject_poetry(original_text, parsed, self.ops, ops_extras)
             elif flavour == 'pep621':
                 new_text = _patch_pyproject_pep621(original_text, self.ops, ops_extras)
             else:
@@ -426,11 +427,14 @@ def _is_top_level_ops_dep_line(stripped: str) -> bool:
     return bool(_OPS_LINE_RE.match(stripped))
 
 
-def _strip_ops_declarations(original: str) -> tuple[str, list[str]]:
+def _strip_ops_declarations(
+    original: str, in_section: Callable[[str], bool] | None = None
+) -> tuple[str, list[str]]:
     """Remove explicit ``ops`` declarations from pyproject.toml text.
 
     String-level edit; intentionally conservative (lines that mention
     ``ops`` in unrelated ways — table headers, etc. — are left alone).
+    If ``in_section`` is given, only tables it accepts are touched.
 
     Returns the stripped text along with the names of the TOML tables the
     declarations came out of, in file order and without duplicates, so the
@@ -447,7 +451,7 @@ def _strip_ops_declarations(original: str) -> tuple[str, list[str]]:
             out_lines.append(raw)
             continue
         stripped = raw.split('#', 1)[0].strip().strip('"').strip("'")
-        if _is_top_level_ops_dep_line(stripped):
+        if (in_section is None or in_section(section)) and _is_top_level_ops_dep_line(stripped):
             if section not in sections:
                 sections.append(section)
             continue
@@ -455,7 +459,14 @@ def _strip_ops_declarations(original: str) -> tuple[str, list[str]]:
     return ''.join(out_lines), sections
 
 
-_POETRY_GROUP_DEPS_RE = re.compile(r'^tool\.poetry\.group\.[^.]+\.dependencies$')
+_POETRY_GROUP_DEPS_RE = re.compile(
+    r"""
+    ^ tool\.poetry\.group\.
+    (?: "[^"]*" | '[^']*' | [^.]+ )  # the group name, which may be quoted
+    \.dependencies $
+    """,
+    re.VERBOSE,
+)
 
 
 def _is_poetry_dep_section(section: str) -> bool:
@@ -523,7 +534,7 @@ def _strip_uv_sources_ops_entries(text: str) -> str:
 
 
 def _strip_companion_declarations(content: str, pkg_name: str) -> tuple[str, list[str]]:
-    """Remove ``pkg_name`` declarations, and report the tables they were in.
+    """Remove ``pkg_name`` declarations from Poetry tables, and report which.
 
     Same contract as :func:`_strip_ops_declarations`: the companion goes back
     where the charm had it, which is not always where ``ops`` is. A charm that
@@ -542,7 +553,9 @@ def _strip_companion_declarations(content: str, pkg_name: str) -> tuple[str, lis
             out_lines.append(raw)
             continue
         stripped = raw.split('#', 1)[0].strip().strip('"').strip("'")
-        if _line_declares_poetry_pkg(stripped, pkg_name, pep_re):
+        if _is_poetry_dep_section(section) and _line_declares_poetry_pkg(
+            stripped, pkg_name, pep_re
+        ):
             if section not in sections:
                 sections.append(section)
             continue
@@ -563,7 +576,8 @@ _OPS_PEP508_RE = re.compile(
     (\[[^\]"]*\])?  # capture the optional extras, e.g. [testing]
     [^"]*           # rest of the spec: version, marker, URL, ...
     "               # closing quote
-    (?= \s* [,\]] ) # array-element context: comma or closing bracket follows
+    (?= \s* (?: [,\]\#] | $ ) )  # array-element context: a comma, closing bracket,
+                                 # comment, or line end follows
     """,
     re.VERBOSE,
 )
@@ -571,7 +585,7 @@ _OPS_SCENARIO_PEP508_RE = re.compile(
     r"""
     "  \s* ops-scenario (?![\w-])  # the package name, not a longer namesake
     [^"]*  "                       # rest of the spec, then closing quote
-    (?= \s* [,\]] )                # array-element context
+    (?= \s* (?: [,\]\#] | $ ) )    # array-element context
     """,
     re.VERBOSE,
 )
@@ -579,7 +593,7 @@ _OPS_TRACING_PEP508_RE = re.compile(
     r"""
     "  \s* ops-tracing (?![\w-])
     [^"]*  "
-    (?= \s* [,\]] )
+    (?= \s* (?: [,\]\#] | $ ) )
     """,
     re.VERBOSE,
 )
@@ -597,9 +611,12 @@ def _rewrite_pep508_ops_strings(text: str, ops: OpsSource) -> str:
     ``dependencies``, ``[project.optional-dependencies]``, and
     ``[dependency-groups]``. Other quoted ops-mentions
     (e.g. ``keywords = ["ops"]``, ``description = "ops charm"``) are left alone.
+    The companions are left alone too when ``ops`` is from PyPI, since their
+    versioning is independent of ``ops``.
     """
     repl_scenario = f'"{ops.pep508_dep("ops-scenario", subdir="testing")}"'
     repl_tracing = f'"{ops.pep508_dep("ops-tracing", subdir="tracing")}"'
+    companions = ops.overrides_companions()
 
     def repl_ops(match: re.Match[str]) -> str:
         raw_extras = match.group(1) or ''
@@ -641,8 +658,9 @@ def _rewrite_pep508_ops_strings(text: str, ops: OpsSource) -> str:
         line_in_dep_array = in_dep_array or opens_dep_array
         if line_in_dep_array:
             raw = _OPS_PEP508_RE.sub(repl_ops, raw)
-            raw = _OPS_SCENARIO_PEP508_RE.sub(lambda _m: repl_scenario, raw)
-            raw = _OPS_TRACING_PEP508_RE.sub(lambda _m: repl_tracing, raw)
+            if companions:
+                raw = _OPS_SCENARIO_PEP508_RE.sub(lambda _m: repl_scenario, raw)
+                raw = _OPS_TRACING_PEP508_RE.sub(lambda _m: repl_tracing, raw)
 
         # Update bracket depth from the (possibly rewritten) line.
         opens = raw.count('[')
@@ -816,28 +834,143 @@ def _patch_pyproject_uv(
 _BASE_POETRY_DEPS = 'tool.poetry.dependencies'
 
 
-def _patch_pyproject_poetry(original: str, ops: OpsSource, ops_extras: set[str]) -> str:
-    content, declared_in = _strip_ops_declarations(original)
+def _pep508_dep_arrays(parsed: dict[str, Any]) -> Iterator[tuple[str, str, list[str]]]:
+    """Yield ``(table, key, entries)`` for every PEP 508 dependency array.
+
+    These are ``[project]``'s ``dependencies``, each
+    ``[project.optional-dependencies]`` array, and each PEP 735
+    ``[dependency-groups]`` array. Entries that aren't strings, such as
+    ``{include-group = "x"}``, are skipped.
+    """
+    project: Any = parsed.get('project', {})
+    if isinstance(project, dict):
+        deps: Any = project.get('dependencies')
+        if isinstance(deps, list):
+            yield 'project', 'dependencies', [str(d) for d in deps if isinstance(d, str)]
+        optional: Any = project.get('optional-dependencies', {})
+        if isinstance(optional, dict):
+            for name, entries in optional.items():
+                if isinstance(entries, list):
+                    yield (
+                        'project.optional-dependencies',
+                        str(name),
+                        [str(d) for d in entries if isinstance(d, str)],
+                    )
+    groups: Any = parsed.get('dependency-groups', {})
+    if isinstance(groups, dict):
+        for name, entries in groups.items():
+            if isinstance(entries, list):
+                yield (
+                    'dependency-groups',
+                    str(name),
+                    [str(d) for d in entries if isinstance(d, str)],
+                )
+
+
+def _pep508_requirements(entries: Sequence[str]) -> Iterator[packaging.requirements.Requirement]:
+    for entry in entries:
+        try:
+            yield packaging.requirements.Requirement(entry)
+        except packaging.requirements.InvalidRequirement:
+            continue
+
+
+def _prepend_to_pep508_array(text: str, table: str, key: str, entries: Sequence[str]) -> str:
+    """Add ``entries`` to the start of the ``key`` array in ``[table]``."""
+    opener = re.compile(
+        rf"""^\s*(?:{re.escape(key)}|"{re.escape(key)}"|'{re.escape(key)}')\s*=\s*\["""
+    )
+    added = ''.join(f'\n    "{entry}",' for entry in entries)
+    out_lines: list[str] = []
+    section = ''
+    done = False
+    for raw in text.splitlines(keepends=True):
+        header = _SECTION_HEADER_RE.match(raw)
+        if header:
+            section = header.group(1).strip()
+        elif not done and section == table and (match := opener.match(raw)):
+            raw = raw[: match.end()] + added + raw[match.end() :]
+            done = True
+        out_lines.append(raw)
+    return ''.join(out_lines)
+
+
+def _patch_pep508_arrays_for_poetry(text: str, parsed: dict[str, Any], ops: OpsSource) -> str:
+    """Point ``ops`` in the PEP 508 arrays Poetry 2 reads at ``ops``'s source.
+
+    Poetry 2 resolves ``[project]`` and ``[dependency-groups]`` arrays as well
+    as its own tables, and a declaration there has to stay there: moving it
+    into a ``[tool.poetry.*]`` table, which only adds detail to packages
+    declared elsewhere, leaves the charm locked to its old ``ops``. Each entry
+    is rewritten in place as a direct reference. An array whose ``ops`` asks
+    for an extra also gets the companion, if it doesn't already list it, as
+    otherwise Poetry looks for the development version on PyPI.
+    """
+    text = _rewrite_pep508_ops_strings(text, ops)
+    if not ops.overrides_companions():
+        return text
+    for table, key, entries in _pep508_dep_arrays(parsed):
+        reqs = list(_pep508_requirements(entries))
+        # Not canonicalised: the rewrite only matches ``ops-scenario`` as spelt,
+        # so an ``ops_scenario`` entry needs the direct reference added alongside.
+        declared = {req.name for req in reqs}
+        extras = {
+            extra
+            for req in reqs
+            if packaging.utils.canonicalize_name(req.name) == 'ops'
+            for extra in req.extras
+        }
+        missing = [
+            ops.pep508_dep(pkg, subdir=subdir)
+            for extra, (pkg, subdir) in _COMPANION_PACKAGES.items()
+            if extra in extras and pkg not in declared
+        ]
+        if missing:
+            text = _prepend_to_pep508_array(text, table, key, missing)
+    return text
+
+
+def _unpatched_pep508_ops(parsed: dict[str, Any], ops: OpsSource) -> list[str]:
+    """``ops`` entries in PEP 508 arrays that don't point at ``ops``'s source."""
+    unpatched: list[str] = []
+    for table, key, entries in _pep508_dep_arrays(parsed):
+        for req in _pep508_requirements(entries):
+            if packaging.utils.canonicalize_name(req.name) != 'ops':
+                continue
+            expected = packaging.requirements.Requirement(
+                ops.pep508_dep('ops', extras=sorted(req.extras))
+            )
+            if req != expected:
+                unpatched.append(f'{req} in [{table}] {key}')
+    return unpatched
+
+
+def _patch_pyproject_poetry(
+    original: str, parsed: dict[str, Any], ops: OpsSource, ops_extras: set[str]
+) -> str:
+    content = _patch_pep508_arrays_for_poetry(original, parsed, ops)
+    in_pep508_arrays = any(
+        packaging.utils.canonicalize_name(req.name) == 'ops'
+        for _, _, entries in _pep508_dep_arrays(parsed)
+        for req in _pep508_requirements(entries)
+    )
+    content, ops_targets = _strip_ops_declarations(content, _is_poetry_dep_section)
 
     # Put the patched declaration back into every table the original was taken
     # out of. A charm that declares ops only under a named group
     # (``[tool.poetry.group.unit.dependencies]``) has no base declaration to
     # replace, so injecting into the base table would move the dep to a scope
     # the charm never installs.
-    ops_targets = [section for section in declared_in if _is_poetry_dep_section(section)]
-    if not ops_targets:
+    if not ops_targets and not in_pep508_arrays:
         if not _has_section(content, _BASE_POETRY_DEPS):
-            # Nowhere to put it: the declaration we stripped was somewhere
-            # Poetry does not resolve from (a PEP 621 ``[project]`` array under
-            # a ``[tool.poetry]`` file, say), and there is no base table to
-            # fall back on. Injecting nothing would leave the charm running
-            # against whatever ops its lockfile already pins, and reporting
-            # that as a result for the ops under test.
-            found = ', '.join(f'[{section}]' for section in declared_in)
+            # Injecting nothing would leave the charm running against
+            # whatever ops its lockfile already pins, and reporting that as a
+            # result for the ops under test.
             raise base.PatcherError(
-                f'cannot place the patched ops dependency: there is no '
-                f'[{_BASE_POETRY_DEPS}] table, and ops is declared {found or "nowhere"}'
+                f'cannot place the patched ops dependency: ops is not declared in '
+                f'a dependency table or array, and there is no [{_BASE_POETRY_DEPS}] table'
             )
+        # ops is only pulled in transitively.
         ops_targets = [_BASE_POETRY_DEPS]
 
     blocks: dict[str, str] = {
@@ -859,27 +992,28 @@ def _patch_pyproject_poetry(original: str, ops: OpsSource, ops_extras: set[str])
             # where the charm did not declare it hands the charm a dependency
             # it deliberately scoped elsewhere. It follows ops only when the
             # charm never declared it at all, which is case (a).
-            targets = [s for s in companion_in if _is_poetry_dep_section(s)] or ops_targets
+            targets = companion_in or ops_targets
             line = f'{pkg} = {ops.poetry_dep_inline(subdir=subdir)}\n'
             for section in targets:
                 blocks[section] = blocks.get(section, '') + line
 
-    return _inject_after_sections(content, blocks)
+    content = _inject_after_sections(content, blocks)
+    try:
+        patched = tomllib.loads(content)
+    except tomllib.TOMLDecodeError as exc:
+        raise base.PatcherError(f'the patched pyproject.toml is not valid TOML: {exc}') from exc
+    unpatched = _unpatched_pep508_ops(patched, ops)
+    if unpatched:
+        raise base.PatcherError(
+            f'could not rewrite the ops dependency in place: {", ".join(unpatched)}'
+        )
+    return content
 
 
 def _pyproject_declares_poetry_pkg(content: str, pkg_name: str) -> bool:
-    """Return True if ``pkg_name`` is declared as a top-level Poetry dep.
-
-    Uses the same predicate as ``_strip_companion_declarations``: a bare
-    ``pkg`` line, ``pkg = ...``, or ``pkg == ...`` at column zero after
-    stripping any surrounding whitespace and comments.
-    """
-    pep_re = re.compile(rf'^{re.escape(pkg_name)}\s*=')
-    for raw in content.splitlines():
-        stripped = raw.split('#', 1)[0].strip().strip('"').strip("'")
-        if _line_declares_poetry_pkg(stripped, pkg_name, pep_re):
-            return True
-    return False
+    """Return True if ``pkg_name`` is declared in a Poetry dependency table."""
+    _, sections = _strip_companion_declarations(content, pkg_name)
+    return bool(sections)
 
 
 _PYTHON_BOUND_RE = re.compile(r'(>=|>|==|~=|~|\^)\s*(\d+)\.(\d+)')
