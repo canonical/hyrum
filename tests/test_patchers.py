@@ -100,6 +100,216 @@ def test_restore_on_exception(tmp_path: pathlib.Path, ops_main: patchers.OpsSour
     assert _read(req) == 'ops>=2.10\n'
 
 
+# ---- tox.ini deps ------------------------------------------------------------
+
+
+_TOX_UNIT_EXTRAS = textwrap.dedent("""\
+    [testenv:unit]
+    deps =
+        pytest
+        ops[testing]
+        -r{toxinidir}/requirements.txt
+    commands =
+        pytest {posargs}
+""")
+
+
+def test_tox_deps_ops_extras_get_companions(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
+):
+    tox_ini = tmp_path / 'tox.ini'
+    tox_ini.write_text(_TOX_UNIT_EXTRAS)
+    req = tmp_path / 'requirements.txt'
+    req.write_text('ops==2.22.0\n')
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        assert _read(tox_ini) == textwrap.dedent("""\
+            [testenv:unit]
+            deps =
+                pytest
+                ops[testing] @ git+https://github.com/canonical/operator@fix/X
+                ops-scenario @ git+https://github.com/canonical/operator@fix/X\\#subdirectory=testing
+                -r{toxinidir}/requirements.txt
+            commands =
+                pytest {posargs}
+        """)
+        assert _read(req) == 'ops @ git+https://github.com/canonical/operator@fix/X\n'
+    assert _read(tox_ini) == _TOX_UNIT_EXTRAS
+    assert _read(req) == 'ops==2.22.0\n'
+
+
+def test_tox_deps_keep_factor_prefix(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):
+    tox_ini = tmp_path / 'tox.ini'
+    tox_ini.write_text('[testenv]\ndeps =\n    pytest\n    lib, unit: ops[tracing]>=2\n')
+    (tmp_path / 'requirements.txt').write_text('requests\n')
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        assert _read(tox_ini).splitlines()[3:] == [
+            '    lib, unit: ops[tracing] @ git+https://github.com/canonical/operator',
+            '    lib, unit: ops-tracing @ git+https://github.com/canonical/operator'
+            '\\#subdirectory=tracing',
+        ]
+
+
+def test_tox_deps_declared_companion_rewritten_not_repeated(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
+    tox_ini = tmp_path / 'tox.ini'
+    tox_ini.write_text('[testenv]\ndeps =\n    ops[testing]\n    ops-scenario==7.0.5\n')
+    (tmp_path / 'requirements.txt').write_text('requests\n')
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        patched = _read(tox_ini)
+        assert patched.count('ops-scenario') == 1
+        assert (
+            'ops-scenario @ git+https://github.com/canonical/operator\\#subdirectory=testing\n'
+            in (patched)
+        )
+
+
+def test_tox_deps_operator_url_with_subdirectory_is_the_companion(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
+    tox_ini = tmp_path / 'tox.ini'
+    tox_ini.write_text(
+        '[testenv]\ndeps =\n    ops\n'
+        '    git+https://github.com/canonical/operator@main\\#subdirectory=testing\n'
+    )
+    (tmp_path / 'requirements.txt').write_text('requests\n')
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        assert _read(tox_ini).splitlines()[2:] == [
+            '    ops @ git+https://github.com/canonical/operator',
+            '    ops-scenario @ git+https://github.com/canonical/operator\\#subdirectory=testing',
+        ]
+
+
+def test_tox_deps_operator_url_with_unknown_subdirectory_untouched(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
+    line = '    git+https://github.com/canonical/operator@main\\#subdirectory=docs'
+    tox_ini = tmp_path / 'tox.ini'
+    tox_ini.write_text(f'[testenv]\ndeps =\n    ops\n{line}\n')
+    (tmp_path / 'requirements.txt').write_text('requests\n')
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        assert _read(tox_ini).splitlines()[3] == line
+
+
+def test_tox_deps_value_on_key_line(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):
+    tox_ini = tmp_path / 'tox.ini'
+    tox_ini.write_text('[testenv]\ndeps = ops[testing]\ncommands = pytest\n')
+    (tmp_path / 'requirements.txt').write_text('requests\n')
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        assert _read(tox_ini) == (
+            '[testenv]\n'
+            'deps = ops[testing] @ git+https://github.com/canonical/operator\n'
+            '    ops-scenario @ git+https://github.com/canonical/operator\\#subdirectory=testing\n'
+            'commands = pytest\n'
+        )
+
+
+def test_tox_ops_outside_deps_untouched(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):
+    original = '[testenv]\nallowlist_externals =\n    ops\ndeps =\n    pytest\n'
+    tox_ini = tmp_path / 'tox.ini'
+    tox_ini.write_text(original)
+    (tmp_path / 'requirements.txt').write_text('ops\n')
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        assert _read(tox_ini) == original
+
+
+def test_tox_deps_pypi_leaves_companions(tmp_path: pathlib.Path, ops_pypi: patchers.OpsSource):
+    tox_ini = tmp_path / 'tox.ini'
+    tox_ini.write_text('[testenv]\ndeps =\n    ops[testing]\n    ops-scenario\n')
+    (tmp_path / 'requirements.txt').write_text('requests\n')
+    with patchers.OpsSourcePatcher(ops_pypi).apply(tmp_path):
+        assert _read(tox_ini) == '[testenv]\ndeps =\n    ops[testing]==2.17.0\n    ops-scenario\n'
+
+
+def test_tox_ops_with_tool_only_pyproject(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):
+    # canonical/data-platform-libs: ops is in tox.ini, pyproject.toml is tool config.
+    pyproject = tmp_path / 'pyproject.toml'
+    pyproject.write_text('[tool.ruff]\nline-length = 99\n')
+    tox_ini = tmp_path / 'tox.ini'
+    tox_ini.write_text('[testenv:lint]\ndeps =\n    ops\n')
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        assert 'ops @ git+https://github.com/canonical/operator\n' in _read(tox_ini)
+        assert _read(pyproject) == '[tool.ruff]\nline-length = 99\n'
+    assert _read(tox_ini) == '[testenv:lint]\ndeps =\n    ops\n'
+
+
+def test_tox_without_ops_and_tool_only_pyproject_raises(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
+    (tmp_path / 'pyproject.toml').write_text('[tool.ruff]\nline-length = 99\n')
+    (tmp_path / 'tox.ini').write_text('[testenv:lint]\ndeps =\n    ruff\n')
+    with (
+        pytest.raises(patchers.PatcherError),
+        patchers.OpsSourcePatcher(ops_main).apply(tmp_path),
+    ):
+        pass
+
+
+def test_tox_ops_without_requirements_or_pyproject_raises(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
+    """The ``has_python`` filter skips this shape, so the patcher never sees it from the CLI."""
+    original = '[testenv]\ndeps =\n    ops\n'
+    tox_ini = tmp_path / 'tox.ini'
+    tox_ini.write_text(original)
+    with (
+        pytest.raises(patchers.PatcherError, match='has neither'),
+        patchers.OpsSourcePatcher(ops_main).apply(tmp_path),
+    ):
+        pass
+    assert _read(tox_ini) == original
+
+
+def test_tox_included_requirements_patched(tmp_path: pathlib.Path, ops_main: patchers.OpsSource):
+    (tmp_path / 'pyproject.toml').write_text('[tool.ruff]\nline-length = 99\n')
+    (tmp_path / 'tox.ini').write_text(
+        textwrap.dedent("""\
+            [vars]
+            reqs_path = {tox_root}/requirements
+
+            [testenv:unit-v{0,1}]
+            deps =
+                pytest
+                unit-v0: -r {[vars]reqs_path}/v0/requirements.txt
+                unit-v1: --requirement={[vars]reqs_path}/v1/requirements.txt
+                -r {toxinidir}/requirements/lint.txt
+                -r {env:UNRESOLVABLE}/requirements.txt
+        """)
+    )
+    reqs = tmp_path / 'requirements'
+    (reqs / 'v0').mkdir(parents=True)
+    (reqs / 'v1').mkdir()
+    v0 = reqs / 'v0' / 'requirements.txt'
+    v0.write_text('ops >= 2.1.1,<3\npydantic\n')
+    v1 = reqs / 'v1' / 'requirements.txt'
+    v1.write_text('ops[testing]\n')
+    lint = reqs / 'lint.txt'
+    lint.write_text('ruff\n')
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        assert _read(v0) == 'pydantic\nops @ git+https://github.com/canonical/operator\n'
+        assert 'ops-scenario @ git+' in _read(v1)
+        # No ops in it, so the lint env is not handed one.
+        assert _read(lint) == 'ruff\n'
+    assert _read(v0) == 'ops >= 2.1.1,<3\npydantic\n'
+    assert _read(v1) == 'ops[testing]\n'
+
+
+def test_tox_included_requirements_patched_once(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
+    (tmp_path / 'tox.ini').write_text(_TOX_UNIT_EXTRAS)
+    req = tmp_path / 'requirements.txt'
+    req.write_text('ops[tracing]==2.22.0\n')
+    # A sibling that tox doesn't include is still patched by the requirements path.
+    dev = tmp_path / 'requirements-dev.txt'
+    dev.write_text('ops==2.22.0\n')
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        assert _read(req).count('ops-tracing') == 1
+        assert _read(dev) == 'ops @ git+https://github.com/canonical/operator\n'
+    assert _read(req) == 'ops[tracing]==2.22.0\n'
+    assert _read(dev) == 'ops==2.22.0\n'
+
+
 # ---- pyproject.toml: PEP 621 (no uv, no poetry) ------------------------------
 
 
