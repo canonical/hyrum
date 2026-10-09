@@ -28,7 +28,7 @@ This pull request starts as a draft, for whoever ran the workflow to tidy up bef
 5. Run [Create the draft release](${repo_url}/actions/workflows/create-draft-release.yaml) with **@PR_NUMBER@** as the pull request number.
 6. Read the draft release, then publish it. Publishing creates the `v${version}` tag and uploads to PyPI.
 
-The [contributing guide](${repo_url}/blob/main/CONTRIBUTING.md#releasing) has the details.
+The [contributing guide](${repo_url}/blob/main/CONTRIBUTING.md#releases) has the details.
 
 ## Release title
 
