@@ -6,11 +6,12 @@ myst:
 
 # Charm discovery and filtering
 
-Charm discovery handles three layouts:
+Charm discovery handles four layouts:
 
 - **Flat**: one charm per top-level directory (has `charmcraft.yaml` or `metadata.yaml`).
 - **Bundle**: a `bundle.yaml` directory; charms are in `charms/` subdirectories.
 - **Monorepo**: a directory containing charm subdirectories, heuristically detected.
+- **Monorepo with a root harness**: a monorepo whose root has a runner (`tox.ini` or `Makefile`) and a Python manifest, and none of whose charms has both. The root is run in place of the charms. If some of the charms do have both, they're run on their own, and the others are skipped.
 
 Filters are applied as a chain. Each filter either returns `None` (passes) or a skip reason string. The chain short-circuits on the first reason:
 
