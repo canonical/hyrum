@@ -1272,7 +1272,11 @@ def test_poetry_lock_not_wrapped_when_no_python_constraint(tmp_path: pathlib.Pat
     assert captured['cmd'] == ('poetry', 'lock')
 
 
-def test_uv_lock_passes_python_when_requires_python_present(tmp_path: pathlib.Path, monkeypatch):
+def test_uv_lock_not_pinned_to_the_minimum_python(tmp_path: pathlib.Path, monkeypatch):
+    # Regression: with older uv (0.9.x), ``uv lock --python 3.10`` fails for a
+    # charm with a group that needs a newer Python (``opcli ; python_version
+    # >= '3.12'``), even though the universal lock that plain ``uv lock``
+    # produces is fine.
     captured: dict[str, object] = {}
 
     def fake_lock(repo, cmd, timeout, **kw):
@@ -1285,96 +1289,14 @@ def test_uv_lock_passes_python_when_requires_python_present(tmp_path: pathlib.Pa
         [project]
         name = "c"
         version = "0"
-        requires-python = ">=3.12,<4.0"
+        requires-python = ">=3.10"
         dependencies = [
           "ops>=2.10",
         ]
 
-        [tool.uv]
-    """)
-    )
-    (tmp_path / 'uv.lock').write_text('# original\n')
-    ops = patchers.OpsSource(branch='b')
-    with patchers.OpsSourcePatcher(ops).apply(tmp_path):
-        pass
-    assert captured['cmd'] == ('uv', 'lock', '--python', '3.12')
-
-
-def test_uv_lock_python_reflects_patched_requires_python(tmp_path: pathlib.Path, monkeypatch):
-    # Regression: ``_patch_pyproject_uv`` bumps ``requires-python`` from
-    # 3.8/3.9 to 3.10 (ops's floor). We must derive ``--python`` from the
-    # patched pyproject, not the original, or uv aborts with "interpreter
-    # resolved to Python 3.8 … incompatible with project requirement >=3.10".
-    captured: dict[str, object] = {}
-
-    def fake_lock(repo, cmd, timeout, **kw):
-        captured['cmd'] = tuple(cmd)
-
-    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
-    py = tmp_path / 'pyproject.toml'
-    py.write_text(
-        textwrap.dedent("""\
-        [project]
-        name = "c"
-        version = "0"
-        requires-python = "~=3.8"
-        dependencies = [
-          "ops>=2.10",
-        ]
-
-        [tool.uv]
-    """)
-    )
-    (tmp_path / 'uv.lock').write_text('# original\n')
-    ops = patchers.OpsSource(branch='b')
-    with patchers.OpsSourcePatcher(ops).apply(tmp_path):
-        pass
-    assert captured['cmd'] == ('uv', 'lock', '--python', '3.10')
-
-
-def test_uv_lock_unpinned_when_auto_python_disabled(tmp_path: pathlib.Path, monkeypatch):
-    captured: dict[str, object] = {}
-
-    def fake_lock(repo, cmd, timeout, **kw):
-        captured['cmd'] = tuple(cmd)
-
-    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
-    py = tmp_path / 'pyproject.toml'
-    py.write_text(
-        textwrap.dedent("""\
-        [project]
-        name = "c"
-        version = "0"
-        requires-python = ">=3.12,<4.0"
-        dependencies = [
-          "ops>=2.10",
-        ]
-
-        [tool.uv]
-    """)
-    )
-    (tmp_path / 'uv.lock').write_text('# original\n')
-    ops = patchers.OpsSource(branch='b', auto_python=False)
-    with patchers.OpsSourcePatcher(ops).apply(tmp_path):
-        pass
-    assert captured['cmd'] == ('uv', 'lock')
-
-
-def test_uv_lock_unpinned_when_no_python_constraint(tmp_path: pathlib.Path, monkeypatch):
-    captured: dict[str, object] = {}
-
-    def fake_lock(repo, cmd, timeout, **kw):
-        captured['cmd'] = tuple(cmd)
-
-    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
-    py = tmp_path / 'pyproject.toml'
-    py.write_text(
-        textwrap.dedent("""\
-        [project]
-        name = "c"
-        version = "0"
-        dependencies = [
-          "ops>=2.10",
+        [dependency-groups]
+        tooling = [
+          "opcli[cli] ; python_version >= '3.12'",
         ]
 
         [tool.uv]
@@ -1385,6 +1307,39 @@ def test_uv_lock_unpinned_when_no_python_constraint(tmp_path: pathlib.Path, monk
     with patchers.OpsSourcePatcher(ops).apply(tmp_path):
         pass
     assert captured['cmd'] == ('uv', 'lock')
+
+
+def test_failed_uv_relock_is_a_patcher_error(tmp_path: pathlib.Path, monkeypatch):
+    # A uv charm keeps its stale lock when the relock fails, and its own
+    # ``uv run --locked`` then refuses it: that is hyrum failing to apply the
+    # patch, not the charm failing under it.
+    class _Result:
+        returncode = 1
+        stdout = b''
+        stderr = b'No solution found'
+
+    monkeypatch.setattr('hyrum._patchers._common.subprocess.run', lambda *a, **kw: _Result())
+    py = tmp_path / 'pyproject.toml'
+    original = textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops>=2.10",
+        ]
+
+        [tool.uv]
+    """)
+    py.write_text(original)
+    (tmp_path / 'uv.lock').write_text('# original\n')
+    ops = patchers.OpsSource(branch='b')
+    with (
+        pytest.raises(patchers.PatcherError, match='No solution found'),
+        patchers.OpsSourcePatcher(ops).apply(tmp_path),
+    ):
+        pass
+    assert py.read_text() == original
 
 
 def test_run_lock_strips_virtual_env(tmp_path: pathlib.Path, monkeypatch):
@@ -1583,6 +1538,32 @@ def test_charmlib_patcher_uv_extras_reapplied(tmp_path: pathlib.Path, monkeypatc
         assert 'charmlibs-nginx-k8s = { git = "https://github.com/canonical/charmlibs"' in patched
         assert 'rev = "mybranch"' in patched
         assert 'subdirectory = "nginx_k8s"' in patched
+
+
+def test_charmlib_patcher_failed_uv_relock_is_a_patcher_error(tmp_path: pathlib.Path, monkeypatch):
+    class _Result:
+        returncode = 1
+        stdout = b''
+        stderr = b'No solution found'
+
+    monkeypatch.setattr('hyrum._patchers._common.subprocess.run', lambda *a, **kw: _Result())
+    charm_dir = tmp_path / 'charm'
+    charm_dir.mkdir()
+    py = charm_dir / 'pyproject.toml'
+    original = (
+        '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
+        'dependencies = [\n  "charmlibs-nginx-k8s>=1.0",\n]\n'
+        '[tool.uv]\ndev-dependencies = []\n'
+    )
+    py.write_text(original)
+    (charm_dir / 'uv.lock').write_text('# original\n')
+    src = patchers.CharmlibSource(pkg_name='nginx_k8s', branch='mybranch')
+    with (
+        pytest.raises(patchers.PatcherError, match='No solution found'),
+        patchers.CharmlibPatcher(src).apply(charm_dir),
+    ):
+        pass
+    assert py.read_text() == original
 
 
 # ---- CharmlibPatcher: git dep rewriting via shared _patch_git_dep helper ----

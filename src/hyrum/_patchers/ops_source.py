@@ -286,18 +286,8 @@ class OpsSourcePatcher:
 
             pyproject.write_text(new_text)
 
-            # Re-parse the patched pyproject: ``_patch_pyproject_uv`` bumps
-            # ``requires-python`` from 3.8/3.9 to 3.10 (ops's floor), so the
-            # original parse would tell us to lock under an interpreter the
-            # patched file now rejects.
-            py_version: tuple[int, int] | None = None
-            if self.ops.auto_python:
-                try:
-                    py_version = _min_python_from_pyproject(tomllib.loads(new_text))
-                except tomllib.TOMLDecodeError:
-                    py_version = _min_python_from_pyproject(parsed)
-
             if flavour == 'poetry':
+                py_version = _min_python_from_pyproject(parsed) if self.ops.auto_python else None
                 base_cmd = (*shlex.split(' '.join(self.ops.poetry_executable)), 'lock')
                 run_lock(
                     repo,
@@ -307,13 +297,12 @@ class OpsSourcePatcher:
                 )
             # Only re-lock when uv.lock is checked in; otherwise the charm
             # regenerates it on demand and our re-lock would be wasted work.
+            # No ``--python``: the uv lock is universal, so it doesn't need an
+            # interpreter pin.
             elif flavour == 'uv' and uv_lock.exists():
-                uv_cmd: tuple[str, ...] = (*self.ops.uv_executable, 'lock')
-                if py_version is not None:
-                    uv_cmd = (*uv_cmd, '--python', f'{py_version[0]}.{py_version[1]}')
                 run_lock(
                     repo,
-                    uv_cmd,
+                    (*self.ops.uv_executable, 'lock'),
                     self.ops.lock_timeout,
                 )
 
