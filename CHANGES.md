@@ -2,7 +2,7 @@
 
 ## Features
 
-* --from-results and --status selector for check ([#148](https://github.com/canonical/hyrum/pull/148))
+* `--from-results` and `--status` selector for `check` ([#148](https://github.com/canonical/hyrum/pull/148))
 * Add a dev workshop ([#136](https://github.com/canonical/hyrum/pull/136))
 
 ## Fixes
@@ -27,13 +27,13 @@
 ## Features
 
 * Extract per-charm failure summaries from runner output ([#81](https://github.com/canonical/hyrum/pull/81))
-* Add --save-results and hyrum compare for run-to-run diff ([#82](https://github.com/canonical/hyrum/pull/82))
+* Add `--save-results` and `hyrum compare` for run-to-run diff ([#82](https://github.com/canonical/hyrum/pull/82))
 * Prefer opendev mirrors and add get-charms timeout ([#98](https://github.com/canonical/hyrum/pull/98))
-* Hyrum compare polish — charm-set drift, JSON output, exit codes ([#83](https://github.com/canonical/hyrum/pull/83))
+* Polish `hyrum compare`: charm-set drift, JSON output, exit codes ([#83](https://github.com/canonical/hyrum/pull/83))
 * Say where the run saved its results and logs ([#126](https://github.com/canonical/hyrum/pull/126))
 * Report each status as a share of the runs as well as of the fleet ([#138](https://github.com/canonical/hyrum/pull/138))
-* Hyrum show PATH -- print a saved run's status summary ([#149](https://github.com/canonical/hyrum/pull/149))
-* Narrow get-charms with --repo and --limit ([#143](https://github.com/canonical/hyrum/pull/143))
+* Add `hyrum show PATH`, which prints a saved run's status summary ([#149](https://github.com/canonical/hyrum/pull/149))
+* Narrow `get-charms` with `--repo` and `--limit` ([#143](https://github.com/canonical/hyrum/pull/143))
 * Add a clean subcommand to reclaim per-charm build artefacts ([#139](https://github.com/canonical/hyrum/pull/139))
 
 ## Fixes
@@ -44,12 +44,12 @@
 * Stop treating Charmhub bugs-url as a git remote ([#89](https://github.com/canonical/hyrum/pull/89))
 * Three defects in dependency patching and fault attribution ([#97](https://github.com/canonical/hyrum/pull/97))
 * Patching ops to a PyPI version emits one comparison operator ([#123](https://github.com/canonical/hyrum/pull/123))
-* --limit counts the charms that run, not the charms it looked at ([#124](https://github.com/canonical/hyrum/pull/124))
+* `--limit` counts the charms that run, not the charms it looked at ([#124](https://github.com/canonical/hyrum/pull/124))
 * Make report percentages unambiguous about their denominator ([#127](https://github.com/canonical/hyrum/pull/127))
 * Skip charm-list rows that duplicate an earlier row's checkout ([#125](https://github.com/canonical/hyrum/pull/125))
 * Inject the patched poetry dep into the group it came from ([#135](https://github.com/canonical/hyrum/pull/135))
 * Make the check help readable in a terminal ([#137](https://github.com/canonical/hyrum/pull/137))
-* Make the verbosity rungs cumulative, and add --brief ([#133](https://github.com/canonical/hyrum/pull/133))
+* Make the verbosity rungs cumulative, and add `--brief` ([#133](https://github.com/canonical/hyrum/pull/133))
 * Find the charms nested deeper than one directory level ([#134](https://github.com/canonical/hyrum/pull/134))
 * Soft-wrap the body of the charm-list refresh PR ([#142](https://github.com/canonical/hyrum/pull/142))
 
@@ -68,8 +68,8 @@
 ## Features
 
 * Auto-select satisfying Python for poetry lock ([#5](https://github.com/canonical/hyrum/pull/5))
-* Add --log-dir for per-charm stdout/stderr dumps ([#8](https://github.com/canonical/hyrum/pull/8))
-* Default common host-env flags via --host-env-defaults ([#17](https://github.com/canonical/hyrum/pull/17))
+* Add `--log-dir` for per-charm stdout/stderr dumps ([#8](https://github.com/canonical/hyrum/pull/8))
+* Default common host-env flags with `--host-env-defaults` ([#17](https://github.com/canonical/hyrum/pull/17))
 * Recognise src/reactive/ + src/layer.yaml as legacy ([#27](https://github.com/canonical/hyrum/pull/27))
 * Skip charms with no Python source ([#28](https://github.com/canonical/hyrum/pull/28))
 * Add tools/get_charms.py for populating the charm cache ([#12](https://github.com/canonical/hyrum/pull/12))
@@ -78,7 +78,7 @@
 * Add CharmlibPatcher for swapping charmlib deps from canonical/charmlibs ([#25](https://github.com/canonical/hyrum/pull/25))
 * Add VendoredLibPatcher for swapping vendored charm libs for PyPI packages ([#60](https://github.com/canonical/hyrum/pull/60))
 * Add charm-list with weekly auto-refresh from Charmhub ([#11](https://github.com/canonical/hyrum/pull/11))
-* Broaden --ops-source to accept version, git+url, owner:branch, and path ([#18](https://github.com/canonical/hyrum/pull/18))
+* Broaden `--ops-source` to accept version, git+url, owner:branch, and path ([#18](https://github.com/canonical/hyrum/pull/18))
 
 ## Fixes
 
@@ -109,13 +109,13 @@
 ## CI
 
 * Add pip-audit dependency vulnerability scan ([#21](https://github.com/canonical/hyrum/pull/21))
-* Run zizmor in-repo instead of via charm-tech reusable workflow ([#19](https://github.com/canonical/hyrum/pull/19))
+* Run zizmor in-repo instead of through the charm-tech reusable workflow ([#19](https://github.com/canonical/hyrum/pull/19))
 * Add dependency-review-action on PRs ([#35](https://github.com/canonical/hyrum/pull/35))
 * Validate that PR titles use conventional commits ([#34](https://github.com/canonical/hyrum/pull/34))
 * Add tag-triggered PyPI publish workflow ([#13](https://github.com/canonical/hyrum/pull/13))
 * Use actions/attest-sbom for SBOM attestation ([#45](https://github.com/canonical/hyrum/pull/45))
 * Fix Test PyPI upload URL ([#46](https://github.com/canonical/hyrum/pull/46))
-* Fix --force-with-lease stale-info push failure ([#53](https://github.com/canonical/hyrum/pull/53))
+* Fix `--force-with-lease` stale-info push failure ([#53](https://github.com/canonical/hyrum/pull/53))
 * Only skip PR creation for open PRs ([#54](https://github.com/canonical/hyrum/pull/54))
 * Hash-pin actions and drop zizmor config ([#71](https://github.com/canonical/hyrum/pull/71))
 * Adopt new dependabot conventions ([#70](https://github.com/canonical/hyrum/pull/70))

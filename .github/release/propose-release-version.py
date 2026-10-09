@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 import pathlib
 import re
-import subprocess  # ruff: ignore[suspicious-subprocess-import] — runs git, gh and uvx
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - runs git, gh and uvx
 import sys
 import typing
 
