@@ -4,11 +4,15 @@ import pathlib
 import textwrap
 import tomllib
 
+import packaging.requirements
 import pytest
 
 from hyrum import _patchers as patchers
 from hyrum._patchers import _common, ops_source
 from hyrum._patchers.charmlib_source import _lib_names
+
+_MAIN_URL = 'git+https://github.com/canonical/operator'
+_BRANCH_URL = f'{_MAIN_URL}@fix/X'
 
 
 @pytest.fixture
@@ -317,8 +321,8 @@ def test_pyproject_uv_always_hoists_all_companions(
         assert 'ops-tracing = { git = "https://github.com/canonical/operator"' in patched
         assert 'subdirectory = "tracing"' in patched
         # Companions appear in [project.dependencies] too so uv accepts the URL source.
-        assert '"ops-scenario"' in patched
-        assert '"ops-tracing"' in patched
+        assert f'"ops-scenario @ {_BRANCH_URL}#subdirectory=testing"' in patched
+        assert f'"ops-tracing @ {_BRANCH_URL}#subdirectory=tracing"' in patched
 
 
 def test_pyproject_uv_transitive_ops_dep_still_gets_companions(
@@ -344,8 +348,8 @@ def test_pyproject_uv_transitive_ops_dep_still_gets_companions(
         # ops itself is hoisted as a source so uv resolves the transitive dep from git.
         assert 'ops = { git = "https://github.com/canonical/operator" }' in patched
         # And companions, because the patched ops HEAD has them as workspace URL deps.
-        assert '"ops-scenario"' in patched
-        assert '"ops-tracing"' in patched
+        assert f'"ops-scenario @ {_MAIN_URL}#subdirectory=testing"' in patched
+        assert f'"ops-tracing @ {_MAIN_URL}#subdirectory=tracing"' in patched
 
 
 def test_pyproject_uv_bumps_low_requires_python(
@@ -408,11 +412,11 @@ def test_pyproject_uv_dep_groups_recognised_and_hoisted(
         assert 'ops = { git = "https://github.com/canonical/operator"' in patched
         # Companions injected into each ops-bearing group.
         charm_block = patched.split('charm = [', 1)[1].split(']', 1)[0]
-        assert '"ops-scenario"' in charm_block
-        assert '"ops-tracing"' in charm_block
+        assert f'"ops-scenario @ {_BRANCH_URL}#subdirectory=testing"' in charm_block
+        assert f'"ops-tracing @ {_BRANCH_URL}#subdirectory=tracing"' in charm_block
         libs_block = patched.split('libs = [', 1)[1].split(']', 1)[0]
-        assert '"ops-scenario"' in libs_block
-        assert '"ops-tracing"' in libs_block
+        assert f'"ops-scenario @ {_BRANCH_URL}#subdirectory=testing"' in libs_block
+        assert f'"ops-tracing @ {_BRANCH_URL}#subdirectory=tracing"' in libs_block
         # lint group has no ops, so companions don't leak into it.
         lint_block = patched.split('lint = [', 1)[1].split(']', 1)[0]
         assert 'ops-scenario' not in lint_block
@@ -444,8 +448,49 @@ def test_pyproject_uv_dep_groups_without_project_dependencies(
         patched = _read(py)
         assert '[tool.uv.sources]' in patched
         charm_block = patched.split('charm = [', 1)[1].split(']', 1)[0]
-        assert '"ops-scenario"' in charm_block
-        assert '"ops-tracing"' in charm_block
+        assert f'"ops-scenario @ {_MAIN_URL}#subdirectory=testing"' in charm_block
+        assert f'"ops-tracing @ {_MAIN_URL}#subdirectory=tracing"' in charm_block
+
+
+def test_pyproject_uv_dep_group_companions_install_without_the_sources(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
+):
+    """Every companion string in an ops-bearing group says where to get it from.
+
+    tox-uv's ``uv-venv-runner`` installs a dependency group by passing its
+    strings to ``uv pip install``, which never reads ``[tool.uv.sources]``. A
+    bare ``"ops-tracing"`` there resolves from PyPI, and since every recent
+    ops-tracing release pins its own ops version, uv falls back to an old one
+    that doesn't match the patched ops (canonical/hyrum#164).
+    """
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops>=2.17",
+        ]
+
+        [dependency-groups]
+        unit = [
+          "pytest",
+          "ops[testing]>=2.17",
+        ]
+
+        [tool.uv]
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+    for group in (parsed['project']['dependencies'], parsed['dependency-groups']['unit']):
+        reqs = [packaging.requirements.Requirement(entry) for entry in group]
+        by_name = {req.name: req for req in reqs}
+        assert by_name['ops-scenario'].url == f'{_BRANCH_URL}#subdirectory=testing'
+        assert by_name['ops-tracing'].url == f'{_BRANCH_URL}#subdirectory=tracing'
+        assert by_name['ops'].url == _BRANCH_URL
 
 
 # ---- pyproject.toml: poetry --------------------------------------------------
@@ -1305,6 +1350,8 @@ def test_pyproject_uv_path_emits_path_source(tmp_path: pathlib.Path, ops_path: p
         companion = tmp_path / 'operator' / 'testing'
         assert f'ops-scenario = {{ path = "{companion}", editable = true }}' in patched
         assert 'subdirectory' not in patched
+        deps = tomllib.loads(patched)['project']['dependencies']
+        assert f'ops-scenario @ file://{companion}' in deps
 
 
 # ---- error paths -------------------------------------------------------------
