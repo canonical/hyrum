@@ -7,14 +7,12 @@ Charm-Tech,https://github.com/tonyandrewmeyer/exim-operator,,manual
 Charm-Tech,https://github.com/benhoyt/snappass-test,,manual
 Charm-Tech,https://github.com/tonyandrewmeyer/takahe-operator,,manual
 Charm-Tech,https://github.com/benhoyt/test-charms/,,manual
-Commercial Systems,https://github.com/canonical/certbot-charm,,manual
 Commercial Systems,https://github.com/canonical/ranger-k8s-operator,,manual
 Commercial Systems,https://github.com/canonical/superset-k8s-operator,,manual
 Commercial Systems,https://github.com/canonical/temporal-admin-k8s-operator,,manual
 Commercial Systems,https://github.com/canonical/temporal-k8s-operator,,manual
 Commercial Systems,https://github.com/canonical/temporal-ui-k8s-operator,,manual
 Commercial Systems,https://github.com/canonical/temporal-worker-k8s-operator,,manual
-Commercial Systems,https://github.com/canonical/timescaledb-charm,,manual
 Commercial Systems,https://github.com/canonical/trino-k8s-operator,,manual
 Data,https://github.com/canonical/kafka-operator,,manual
 Data,https://github.com/canonical/kafka-broker-rack-awareness-operator,,manual
@@ -48,7 +46,6 @@ IS,https://github.com/canonical/content-cache-operator,,manual
 IS,https://git.launchpad.net/content-cache-charm,,manual
 IS,https://github.com/canonical/content-cache-k8s-operator,,manual
 IS,https://github.com/canonical/discourse-k8s-operator,,manual
-IS,https://github.com/canonical/hockeypuck-k8s-operator,,manual
 IS,https://github.com/canonical/indico-operator,,manual
 IS,https://git.launchpad.net/internal-proxy-charm,,manual
 IS,https://github.com/canonical/jenkins-agent-operator,,manual
@@ -274,13 +271,11 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/any-charm,,auto-discover
 ,https://github.com/canonical/app-center-ratings-k8s-operator,,auto-discover
 ,https://github.com/canonical/apr-operator,,auto-discover
-,https://github.com/canonical/archive-auth-mirror,,auto-discover
 ,https://github.com/canonical/auditd-operator,,auto-discover
 ,https://github.com/canonical/authentik-ldap-outpost-operator,,auto-discover
 ,https://github.com/canonical/authentik-server-operator,,auto-discover
 ,https://github.com/canonical/authentik-worker-operator,,auto-discover
 ,https://github.com/canonical/azure-auth-integrator,,auto-discover
-,https://github.com/canonical/basic-auth-service-charm,,auto-discover
 ,https://github.com/canonical/blackbox-exporter-operator,,auto-discover
 ,https://github.com/canonical/cassandra-operator,,auto-discover
 ,https://github.com/canonical/certbot-k8s-operator,,auto-discover
@@ -343,7 +338,6 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/intro-to-charming-mc,,auto-discover
 ,https://github.com/canonical/irc-bridge-operator,,auto-discover
 ,https://github.com/canonical/istio-beacon-k8s-operator,,auto-discover
-,https://github.com/canonical/istio-ingress-k8s-operator,,auto-discover
 ,https://github.com/canonical/istio-k8s-operator,,auto-discover
 ,https://github.com/canonical/jimm-k8s-operator,,auto-discover
 ,https://github.com/canonical/johnny,,auto-discover
@@ -357,7 +351,6 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/karapace-k8s-operator,,auto-discover
 ,https://github.com/canonical/karapace-operator,,auto-discover
 ,https://github.com/canonical/keystone-k8s-auth-operator,,auto-discover
-,https://github.com/canonical/kiali-k8s-operator,,auto-discover
 ,https://github.com/canonical/kubeflow-trainer-operator,,auto-discover
 ,https://github.com/canonical/landscape-client-charm,,auto-discover
 ,https://github.com/canonical/landscape-debarchive-operator,,auto-discover
@@ -582,3 +575,4 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/loki-operators,,auto
 ,https://github.com/canonical/mimir-operators,,auto
 ,https://github.com/reductstore/reductstore-k8s,,auto
+,https://github.com/canonical/gopkg-charmed,,auto
