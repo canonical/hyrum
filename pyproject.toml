@@ -46,6 +46,9 @@ unit = [
     "pytest-asyncio>=1.4.0",
     "coverage>=7.16.1",
 ]
+security = [
+    "pip-audit>=2.10,<3",
+]
 
 [tool.uv]
 default-groups = ["lint", "unit"]
