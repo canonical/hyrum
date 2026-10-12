@@ -86,17 +86,38 @@ Most of this is enforced by CI checks.
 
 # Releases
 
-Releases are published to PyPI by the `publish` workflow, which runs on any `v*` tag.
+Two workflows make a release, and you decide twice: once when you review the version-bump PR, and once when you publish the draft release. Nothing reaches PyPI until you publish the draft, so an abandoned attempt costs at most a branch and a draft to delete. Releases only come from `main`.
 
-1. Open a pull request that sets `version` in `pyproject.toml` and `__version__` in `src/hyrum/_version.py` to the new version, with the `uv.lock` update that `uv lock` produces, and get it merged.
-2. Tag the resulting commit on `main` and push the tag:
+## 1. Propose the release
 
-   ```bash
-   git switch main && git pull
-   git tag -m 'hyrum 1.2.3' v1.2.3
-   git push origin v1.2.3
-   ```
+Run the ["Propose a release"](https://github.com/canonical/hyrum/actions/workflows/propose-release.yaml) workflow from `main`. A run from any other branch stops with an error. It takes two inputs:
 
-3. Watch the `publish` workflow run, then check that the release appears on [PyPI](https://pypi.org/p/hyrum). The upload starts as soon as the tag is pushed, so make sure the version is the one you want before pushing.
+- `version`: leave this empty for an ordinary release. The workflow counts from the last `v*` tag and reads the conventional commits since then: a `feat` or a breaking change makes it a minor release, and anything else makes it a patch release. Fill this in for a major release, which is never inferred, or for a pre-release such as `1.1.0b1`. After a pre-release, you always need to fill it in, since only you know whether the next one is another pre-release or the final release. What you type is used as it stands.
+- `dry_run`: do everything except push the branch and open the PR. The proposed version, the changelog entry and the drafted notes go in the run summary.
+
+The workflow writes the [CHANGES.md](CHANGES.md) entry, updates the version in `pyproject.toml`, `src/hyrum/_version.py` and `uv.lock`, drafts the release title and notes, and opens a draft PR from a `release-prep-X.Y.Z` branch. The PR's description lists the next steps, with the PR's number ready for the next workflow.
+
+The PR is a draft so that you can tidy it up before asking anyone else to look: resolve the **Unsure:** notes the model left, cut anything a reader doesn't need, and fix the changelog entry if it needs it. Then mark it ready for review and ask for one.
+
+Review both halves of it:
+
+- The diff: the version and the changelog entry. If a commit message needs adjusting in the changelog, edit `CHANGES.md` in this PR: the draft release copies this version's section from there.
+- The release title and notes, which are in the PR description under the "Release title" and "Release notes" headings. Edit them there, and keep the hidden `<!-- release-title:start -->`/`<!-- release-notes:start -->` markers (and their `end` partners): that's where the next workflow reads them from. Write only the summary for the title, since the version is added for you. Everything outside the markers is for reviewers and goes no further.
+
+The PR is opened with the workflow's own token, so GitHub won't start the usual checks on it. Close and reopen the PR to get them to run, then merge it once they pass.
+
+## 2. Create the draft release
+
+Once the PR is merged, run the ["Create the draft release"](https://github.com/canonical/hyrum/actions/workflows/create-draft-release.yaml) workflow with the PR's number. It checks that the PR was merged into `main` and changed the version in `pyproject.toml`, then creates a **draft** release on the merge commit, titled with the version and your summary. The body is the notes from the PR description, then this version's section of `CHANGES.md`, an "All commits" link, and a line thanking any contributors from outside the team. A version with an `a`, `b` or `rc` in it is marked as a pre-release.
+
+Nothing is published and the tag doesn't exist yet. Edit the draft if you need to.
+
+## 3. Publish the draft
+
+Publishing the draft creates the `vX.Y.Z` tag, which starts the `publish` workflow. That publishes to [PyPI](https://pypi.org/p/hyrum) with Trusted Publishing, and attests the build and its SBOM. It stops before building if the tag doesn't match the version in `pyproject.toml`. If that happens, don't move the tag (the tag ruleset won't let you anyway). Delete the release, and release the next patch version instead.
 
 To rehearse a release, run the `publish-test-pypi` workflow manually from the Actions tab: it builds from the current `main` and publishes to [Test PyPI](https://test.pypi.org/p/hyrum). Note that a version can only be uploaded once, so bump the version before re-running it.
+
+## Settings a repository admin has to change
+
+An environment called `release-notes`, holding an `OPENROUTER_API_KEY` secret and an `OPENROUTER_MODEL` variable. Without them, "Propose a release" puts a placeholder where the notes would go and carries on, and you write the notes yourself in the PR description.

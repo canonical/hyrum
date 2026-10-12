@@ -1,10 +1,21 @@
 name: publish
 
+# Publishing a GitHub release is what puts the package on PyPI.
+# publish-test-pypi.yaml does the same for Test PyPI, by hand.
+#
+# `published` rather than `released`, so pre-releases publish too.
+
 on:
-  push:
-    tags: ['v*']
+  release:
+    types: [published]
 
 permissions: {}
+
+# One publish at a time per release. Two runs would build the same thing and
+# race each other to the index.
+concurrency:
+  group: publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -20,7 +31,23 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          # The commit the release's tag points at, named rather than left to
+          # whatever the event's default checkout would be.
+          ref: ${{ github.event.release.tag_name }}
           persist-credentials: false
+      # The draft's tag can be edited before it is published, so check it
+      # still names the version that is about to be built.
+      - name: Check the tag matches the project version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        shell: python
+        run: |
+          import os, pathlib, sys, tomllib
+          tag = os.environ['TAG']
+          version = tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version']
+          if tag != f'v{version}':
+              print(f'::error::Tag {tag} does not match pyproject.toml version {version} (expected v{version}).')
+              sys.exit(1)
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           enable-cache: false

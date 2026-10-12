@@ -1,0 +1,209 @@
+---
+name: Create the draft release
+
+# The second of the two release workflows, run by hand once the version-bump
+# pull request is merged: turn that merge into a draft GitHub release, titled
+# with the version and the summary from the pull request's description, whose
+# body is the release notes from the same description followed by this
+# version's section of CHANGES.md and a link comparing it with the previous
+# release.
+#
+# Worth knowing:
+#
+# - The release is always a draft. Publishing it is the human check on the
+#   notes, and is what creates the `v*` tag and starts publish.yaml.
+# - The draft is pinned to the merge commit, so anything merged to main
+#   afterwards doesn't ride along.
+#
+# If it fails on a real release, fix the cause and re-run it. Every step reads
+# the pull request description afresh.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: The number of the merged version-bump pull request.
+        required: true
+        type: number
+
+permissions: {}
+
+env:
+  # The team's release tools, pinned to a commit rather than a branch. They
+  # aren't on PyPI, so they can't go in a dependency group.
+  CHANGELOG: >-
+    git+https://github.com/canonical/charm-tech-code@badfec21db1c3e2ab95fccaa3a77f411d7ed2057#subdirectory=changelog
+
+# One run per pull request at a time. Drafts don't reserve their tag name, so
+# two runs of this could each create a draft for the same release.
+concurrency:
+  group: create-draft-release-${{ inputs.pr }}
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    name: Create the draft release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # To create the draft release.
+      pull-requests: read  # To read the merged pull request.
+    steps:
+      - name: Read the pull request
+        id: pr
+        env:
+          NUMBER: ${{ inputs.pr }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Fresh from the API, so that a re-run after somebody fixed the
+          # description picks up the fix.
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMBER" > "$RUNNER_TEMP/pr.json"
+          branch=$(jq -r .base.ref "$RUNNER_TEMP/pr.json")
+          target=$(jq -r .merge_commit_sha "$RUNNER_TEMP/pr.json")
+
+          if [ "$(jq -r .merged "$RUNNER_TEMP/pr.json")" != true ]; then
+            echo "::error::#$NUMBER is not merged. Merge the version-bump pull request first."
+            exit 1
+          fi
+          if [ "$branch" != main ]; then
+            echo "::error::#$NUMBER was merged into $branch, not main."
+            exit 1
+          fi
+
+          jq -r '.body // ""' "$RUNNER_TEMP/pr.json" > "$RUNNER_TEMP/pr-description.md"
+          echo "The release notes come from #$NUMBER, merged into main as $target."
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # The squash commit the merge made, which is the release. Its parent
+          # is main before the merge, which is what the version is compared
+          # against, and the tags are where the compare link starts.
+          ref: ${{ steps.pr.outputs.target }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          enable-cache: false
+
+      - name: Check that the merge is a release
+        id: detect
+        env:
+          NUMBER: ${{ inputs.pr }}
+        run: |
+          set -euo pipefail
+
+          version_in() {
+            python3 -c 'import sys, tomllib; print(tomllib.load(sys.stdin.buffer)["project"]["version"])'
+          }
+
+          after=$(version_in < pyproject.toml)
+          # The repository only squash merges, so the first parent is main as
+          # it was before this pull request.
+          before=$(git show "HEAD^1:pyproject.toml" | version_in)
+
+          # Prints nothing, and says why on stderr, when it is not a release.
+          detected=$(uvx --from "$CHANGELOG" changelog detect-release --before "$before" --after "$after")
+          if [ -z "$detected" ]; then
+            echo "::error::#$NUMBER is not a release: it moved the version in pyproject.toml" \
+              "from '$before' to '$after'."
+            exit 1
+          fi
+          echo "$detected" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble the release title and body
+        id: assemble
+        env:
+          VERSION: ${{ steps.detect.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # The previous release is the last tag in this commit's history:
+          # this version's own tag doesn't exist until the draft is published.
+          # Without one the body just has no compare link at the end.
+          compare=()
+          if previous=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' HEAD); then
+            compare=(--compare-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$previous...v$VERSION")
+          else
+            echo "::warning::No earlier release tag to compare $VERSION with; the body has no \"All commits\" link."
+          fi
+          uvx --from "$CHANGELOG" changelog release-body --version "$VERSION" --changes CHANGES.md \
+            "${compare[@]}" < "$RUNNER_TEMP/pr-description.md" > "$RUNNER_TEMP/release-body.md"
+
+          # Never fails: with no summary to use, the title is the bare version,
+          # and the reason goes to the log.
+          title=$(uvx --from "$CHANGELOG" changelog release-title --version "$VERSION" \
+            < "$RUNNER_TEMP/pr-description.md")
+          echo "title=$title" >> "$GITHUB_OUTPUT"
+
+      - name: Create the draft release
+        id: release
+        env:
+          VERSION: ${{ steps.detect.outputs.version }}
+          TITLE: ${{ steps.assemble.outputs.title }}
+          PRERELEASE: ${{ steps.detect.outputs.prerelease }}
+          TARGET: ${{ steps.pr.outputs.target }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+
+          # Check whether this version already has a release, draft or
+          # published. `gh release create` would refuse a published one, but
+          # would quietly add a second draft alongside an existing one.
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::There is already a release for $tag. If it needs to be rebuilt," \
+              "delete it first; if it is already published, there is nothing to do here."
+            exit 1
+          fi
+
+          flags=()
+          if [ "$PRERELEASE" = true ]; then
+            flags=(--prerelease)
+          fi
+
+          # $tag: the tag, which GitHub creates against --target when somebody publishes the draft.
+          # --draft: this workflow only drafts the release; publishing it is a person's call.
+          # --target: the merge's own commit rather than the branch, so nothing merged after it rides along.
+          # --title: the version and the summary from the PR description.
+          # --notes-file: the assembled body, with the release notes and then the changelog section.
+          # flags: --prerelease when the version has an a, b or rc suffix.
+          url=$(gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+            --draft --target "$TARGET" --title "$TITLE" \
+            --notes-file "$RUNNER_TEMP/release-body.md" "${flags[@]}")
+          echo "Drafted $url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Summarise the draft
+        env:
+          VERSION: ${{ steps.detect.outputs.version }}
+          TITLE: ${{ steps.assemble.outputs.title }}
+          NUMBER: ${{ inputs.pr }}
+          URL: ${{ steps.release.outputs.url }}
+        shell: python
+        run: |
+          import os
+          import pathlib
+
+          version = os.environ['VERSION']
+          release_body = pathlib.Path(os.environ['RUNNER_TEMP'], 'release-body.md').read_text()
+          explanation = (
+              f"Title and notes from #{os.environ['NUMBER']}, changelog from `CHANGES.md`."
+              f' Nothing is published and the `v{version}` tag does not exist yet:'
+              ' publishing the draft is a human step, and it is what creates the tag.'
+          )
+          summary = f"""\
+          ## Draft release: {os.environ['TITLE']}
+
+          {os.environ['URL']}
+
+          {explanation}
+
+          <details><summary>Release body</summary>
+
+          {release_body}
+          </details>
+          """
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write(summary)
