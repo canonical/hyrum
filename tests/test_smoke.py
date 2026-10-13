@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.metadata
+
 import pytest
 
 import hyrum
@@ -11,6 +13,10 @@ from hyrum import _cli
 def test_version_string():
     assert isinstance(hyrum.__version__, str)
     assert hyrum.__version__
+
+
+def test_version_matches_package_metadata():
+    assert hyrum.__version__ == importlib.metadata.version('hyrum')
 
 
 def test_cli_version_runs(capsys: pytest.CaptureFixture[str]):

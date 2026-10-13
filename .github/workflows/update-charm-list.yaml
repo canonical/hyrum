@@ -24,8 +24,8 @@ jobs:
     name: refresh and open PR
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: write       # push the chore/update-charm-list branch
+      pull-requests: write  # open/update the refresh PR
     env:
       BRANCH: chore/update-charm-list
       TITLE: "chore: refresh charm-list from Charmhub"

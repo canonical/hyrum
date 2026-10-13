@@ -1,6 +1,6 @@
 [project]
 name = "hyrum"
-version = "1.0.0b1"
+version = "1.0.0"
 description = "Bulk-run checks across many charm repositories with a dependency swapped out."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,15 +36,18 @@ packages = ["src/hyrum"]
 # ---------------------------------------------------------------------------
 [dependency-groups]
 lint = [
-    "ruff>=0.16.4",
+    "ruff>=0.16.8",
     "codespell>=2.4.3",
-    "zizmor>=1.29.0",
-    "pyright>=1.1.411",
+    "zizmor>=1.30.1",
+    "pyright>=1.1.414",
 ]
 unit = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "coverage>=7.15.4",
+    "coverage>=7.16.1",
+]
+security = [
+    "pip-audit>=2.10,<3",
 ]
 
 [tool.uv]
@@ -62,7 +65,7 @@ branch = true
 show_missing = true
 
 [tool.codespell]
-skip = ".git,.tox,.venv,venv,build,dist,docs/_build,*.lock"
+skip = ".git,.tox,.venv,venv,build,dist,docs/_build,*/_build/**,docs/_build/**,*/_dev,*/_dev/*,*.lock"
 quiet-level = 3
 check-hidden = true
 
@@ -90,6 +93,9 @@ reportUnknownParameterType = false
 [tool.ruff]
 line-length = 99
 target-version = "py311"
+# docs/_dev holds the Canonical Sphinx stack's own tooling, vendored verbatim so
+# that `make -C docs update` can diff it against upstream. Don't reformat it.
+extend-exclude = ["docs/_dev"]
 
 [tool.ruff.format]
 quote-style = "single"
@@ -129,6 +135,7 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D", "assert", "hardcoded-password-string", "hardcoded-password-func-arg"]
+"docs/conf.py" = ["builtin-variable-shadowing", "D"]  # copyright is a standard Sphinx variable name
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

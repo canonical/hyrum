@@ -4,11 +4,15 @@ import pathlib
 import textwrap
 import tomllib
 
+import packaging.requirements
 import pytest
 
 from hyrum import _patchers as patchers
 from hyrum._patchers import _common, ops_source
 from hyrum._patchers.charmlib_source import _lib_names
+
+_MAIN_URL = 'git+https://github.com/canonical/operator'
+_BRANCH_URL = f'{_MAIN_URL}@fix/X'
 
 
 @pytest.fixture
@@ -317,8 +321,8 @@ def test_pyproject_uv_always_hoists_all_companions(
         assert 'ops-tracing = { git = "https://github.com/canonical/operator"' in patched
         assert 'subdirectory = "tracing"' in patched
         # Companions appear in [project.dependencies] too so uv accepts the URL source.
-        assert '"ops-scenario"' in patched
-        assert '"ops-tracing"' in patched
+        assert f'"ops-scenario @ {_BRANCH_URL}#subdirectory=testing"' in patched
+        assert f'"ops-tracing @ {_BRANCH_URL}#subdirectory=tracing"' in patched
 
 
 def test_pyproject_uv_transitive_ops_dep_still_gets_companions(
@@ -344,8 +348,8 @@ def test_pyproject_uv_transitive_ops_dep_still_gets_companions(
         # ops itself is hoisted as a source so uv resolves the transitive dep from git.
         assert 'ops = { git = "https://github.com/canonical/operator" }' in patched
         # And companions, because the patched ops HEAD has them as workspace URL deps.
-        assert '"ops-scenario"' in patched
-        assert '"ops-tracing"' in patched
+        assert f'"ops-scenario @ {_MAIN_URL}#subdirectory=testing"' in patched
+        assert f'"ops-tracing @ {_MAIN_URL}#subdirectory=tracing"' in patched
 
 
 def test_pyproject_uv_bumps_low_requires_python(
@@ -408,11 +412,11 @@ def test_pyproject_uv_dep_groups_recognised_and_hoisted(
         assert 'ops = { git = "https://github.com/canonical/operator"' in patched
         # Companions injected into each ops-bearing group.
         charm_block = patched.split('charm = [', 1)[1].split(']', 1)[0]
-        assert '"ops-scenario"' in charm_block
-        assert '"ops-tracing"' in charm_block
+        assert f'"ops-scenario @ {_BRANCH_URL}#subdirectory=testing"' in charm_block
+        assert f'"ops-tracing @ {_BRANCH_URL}#subdirectory=tracing"' in charm_block
         libs_block = patched.split('libs = [', 1)[1].split(']', 1)[0]
-        assert '"ops-scenario"' in libs_block
-        assert '"ops-tracing"' in libs_block
+        assert f'"ops-scenario @ {_BRANCH_URL}#subdirectory=testing"' in libs_block
+        assert f'"ops-tracing @ {_BRANCH_URL}#subdirectory=tracing"' in libs_block
         # lint group has no ops, so companions don't leak into it.
         lint_block = patched.split('lint = [', 1)[1].split(']', 1)[0]
         assert 'ops-scenario' not in lint_block
@@ -444,8 +448,49 @@ def test_pyproject_uv_dep_groups_without_project_dependencies(
         patched = _read(py)
         assert '[tool.uv.sources]' in patched
         charm_block = patched.split('charm = [', 1)[1].split(']', 1)[0]
-        assert '"ops-scenario"' in charm_block
-        assert '"ops-tracing"' in charm_block
+        assert f'"ops-scenario @ {_MAIN_URL}#subdirectory=testing"' in charm_block
+        assert f'"ops-tracing @ {_MAIN_URL}#subdirectory=tracing"' in charm_block
+
+
+def test_pyproject_uv_dep_group_companions_install_without_the_sources(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
+):
+    """Every companion string in an ops-bearing group says where to get it from.
+
+    tox-uv's ``uv-venv-runner`` installs a dependency group by passing its
+    strings to ``uv pip install``, which never reads ``[tool.uv.sources]``. A
+    bare ``"ops-tracing"`` there resolves from PyPI, and since every recent
+    ops-tracing release pins its own ops version, uv falls back to an old one
+    that doesn't match the patched ops (canonical/hyrum#164).
+    """
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops>=2.17",
+        ]
+
+        [dependency-groups]
+        unit = [
+          "pytest",
+          "ops[testing]>=2.17",
+        ]
+
+        [tool.uv]
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+    for group in (parsed['project']['dependencies'], parsed['dependency-groups']['unit']):
+        reqs = [packaging.requirements.Requirement(entry) for entry in group]
+        by_name = {req.name: req for req in reqs}
+        assert by_name['ops-scenario'].url == f'{_BRANCH_URL}#subdirectory=testing'
+        assert by_name['ops-tracing'].url == f'{_BRANCH_URL}#subdirectory=tracing'
+        assert by_name['ops'].url == _BRANCH_URL
 
 
 # ---- pyproject.toml: poetry --------------------------------------------------
@@ -720,18 +765,10 @@ def test_pyproject_poetry_keeps_a_companion_in_dev_dependencies(
         assert 'ops-scenario = {git =' in dev_body
 
 
-def test_pyproject_poetry_raises_when_there_is_nowhere_to_put_ops(
+def test_pyproject_poetry_rewrites_a_project_array_in_place(
     tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
 ):
-    """A [project] array under a [tool.poetry] file is not a table Poetry reads.
-
-    The declaration is stripped and there is no base table to fall back on, so
-    the charm would run against whatever ops its lockfile already pins and
-    report that as a result for the ops under test. A patcher error says so;
-    the pool records it distinctly from a test failure.
-    """
-    # Stubbed so that a regression fails the assertion rather than running a
-    # real `poetry lock` against the unpatched file.
+    """Poetry 2 reads [project] dependencies, so ops is patched there."""
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     py.write_text(
@@ -739,9 +776,252 @@ def test_pyproject_poetry_raises_when_there_is_nowhere_to_put_ops(
         [project]
         name = "c"
         dependencies = [
-            "ops>=2.10",
+            "ops[testing]>=2.10",
         ]
 
+        [tool.poetry]
+        package-mode = false
+
+        [tool.poetry.group.unit.dependencies]
+        pytest = "*"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+        assert parsed['project']['dependencies'] == [
+            'ops-scenario @ git+https://github.com/canonical/operator@fix/X#subdirectory=testing',
+            'ops[testing] @ git+https://github.com/canonical/operator@fix/X',
+        ]
+        assert 'ops' not in parsed['tool']['poetry']['group']['unit']['dependencies']
+
+
+def test_pyproject_poetry_keeps_dependency_groups_ops_in_place(
+    tmp_path: pathlib.Path, ops_path: patchers.OpsSource, monkeypatch
+):
+    """ops in [dependency-groups] stays there, not in [tool.poetry.dependencies].
+
+    From Poetry 2.2, that table only adds detail to packages declared in a
+    group, so a declaration moved there is ignored and the lock keeps its
+    old ops. (Earlier versions ignore [dependency-groups] altogether.)
+    """
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [dependency-groups]
+        main = [
+            "ops[tracing]~=3.5",
+        ]
+        charm-libs = [
+            "ops>=2.0.0",
+        ]
+
+        [tool.poetry]
+        package-mode = false
+
+        [tool.poetry.dependencies]
+        python = "^3.12"
+    """)
+    )
+    operator = tmp_path / 'operator'
+    with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+        assert parsed['dependency-groups'] == {
+            'main': [
+                f'ops-tracing @ file://{operator / "tracing"}',
+                f'ops[tracing] @ file://{operator}',
+            ],
+            'charm-libs': [f'ops @ file://{operator}'],
+        }
+        assert parsed['tool']['poetry']['dependencies'] == {'python': '^3.12'}
+
+
+@pytest.mark.parametrize(
+    'last_entry',
+    [
+        '"ops>=2.17"',
+        '"ops>=2.17"  # the framework',
+        '"ops>=2.17",  # the framework',
+    ],
+)
+def test_pyproject_poetry_rewrites_ops_as_the_last_array_entry(
+    tmp_path: pathlib.Path, ops_path: patchers.OpsSource, monkeypatch, last_entry: str
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent(f"""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+            "pyyaml",
+            {last_entry}
+        ]
+
+        [tool.poetry]
+        package-mode = false
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+        assert parsed['project']['dependencies'] == [
+            'pyyaml',
+            f'ops @ file://{tmp_path / "operator"}',
+        ]
+
+
+def test_pyproject_poetry_rewrites_a_declared_companion_in_place(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [dependency-groups]
+        unit = ["ops[testing]", "ops-scenario>=7", "pytest"]
+
+        [tool.poetry]
+        package-mode = false
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        assert tomllib.loads(_read(py))['dependency-groups']['unit'] == [
+            'ops[testing] @ git+https://github.com/canonical/operator@fix/X',
+            'ops-scenario @ git+https://github.com/canonical/operator@fix/X#subdirectory=testing',
+            'pytest',
+        ]
+
+
+def test_pyproject_poetry_adds_companion_beside_underscore_spelling(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [dependency-groups]
+        unit = ["ops[testing]", "ops_scenario>=7"]
+
+        [tool.poetry]
+        package-mode = false
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        assert tomllib.loads(_read(py))['dependency-groups']['unit'] == [
+            'ops-scenario @ git+https://github.com/canonical/operator@fix/X#subdirectory=testing',
+            'ops[testing] @ git+https://github.com/canonical/operator@fix/X',
+            'ops_scenario>=7',
+        ]
+
+
+def test_pyproject_poetry_mixed_case_ops_is_an_error(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    (tmp_path / 'pyproject.toml').write_text(
+        textwrap.dedent("""\
+        [dependency-groups]
+        unit = ["Ops>=2.10"]
+
+        [tool.poetry]
+        package-mode = false
+
+        [tool.poetry.dependencies]
+        python = "^3.12"
+    """)
+    )
+    with (
+        pytest.raises(patchers.PatcherError, match=r'Ops>=2\.10 in \[dependency-groups\] unit'),
+        patchers.OpsSourcePatcher(ops_branch).apply(tmp_path),
+    ):
+        pass
+
+
+def test_pyproject_poetry_invalid_patched_toml_is_a_patcher_error(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    monkeypatch.setattr(
+        'hyrum._patchers.ops_source._inject_after_sections', lambda text, blocks: text + '[[['
+    )
+    (tmp_path / 'pyproject.toml').write_text(
+        textwrap.dedent("""\
+        [dependency-groups]
+        unit = ["ops>=2.10"]
+
+        [tool.poetry]
+        package-mode = false
+    """)
+    )
+    with (
+        pytest.raises(patchers.PatcherError, match='not valid TOML'),
+        patchers.OpsSourcePatcher(ops_branch).apply(tmp_path),
+    ):
+        pass
+
+
+def test_pyproject_poetry_pypi_leaves_array_companions_alone(
+    tmp_path: pathlib.Path, ops_pypi: patchers.OpsSource, monkeypatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [dependency-groups]
+        unit = ["ops[testing]>=2.10", "ops-scenario>=7"]
+
+        [tool.poetry]
+        package-mode = false
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_pypi).apply(tmp_path):
+        assert tomllib.loads(_read(py))['dependency-groups']['unit'] == [
+            'ops[testing]==2.17.0',
+            'ops-scenario>=7',
+        ]
+
+
+def test_pyproject_poetry_raises_when_an_array_entry_is_not_rewritten(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    """A declaration left as it was would test the locked ops, not the patched one."""
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [dependency-groups]
+        main = ['ops>=2.10']
+
+        [tool.poetry]
+        package-mode = false
+
+        [tool.poetry.dependencies]
+        python = "^3.12"
+    """)
+    )
+    with (
+        pytest.raises(patchers.PatcherError, match=r'ops>=2\.10 in \[dependency-groups\] main'),
+        patchers.OpsSourcePatcher(ops_branch).apply(tmp_path),
+    ):
+        pass
+
+
+def test_pyproject_poetry_raises_when_there_is_nowhere_to_put_ops(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    """With no declaration and no base table, the charm would keep its locked ops.
+
+    That would be reported as a result for the ops under test. A patcher error
+    says so; the pool records it distinctly from a test failure.
+    """
+    # Stubbed so that a regression fails the assertion rather than running a
+    # real `poetry lock` against the unpatched file.
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
         [tool.poetry]
         package-mode = false
 
@@ -754,6 +1034,28 @@ def test_pyproject_poetry_raises_when_there_is_nowhere_to_put_ops(
         patchers.OpsSourcePatcher(ops_branch).apply(tmp_path),
     ):
         pass
+
+
+def test_pyproject_poetry_injects_into_a_quoted_group(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [tool.poetry]
+        package-mode = false
+
+        [tool.poetry.group."my.grp".dependencies]
+        ops = "^2.10"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        group = tomllib.loads(_read(py))['tool']['poetry']['group']['my.grp']
+        assert group['dependencies']['ops'] == {
+            'git': 'https://github.com/canonical/operator',
+            'rev': 'fix/X',
+        }
 
 
 def test_pyproject_poetry_injection_does_not_add_blank_lines(
@@ -1048,6 +1350,8 @@ def test_pyproject_uv_path_emits_path_source(tmp_path: pathlib.Path, ops_path: p
         companion = tmp_path / 'operator' / 'testing'
         assert f'ops-scenario = {{ path = "{companion}", editable = true }}' in patched
         assert 'subdirectory' not in patched
+        deps = tomllib.loads(patched)['project']['dependencies']
+        assert f'ops-scenario @ file://{companion}' in deps
 
 
 # ---- error paths -------------------------------------------------------------
@@ -1272,7 +1576,11 @@ def test_poetry_lock_not_wrapped_when_no_python_constraint(tmp_path: pathlib.Pat
     assert captured['cmd'] == ('poetry', 'lock')
 
 
-def test_uv_lock_passes_python_when_requires_python_present(tmp_path: pathlib.Path, monkeypatch):
+def test_uv_lock_not_pinned_to_the_minimum_python(tmp_path: pathlib.Path, monkeypatch):
+    # Regression: with older uv (0.9.x), ``uv lock --python 3.10`` fails for a
+    # charm with a group that needs a newer Python (``opcli ; python_version
+    # >= '3.12'``), even though the universal lock that plain ``uv lock``
+    # produces is fine.
     captured: dict[str, object] = {}
 
     def fake_lock(repo, cmd, timeout, **kw):
@@ -1285,96 +1593,14 @@ def test_uv_lock_passes_python_when_requires_python_present(tmp_path: pathlib.Pa
         [project]
         name = "c"
         version = "0"
-        requires-python = ">=3.12,<4.0"
+        requires-python = ">=3.10"
         dependencies = [
           "ops>=2.10",
         ]
 
-        [tool.uv]
-    """)
-    )
-    (tmp_path / 'uv.lock').write_text('# original\n')
-    ops = patchers.OpsSource(branch='b')
-    with patchers.OpsSourcePatcher(ops).apply(tmp_path):
-        pass
-    assert captured['cmd'] == ('uv', 'lock', '--python', '3.12')
-
-
-def test_uv_lock_python_reflects_patched_requires_python(tmp_path: pathlib.Path, monkeypatch):
-    # Regression: ``_patch_pyproject_uv`` bumps ``requires-python`` from
-    # 3.8/3.9 to 3.10 (ops's floor). We must derive ``--python`` from the
-    # patched pyproject, not the original, or uv aborts with "interpreter
-    # resolved to Python 3.8 … incompatible with project requirement >=3.10".
-    captured: dict[str, object] = {}
-
-    def fake_lock(repo, cmd, timeout, **kw):
-        captured['cmd'] = tuple(cmd)
-
-    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
-    py = tmp_path / 'pyproject.toml'
-    py.write_text(
-        textwrap.dedent("""\
-        [project]
-        name = "c"
-        version = "0"
-        requires-python = "~=3.8"
-        dependencies = [
-          "ops>=2.10",
-        ]
-
-        [tool.uv]
-    """)
-    )
-    (tmp_path / 'uv.lock').write_text('# original\n')
-    ops = patchers.OpsSource(branch='b')
-    with patchers.OpsSourcePatcher(ops).apply(tmp_path):
-        pass
-    assert captured['cmd'] == ('uv', 'lock', '--python', '3.10')
-
-
-def test_uv_lock_unpinned_when_auto_python_disabled(tmp_path: pathlib.Path, monkeypatch):
-    captured: dict[str, object] = {}
-
-    def fake_lock(repo, cmd, timeout, **kw):
-        captured['cmd'] = tuple(cmd)
-
-    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
-    py = tmp_path / 'pyproject.toml'
-    py.write_text(
-        textwrap.dedent("""\
-        [project]
-        name = "c"
-        version = "0"
-        requires-python = ">=3.12,<4.0"
-        dependencies = [
-          "ops>=2.10",
-        ]
-
-        [tool.uv]
-    """)
-    )
-    (tmp_path / 'uv.lock').write_text('# original\n')
-    ops = patchers.OpsSource(branch='b', auto_python=False)
-    with patchers.OpsSourcePatcher(ops).apply(tmp_path):
-        pass
-    assert captured['cmd'] == ('uv', 'lock')
-
-
-def test_uv_lock_unpinned_when_no_python_constraint(tmp_path: pathlib.Path, monkeypatch):
-    captured: dict[str, object] = {}
-
-    def fake_lock(repo, cmd, timeout, **kw):
-        captured['cmd'] = tuple(cmd)
-
-    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
-    py = tmp_path / 'pyproject.toml'
-    py.write_text(
-        textwrap.dedent("""\
-        [project]
-        name = "c"
-        version = "0"
-        dependencies = [
-          "ops>=2.10",
+        [dependency-groups]
+        tooling = [
+          "opcli[cli] ; python_version >= '3.12'",
         ]
 
         [tool.uv]
@@ -1385,6 +1611,39 @@ def test_uv_lock_unpinned_when_no_python_constraint(tmp_path: pathlib.Path, monk
     with patchers.OpsSourcePatcher(ops).apply(tmp_path):
         pass
     assert captured['cmd'] == ('uv', 'lock')
+
+
+def test_failed_uv_relock_is_a_patcher_error(tmp_path: pathlib.Path, monkeypatch):
+    # A uv charm keeps its stale lock when the relock fails, and its own
+    # ``uv run --locked`` then refuses it: that is hyrum failing to apply the
+    # patch, not the charm failing under it.
+    class _Result:
+        returncode = 1
+        stdout = b''
+        stderr = b'No solution found'
+
+    monkeypatch.setattr('hyrum._patchers._common.subprocess.run', lambda *a, **kw: _Result())
+    py = tmp_path / 'pyproject.toml'
+    original = textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops>=2.10",
+        ]
+
+        [tool.uv]
+    """)
+    py.write_text(original)
+    (tmp_path / 'uv.lock').write_text('# original\n')
+    ops = patchers.OpsSource(branch='b')
+    with (
+        pytest.raises(patchers.PatcherError, match='No solution found'),
+        patchers.OpsSourcePatcher(ops).apply(tmp_path),
+    ):
+        pass
+    assert py.read_text() == original
 
 
 def test_run_lock_strips_virtual_env(tmp_path: pathlib.Path, monkeypatch):
@@ -1583,6 +1842,32 @@ def test_charmlib_patcher_uv_extras_reapplied(tmp_path: pathlib.Path, monkeypatc
         assert 'charmlibs-nginx-k8s = { git = "https://github.com/canonical/charmlibs"' in patched
         assert 'rev = "mybranch"' in patched
         assert 'subdirectory = "nginx_k8s"' in patched
+
+
+def test_charmlib_patcher_failed_uv_relock_is_a_patcher_error(tmp_path: pathlib.Path, monkeypatch):
+    class _Result:
+        returncode = 1
+        stdout = b''
+        stderr = b'No solution found'
+
+    monkeypatch.setattr('hyrum._patchers._common.subprocess.run', lambda *a, **kw: _Result())
+    charm_dir = tmp_path / 'charm'
+    charm_dir.mkdir()
+    py = charm_dir / 'pyproject.toml'
+    original = (
+        '[project]\nname = "c"\nversion = "0"\nrequires-python = ">=3.10"\n'
+        'dependencies = [\n  "charmlibs-nginx-k8s>=1.0",\n]\n'
+        '[tool.uv]\ndev-dependencies = []\n'
+    )
+    py.write_text(original)
+    (charm_dir / 'uv.lock').write_text('# original\n')
+    src = patchers.CharmlibSource(pkg_name='nginx_k8s', branch='mybranch')
+    with (
+        pytest.raises(patchers.PatcherError, match='No solution found'),
+        patchers.CharmlibPatcher(src).apply(charm_dir),
+    ):
+        pass
+    assert py.read_text() == original
 
 
 # ---- CharmlibPatcher: git dep rewriting via shared _patch_git_dep helper ----

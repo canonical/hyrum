@@ -137,6 +137,25 @@ def test_uv_git_adds_source_block(tmp_path: pathlib.Path, monkeypatch):
         assert 'requests = { git = "https://github.com/psf/requests", rev = "main" }' in patched
 
 
+def test_failed_uv_relock_is_a_patcher_error(tmp_path: pathlib.Path, monkeypatch):
+    class _Result:
+        returncode = 1
+        stdout = b''
+        stderr = b'No solution found'
+
+    monkeypatch.setattr('hyrum._patchers._common.subprocess.run', lambda *a, **kw: _Result())
+    py = tmp_path / 'pyproject.toml'
+    (tmp_path / 'uv.lock').write_text('# original\n')
+    py.write_text(_UV_TEMPLATE)
+    source = patchers.DepSource(pkg_name='requests', version='==2.32.0')
+    with (
+        pytest.raises(patchers.PatcherError, match='No solution found'),
+        patchers.GenericDepPatcher(source).apply(tmp_path),
+    ):
+        pass
+    assert _read(py) == _UV_TEMPLATE
+
+
 # ---- poetry path -------------------------------------------------------------
 
 

@@ -59,6 +59,7 @@ updates:
           - "coverage"
           - "pre-commit"
           - "types-*"
+          - "pip-audit"
           - "zizmor"
       # Test runner + other shared test deps.
       test-deps:

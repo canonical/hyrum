@@ -438,11 +438,17 @@ def run_lock(
     *,
     on_failure_remove: pathlib.Path | None = None,
 ) -> None:
-    """Best-effort regenerate a lockfile. Logs (never raises) on failure.
+    """Regenerate a lockfile after patching.
 
     Some charms have unresolvable dev dependencies under the patched
-    source; in that case we just delete the lockfile so the runner can
-    install without it.
+    source. With ``on_failure_remove``, a failed lock is logged and that
+    lockfile is deleted so the runner can install without it. Without it,
+    the charm would run against its stale lockfile and fail for a reason
+    that has nothing to do with the patched source, so a failed lock
+    raises :class:`~hyrum._patchers.base.PatcherError` instead. This
+    includes a lock that fails because the charm doesn't resolve against
+    the patched source. That is a charm result rather than a host problem,
+    but it is still reported as a patcher error (canonical/hyrum#179).
     """
     # Strip ``VIRTUAL_ENV`` so the charm's lock isn't pinned to hyrum's own
     # venv. Poetry in particular reads ``VIRTUAL_ENV`` to decide the project's
@@ -458,20 +464,22 @@ def run_lock(
             timeout=timeout,
             env=env,
         )
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
+        if on_failure_remove is None:
+            raise base.PatcherError(f'{cmd[0]} not found, could not lock') from exc
         logger.warning('%s not found, skipping lock for %s', cmd[0], repo)
         return
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        if on_failure_remove is None:
+            raise base.PatcherError(f'{cmd[0]} lock timed out after {timeout}s') from exc
         logger.warning('%s lock timed out after %ds for %s', cmd[0], timeout, repo)
-        if on_failure_remove and on_failure_remove.exists():
+        if on_failure_remove.exists():
             on_failure_remove.unlink()
         return
     if result.returncode != 0:
-        logger.warning(
-            '%s lock failed for %s: %s',
-            cmd[0],
-            repo,
-            result.stderr.decode(errors='replace').strip(),
-        )
-        if on_failure_remove and on_failure_remove.exists():
+        stderr = result.stderr.decode(errors='replace').strip()
+        if on_failure_remove is None:
+            raise base.PatcherError(f'{cmd[0]} lock failed: {stderr}')
+        logger.warning('%s lock failed for %s: %s', cmd[0], repo, stderr)
+        if on_failure_remove.exists():
             on_failure_remove.unlink()

@@ -1,6 +1,11 @@
 # Pre-commit config aligned with canonical/charm-tech templates/pre-commit-config.yaml.
 # ruff, codespell, and zizmor are local hooks run via uv so they use the same
 # versions as CI and manual `make lint` runs.
+
+# docs/_dev is the Canonical Sphinx stack's own tooling, vendored verbatim so
+# that `make -C docs update` can diff it against upstream. Leave it alone.
+exclude: ^docs/_dev/
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
