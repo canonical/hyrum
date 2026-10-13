@@ -9,7 +9,10 @@ Handles:
   * bundles (`bundle.yaml` -> iterate `charms/`),
   * monorepos heuristically detected by the presence of `charmcraft.yaml`
     or `metadata.yaml` in a subdirectory, at any depth up to
-    :data:`_MAX_DEPTH`.
+    :data:`_MAX_DEPTH`,
+  * monorepos whose tests run from the root: when the root has a runner and
+    a Python manifest and none of the charms below it has both, the root is
+    yielded in their place.
 
 Reactive and classic hook-based charms are dropped by the ``not_legacy``
 filter at the application layer — ``hyrum`` targets ``ops``-based charms.
@@ -24,6 +27,8 @@ from __future__ import annotations
 import logging
 import pathlib
 from collections.abc import Iterator
+
+from hyrum import _filters as filt
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +79,11 @@ def _is_charm_dir(path: pathlib.Path) -> bool:
 
 def _is_bundle_dir(path: pathlib.Path) -> bool:
     return (path / 'bundle.yaml').exists()
+
+
+def _has_harness(path: pathlib.Path) -> bool:
+    """Return whether ``path`` has both a runner and a Python manifest."""
+    return filt.has_runnable_target(path) is None and filt.has_python(path) is None
 
 
 def _iter_bundle(base: pathlib.Path, *, warn: bool = True) -> Iterator[pathlib.Path]:
@@ -147,7 +157,8 @@ def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
 
     Each yielded path is the charm's root (the directory containing
     ``charmcraft.yaml`` / ``metadata.yaml`` for single-charm repos, or
-    the per-charm subdirectory for bundles/monorepos).
+    the per-charm subdirectory for bundles/monorepos, or the repository root
+    for a monorepo whose only test harness is there).
 
     A repository that contributes no charms is logged rather than passed over
     silently, so the collection's effective size stays visible. The caller
@@ -167,14 +178,30 @@ def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
             # _iter_bundle says its own piece about a bundle with no charms/.
             yield from _iter_bundle(repo)
             continue
-        found = False
-        for charm in _iter_monorepo(repo, _MAX_DEPTH):
-            found = True
-            yield charm
-        if not found:
+        charms = list(_iter_monorepo(repo, _MAX_DEPTH))
+        if not charms:
             logger.warning(
                 'No charm found in %s (no charmcraft.yaml or metadata.yaml '
                 'within %d directory levels)',
                 repo,
                 _MAX_DEPTH,
             )
+            continue
+        # Some monorepos keep one test harness at the root for the charms
+        # below it, which have no runner or manifest of their own. Those
+        # charms would all be skipped, so run the root instead. A charm that
+        # can run by itself is still run by itself, since that keeps its
+        # outcome separate from the others'.
+        if _has_harness(repo):
+            stranded = sum(1 for c in charms if not _has_harness(c))
+            if stranded == len(charms):
+                yield repo
+                continue
+            if stranded:
+                logger.info(
+                    'Not running the root harness in %s, since some of its charms '
+                    'have their own; the %d without one will be skipped',
+                    repo,
+                    stranded,
+                )
+        yield from charms
