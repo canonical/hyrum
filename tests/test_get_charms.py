@@ -598,3 +598,176 @@ def test_get_charms_rejects_a_negative_limit(tmp_path: pathlib.Path):
             '--limit',
             '-1',
         ])
+
+
+def test_get_charms_still_reports_no_match_under_quiet(tmp_path: pathlib.Path, spawner, capsys):
+    """The no-match report survives --quiet, which unattended runs set."""
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text(
+        'Charm Name,Repository,Branch (if not the default)\n'
+        'foo,https://github.com/canonical/foo,\n',
+        encoding='utf-8',
+    )
+    fake = spawner()
+    dest = tmp_path / 'dest'
+
+    rc = _run_get_charms([
+        '--source',
+        str(csv_path),
+        '--dest',
+        str(dest),
+        '--repo',
+        'nothing-matches-this',
+        '--quiet',
+    ])
+
+    assert rc == 0
+    assert not fake.calls
+    assert 'nothing to do' in capsys.readouterr().err
+
+
+def test_get_charms_leaves_no_dest_behind_when_nothing_matches(tmp_path: pathlib.Path, spawner):
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text(
+        'Charm Name,Repository,Branch (if not the default)\n'
+        'foo,https://github.com/canonical/foo,\n',
+        encoding='utf-8',
+    )
+    spawner()
+    dest = tmp_path / 'dest'
+
+    rc = _run_get_charms([
+        '--source',
+        str(csv_path),
+        '--dest',
+        str(dest),
+        '--repo',
+        'nothing-matches-this',
+    ])
+
+    assert rc == 0
+    assert not dest.exists()
+
+
+def test_get_charms_does_not_blame_repo_for_an_empty_csv(tmp_path: pathlib.Path, spawner, capsys):
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text('Charm Name,Repository,Branch (if not the default)\n', encoding='utf-8')
+    spawner()
+
+    rc = _run_get_charms(['--source', str(csv_path), '--dest', str(tmp_path / 'dest')])
+
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert 'lists no charms' in err
+    assert '--repo' not in err
+
+
+def test_get_charms_does_not_blame_repo_when_no_row_has_a_repository(
+    tmp_path: pathlib.Path, spawner, capsys
+):
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text(
+        'Charm Name,Repository,Branch (if not the default)\nfoo,,\n', encoding='utf-8'
+    )
+    spawner()
+
+    rc = _run_get_charms(['--source', str(csv_path), '--dest', str(tmp_path / 'dest')])
+
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert 'has a Repository' in err
+    assert '--repo' not in err
+
+
+def test_get_charms_limit_fetches_the_next_slice_on_a_second_run(tmp_path: pathlib.Path, spawner):
+    """Two --limit 2 runs fetch four charms, not the same two twice."""
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text(
+        'Charm Name,Repository,Branch (if not the default)\n'
+        + ''.join(f'c{n},https://github.com/canonical/c{n},\n' for n in range(4)),
+        encoding='utf-8',
+    )
+    dest = tmp_path / 'dest'
+    argv = ['--source', str(csv_path), '--dest', str(dest), '--limit', '2']
+
+    fake = spawner(*[FakeProc(returncode=0) for _ in range(4)])
+    assert _run_get_charms(argv) == 0
+    first = {a[-1].rsplit('/', 1)[-1] for a, _ in fake.calls}
+    # The fake git never writes anything, so stand in for the checkouts it
+    # would have left behind.
+    for name in first:
+        (dest / 'canonical' / name).mkdir(parents=True)
+
+    already = len(fake.calls)
+    assert _run_get_charms(argv) == 0
+    second = {a[-1].rsplit('/', 1)[-1] for a, _ in fake.calls[already:]}
+
+    assert first == {'c0', 'c1'}
+    assert second == {'c2', 'c3'}
+
+
+def test_get_charms_reports_when_the_limited_slice_is_already_complete(
+    tmp_path: pathlib.Path, spawner, capsys
+):
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text(
+        'Charm Name,Repository,Branch (if not the default)\n'
+        'foo,https://github.com/canonical/foo,\n',
+        encoding='utf-8',
+    )
+    dest = tmp_path / 'dest'
+    (dest / 'canonical' / 'foo').mkdir(parents=True)
+    fake = spawner()
+
+    rc = _run_get_charms([
+        '--source',
+        str(csv_path),
+        '--dest',
+        str(dest),
+        '--limit',
+        '5',
+    ])
+
+    assert rc == 0
+    assert not fake.calls
+    assert 'already in' in capsys.readouterr().err
+
+
+def test_get_charms_without_limit_still_pulls_existing_checkouts(tmp_path: pathlib.Path, spawner):
+    """Only --limit skips what is already there; a plain run still refreshes it."""
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text(
+        'Charm Name,Repository,Branch (if not the default)\n'
+        'foo,https://github.com/canonical/foo,\n',
+        encoding='utf-8',
+    )
+    dest = tmp_path / 'dest'
+    (dest / 'canonical' / 'foo').mkdir(parents=True)
+    fake = spawner(FakeProc(returncode=0))
+
+    assert _run_get_charms(['--source', str(csv_path), '--dest', str(dest)]) == 0
+
+    argv, _ = fake.calls[0]
+    assert argv[:2] == ('git', 'pull')
+
+
+def test_get_charms_rejects_an_invalid_repo_regex(tmp_path: pathlib.Path):
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text('Charm Name,Repository\nfoo,https://github.com/canonical/foo\n')
+    with pytest.raises(SystemExit) as excinfo:
+        _cli.main([
+            'get-charms',
+            '--source',
+            str(csv_path),
+            '--dest',
+            str(tmp_path / 'dest'),
+            '--repo',
+            '[',
+        ])
+    assert excinfo.value.code == 2
+
+
+def test_check_rejects_an_invalid_repo_regex(tmp_path: pathlib.Path):
+    with pytest.raises(SystemExit) as excinfo:
+        _cli.main(['check', 'lint', '--charms-dir', str(tmp_path), '--repo', '['])
+    assert excinfo.value.code == 2

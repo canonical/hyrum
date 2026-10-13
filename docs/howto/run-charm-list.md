@@ -36,6 +36,11 @@ hyrum get-charms --dest /srv/hyrum-charms
 
 # Clone with fewer concurrent git processes (the default is 16):
 hyrum get-charms --workers 4
+
+# Populate the cache a slice at a time. --limit counts only charms that
+# aren't in the cache yet, so running the same command again fetches the
+# next slice rather than re-pulling the last one:
+hyrum get-charms --repo '^ubuntu-' --limit 50
 ```
 
 For each row in the CSV, hyrum clones the repository (shallow) into `<dest>/<owner>/<name>`, or pulls it if the directory is already present. A row that names a branch is cloned into `<dest>/<owner>/<name>-<branch>`. Repositories that host multiple charms in subdirectories are cloned once.

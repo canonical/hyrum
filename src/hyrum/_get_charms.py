@@ -87,6 +87,7 @@ def select_rows(
     *,
     repo: str = '.*',
     limit: int = 0,
+    skip_existing_in: pathlib.Path | None = None,
 ) -> list[CharmRow]:
     """Return the subset of ``rows`` to clone or pull.
 
@@ -94,6 +95,14 @@ def select_rows(
     folder name. ``limit`` caps how many rows are selected, counted after
     ``repo`` has been applied so that it bounds the work done rather than
     the rows looked at; ``0`` selects every match.
+
+    ``skip_existing_in`` is a destination directory whose existing checkouts
+    are dropped before ``limit`` is counted, so that consecutive limited runs
+    fetch successive slices instead of the same one. Without it a limit is
+    always spent on the head of the list: ``--limit 50`` twice over selects
+    the same fifty rows, re-pulling what it already has and never reaching
+    the rest -- which is the population-over-a-slow-link case the flag exists
+    for. Callers that want every matching row refreshed pass ``None``.
 
     Rows with no ``Repository`` cannot be named, so they are dropped here
     rather than counted against ``limit``. ``process_rows`` guards against
@@ -110,8 +119,14 @@ def select_rows(
             logger.warning('Skipping row without Repository: %r', row)
             continue
         branch = row.get('Branch (if not the default)') or None
-        if pattern.match(_folder_leaf(repository, branch)):
-            selected.append(row)
+        if not pattern.match(_folder_leaf(repository, branch)):
+            continue
+        if (
+            skip_existing_in is not None
+            and repo_folder(skip_existing_in, repository, branch).exists()
+        ):
+            continue
+        selected.append(row)
     return selected
 
 
