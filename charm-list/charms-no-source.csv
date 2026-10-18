@@ -69,6 +69,7 @@ docker-registry
 dokuwiki
 easyrsa
 elasticsearch-k8s
+enterprise-store
 etcd
 flannel
 ganglia-node
