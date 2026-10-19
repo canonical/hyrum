@@ -87,6 +87,7 @@ def select_rows(
     *,
     repo: str = '.*',
     limit: int = 0,
+    skip_existing_in: pathlib.Path | None = None,
 ) -> list[CharmRow]:
     """Return the subset of ``rows`` to clone or pull.
 
@@ -94,6 +95,11 @@ def select_rows(
     folder name. ``limit`` caps how many rows are selected, counted after
     ``repo`` has been applied so that it bounds the work done rather than
     the rows looked at; ``0`` selects every match.
+
+    ``skip_existing_in`` is a destination directory whose existing checkouts
+    are dropped before ``limit`` is counted, so that consecutive limited runs
+    fetch successive slices instead of the same one. Callers that want every
+    matching row refreshed pass ``None``.
 
     Rows with no ``Repository`` cannot be named, so they are dropped here
     rather than counted against ``limit``. ``process_rows`` guards against
@@ -105,13 +111,19 @@ def select_rows(
     for row in rows:
         if limit > 0 and len(selected) >= limit:
             break
-        repository = (row.get('Repository') or '').rstrip('/')
+        repository = repository_of(row)
         if not repository:
             logger.warning('Skipping row without Repository: %r', row)
             continue
         branch = row.get('Branch (if not the default)') or None
-        if pattern.match(_folder_leaf(repository, branch)):
-            selected.append(row)
+        if not pattern.match(_folder_leaf(repository, branch)):
+            continue
+        if (
+            skip_existing_in is not None
+            and repo_folder(skip_existing_in, repository, branch).exists()
+        ):
+            continue
+        selected.append(row)
     return selected
 
 
@@ -156,10 +168,10 @@ async def process_rows(
     duplicates = 0
     async with asyncio.TaskGroup() as tg:
         for row in rows:
-            if not row.get('Repository'):
+            repository = repository_of(row)
+            if not repository:
                 logger.warning('Skipping row without Repository: %r', row)
                 continue
-            repository = row['Repository'].rstrip('/')
             name = _repo_label(repository)
             branch = row.get('Branch (if not the default)') or None
             repo_path = repo_folder(dest, repository, branch)
@@ -185,6 +197,11 @@ async def process_rows(
         logger.info('get-charms: %d rows skipped as duplicates of an earlier row.', duplicates)
     if failures:
         logger.warning('Failed: %s', ', '.join(failures))
+
+
+def repository_of(row: CharmRow) -> str:
+    """Return the row's ``Repository`` URL, or ``''`` if it has none."""
+    return (row.get('Repository') or '').strip().rstrip('/')
 
 
 def _repo_label(repository: str) -> str:

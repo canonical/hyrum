@@ -22,6 +22,8 @@ curl -sSfL -o charm-list/charms.csv \
     https://raw.githubusercontent.com/canonical/hyrum/main/charm-list/charms.csv
 ```
 
+### Clone all charms
+
 Then:
 
 ```text
@@ -45,6 +47,18 @@ Clones run concurrently, capped at `--workers` git processes, so that a list of 
 Rows that resolve to a checkout directory an earlier row already claimed are skipped, and the run reports how many. A charm listed twice under two different teams is real metadata, so the CSV itself is left alone — only the second clone is skipped. Rows that differ by branch get their own directory, so they are not duplicates.
 
 The default destination is `~/.cache/hyrum/charms`, overridable by `HYRUM_CHARMS` or `--dest`. The same default and override apply to `hyrum check --charms-dir`.
+
+### Clone charms in slices
+
+Cloning several hundred repositories in one run can take a long time over a slow connection. Use `--limit` to clone a slice at a time:
+
+```text
+hyrum get-charms --limit 50
+```
+
+`--limit` counts only charms that aren't in the destination yet, so running the same command again clones the next 50 rather than pulling the first 50 again. When there's nothing left to clone, hyrum says so and exits. With `--repo`, the limit applies to the charms that match the pattern.
+
+To pull updates for charms that are already cloned, run `hyrum get-charms` without `--limit`.
 
 ## Use a different charms directory
 

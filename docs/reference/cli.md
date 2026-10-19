@@ -268,7 +268,7 @@ Each repository is cloned to `<dest>/<owner>/<name>`, where `<owner>` and `<name
 : Default: `.*`
 
 `--limit N`
-: Stop after selecting this many charms; `0` selects every match. With `--repo`, the limit applies after the pattern.
+: Clone at most this many charms that aren't in the destination yet. Skips charms that have already been cloned, so that running the same command again clones the next slice rather than pulling the same one again. `0` clones or pulls every match. With `--repo`, the limit applies to the charms that match the pattern.
 : Default: `0`
 
 `--quiet`
