@@ -662,12 +662,14 @@ def test_get_charms_does_not_blame_repo_for_an_empty_csv(tmp_path: pathlib.Path,
     assert '--repo' not in err
 
 
+@pytest.mark.parametrize('repository', ['', '   ', '/'])
 def test_get_charms_does_not_blame_repo_when_no_row_has_a_repository(
-    tmp_path: pathlib.Path, spawner, capsys
+    tmp_path: pathlib.Path, spawner, capsys, repository: str
 ):
     csv_path = tmp_path / 'charms.csv'
     csv_path.write_text(
-        'Charm Name,Repository,Branch (if not the default)\nfoo,,\n', encoding='utf-8'
+        f'Charm Name,Repository,Branch (if not the default)\nfoo,{repository},\n',
+        encoding='utf-8',
     )
     spawner()
 
@@ -704,6 +706,30 @@ def test_get_charms_limit_fetches_the_next_slice_on_a_second_run(tmp_path: pathl
 
     assert first == {'c0', 'c1'}
     assert second == {'c2', 'c3'}
+
+
+@pytest.mark.parametrize(('existing', 'expected'), [('foo', 'foo-1.0'), ('foo-1.0', 'foo')])
+def test_get_charms_limit_treats_each_branch_as_its_own_checkout(
+    tmp_path: pathlib.Path, spawner, existing: str, expected: str
+):
+    """A checkout of one branch doesn't count as a checkout of another branch."""
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text(
+        'Charm Name,Repository,Branch (if not the default)\n'
+        'foo,https://github.com/canonical/foo,\n'
+        'foo,https://github.com/canonical/foo,1.0\n',
+        encoding='utf-8',
+    )
+    dest = tmp_path / 'dest'
+    (dest / 'canonical' / existing).mkdir(parents=True)
+    fake = spawner(FakeProc(returncode=0))
+
+    assert _run_get_charms(['--source', str(csv_path), '--dest', str(dest), '--limit', '1']) == 0
+
+    assert len(fake.calls) == 1
+    argv, _ = fake.calls[0]
+    assert argv[1] == 'clone'
+    assert argv[-1].rsplit('/', 1)[-1] == expected
 
 
 def test_get_charms_reports_when_the_limited_slice_is_already_complete(

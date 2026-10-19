@@ -649,13 +649,7 @@ def _positive_int(value: str) -> int:
 
 
 def _regex(value: str) -> str:
-    """Argparse ``type`` for a --repo pattern: reject a bad regex at parse time.
-
-    Compiled and thrown away -- the callers keep taking the pattern as a string.
-    Without this a typo like ``--repo '['`` escapes as a raw ``re.error``
-    traceback from wherever the pattern is first compiled, which is neither of
-    the two places the user typed it.
-    """
+    """Argparse ``type`` for a --repo pattern, so that we can reject a bad regex at parse time."""
     try:
         re.compile(value)
     except re.error as exc:
@@ -1291,9 +1285,10 @@ def _add_get_charms_subparser(
         type=_non_negative_int,
         default=0,
         help=(
-            'Clone at most this many charms that are not in the destination yet '
-            '(0 = every match, pulling the ones already there). Charms already '
-            'cloned are skipped, so repeated runs fetch the next slice.'
+            "Clone at most this many charms that aren't in the destination yet. "
+            'Skips already-cloned charms, so repeated runs clone the next slice. '
+            '0 clones or pulls every match. '
+            'With --repo, the limit applies to the charms that match the pattern.'
         ),
     )
     parser.add_argument('--quiet', action='store_true', help='Suppress non-error output.')
@@ -1601,16 +1596,16 @@ def _run_get_charms(args: argparse.Namespace) -> int:
     with source.open(newline='', encoding='utf-8') as f:
         rows: list[get_charms.CharmRow] = list(csv.DictReader(f))  # type: ignore[arg-type]
 
-    # These four "nothing to do" messages go to stderr rather than through
-    # logger: --quiet is ERROR, so a warning would leave a run that did nothing
-    # indistinguishable from one that did the work -- and --quiet is exactly
-    # what the unattended runs this subcommand exists for are invoked with.
-    # They are also kept apart, because "the CSV is empty" and "your --repo
-    # matched nothing" send the reader to different places.
+    # These "nothing to do" messages go to stderr rather than through
+    # logger. --quiet is ERROR, so a warning would print nothing, and a run
+    # that did nothing would look the same as one that did the work. That
+    # would be a problem because we expect unattended runs to set --quiet.
+    # The messages stay separate because "the CSV is empty" and "your
+    # --repo matched nothing" send the reader to different places.
     if not rows:
         print(f'hyrum: {source} lists no charms; nothing to do.', file=sys.stderr)
         return 0
-    if not any((row.get('Repository') or '').strip() for row in rows):
+    if not any(get_charms.repository_of(row) for row in rows):
         print(f'hyrum: no row in {source} has a Repository; nothing to do.', file=sys.stderr)
         return 0
 
@@ -1623,8 +1618,7 @@ def _run_get_charms(args: argparse.Namespace) -> int:
         return 0
     if args.limit:
         # Existing checkouts are skipped before the limit is counted, so that
-        # `--limit 50` run twice fetches a hundred charms rather than the same
-        # fifty twice.
+        # two `--limit 50` runs fetch 100 charms, not the same 50 twice.
         selected = get_charms.select_rows(selected, limit=args.limit, skip_existing_in=dest)
         if not selected:
             print(

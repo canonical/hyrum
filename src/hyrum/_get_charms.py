@@ -98,11 +98,8 @@ def select_rows(
 
     ``skip_existing_in`` is a destination directory whose existing checkouts
     are dropped before ``limit`` is counted, so that consecutive limited runs
-    fetch successive slices instead of the same one. Without it a limit is
-    always spent on the head of the list: ``--limit 50`` twice over selects
-    the same fifty rows, re-pulling what it already has and never reaching
-    the rest -- which is the population-over-a-slow-link case the flag exists
-    for. Callers that want every matching row refreshed pass ``None``.
+    fetch successive slices instead of the same one. Callers that want every
+    matching row refreshed pass ``None``.
 
     Rows with no ``Repository`` cannot be named, so they are dropped here
     rather than counted against ``limit``. ``process_rows`` guards against
@@ -114,7 +111,7 @@ def select_rows(
     for row in rows:
         if limit > 0 and len(selected) >= limit:
             break
-        repository = (row.get('Repository') or '').rstrip('/')
+        repository = repository_of(row)
         if not repository:
             logger.warning('Skipping row without Repository: %r', row)
             continue
@@ -171,10 +168,10 @@ async def process_rows(
     duplicates = 0
     async with asyncio.TaskGroup() as tg:
         for row in rows:
-            if not row.get('Repository'):
+            repository = repository_of(row)
+            if not repository:
                 logger.warning('Skipping row without Repository: %r', row)
                 continue
-            repository = row['Repository'].rstrip('/')
             name = _repo_label(repository)
             branch = row.get('Branch (if not the default)') or None
             repo_path = repo_folder(dest, repository, branch)
@@ -200,6 +197,11 @@ async def process_rows(
         logger.info('get-charms: %d rows skipped as duplicates of an earlier row.', duplicates)
     if failures:
         logger.warning('Failed: %s', ', '.join(failures))
+
+
+def repository_of(row: CharmRow) -> str:
+    """Return the row's ``Repository`` URL, or ``''`` if it has none."""
+    return (row.get('Repository') or '').strip().rstrip('/')
 
 
 def _repo_label(repository: str) -> str:
