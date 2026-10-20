@@ -290,6 +290,46 @@ def test_pyproject_uv_is_unchanged_under_existing_sources(
         assert patched.count('\nops-tracing = { git ') == 1
 
 
+def test_pyproject_uv_path_is_unchanged_under_existing_config_settings(
+    tmp_path: pathlib.Path, ops_path: patchers.OpsSource
+):
+    """A pyproject already carrying our config-settings block re-patches cleanly.
+
+    Same shared-cache race as
+    ``test_pyproject_uv_is_unchanged_under_existing_sources``: a second run that
+    snapshots the first run's patched pyproject as ``original`` must not end up
+    with a duplicate ``ops`` key under ``[tool.uv.config-settings-package]``.
+    """
+    py = tmp_path / 'pyproject.toml'
+    op_path = tmp_path / 'operator'
+    py.write_text(
+        textwrap.dedent(f"""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops @ file://{op_path}",
+        ]
+
+        [tool.uv]
+        dev-dependencies = []
+
+        [tool.uv.sources]
+        ops = {{ path = "{op_path}", editable = true }}
+        ops-scenario = {{ path = "{op_path}/testing", editable = true }}
+        ops-tracing = {{ path = "{op_path}/tracing", editable = true }}
+
+        [tool.uv.config-settings-package]
+        ops = {{ editable_mode = "compat" }}
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
+        patched = _read(py)
+        tomllib.loads(patched)
+        assert patched.count('\nops = { editable_mode') == 1
+
+
 def test_pyproject_uv_always_hoists_all_companions(
     tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
 ):
@@ -1352,6 +1392,80 @@ def test_pyproject_uv_path_emits_path_source(tmp_path: pathlib.Path, ops_path: p
         assert 'subdirectory' not in patched
         deps = tomllib.loads(patched)['project']['dependencies']
         assert f'ops-scenario @ file://{companion}' in deps
+
+
+def test_pyproject_uv_path_installs_in_compat_editable_mode(
+    tmp_path: pathlib.Path, ops_path: patchers.OpsSource
+):
+    # setuptools' default editable install is an import hook that Pyright can't
+    # follow; compat mode puts a plain path in the .pth instead.
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops>=2.10",
+        ]
+
+        [tool.uv]
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+        assert parsed['tool']['uv']['config-settings-package'] == {
+            'ops': {'editable_mode': 'compat'},
+        }
+
+
+def test_pyproject_uv_path_merges_into_existing_config_settings_package(
+    tmp_path: pathlib.Path, ops_path: patchers.OpsSource
+):
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops>=2.10",
+        ]
+
+        [tool.uv.config-settings-package]
+        ops = { editable_mode = "strict" }
+        other = { foo = "bar" }
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+        assert parsed['tool']['uv']['config-settings-package'] == {
+            'ops': {'editable_mode': 'compat'},
+            'other': {'foo': 'bar'},
+        }
+
+
+def test_pyproject_uv_git_leaves_config_settings_alone(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
+):
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops>=2.10",
+        ]
+
+        [tool.uv]
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        assert 'config-settings-package' not in _read(py)
 
 
 # ---- error paths -------------------------------------------------------------
