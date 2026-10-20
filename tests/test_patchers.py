@@ -286,6 +286,46 @@ def test_pyproject_uv_is_unchanged_under_existing_sources(
         assert patched.count('\nops-tracing = { git ') == 1
 
 
+def test_pyproject_uv_path_is_unchanged_under_existing_config_settings(
+    tmp_path: pathlib.Path, ops_path: patchers.OpsSource
+):
+    """A pyproject already carrying our config-settings block re-patches cleanly.
+
+    Same shared-cache race as
+    ``test_pyproject_uv_is_unchanged_under_existing_sources``: a second run that
+    snapshots the first run's patched pyproject as ``original`` must not end up
+    with a duplicate ``ops`` key under ``[tool.uv.config-settings-package]``.
+    """
+    py = tmp_path / 'pyproject.toml'
+    op_path = tmp_path / 'operator'
+    py.write_text(
+        textwrap.dedent(f"""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops @ file://{op_path}",
+        ]
+
+        [tool.uv]
+        dev-dependencies = []
+
+        [tool.uv.sources]
+        ops = {{ path = "{op_path}", editable = true }}
+        ops-scenario = {{ path = "{op_path}/testing", editable = true }}
+        ops-tracing = {{ path = "{op_path}/tracing", editable = true }}
+
+        [tool.uv.config-settings-package]
+        ops = {{ editable_mode = "compat" }}
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
+        patched = _read(py)
+        tomllib.loads(patched)
+        assert patched.count('\nops = { editable_mode') == 1
+
+
 def test_pyproject_uv_always_hoists_all_companions(
     tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
 ):

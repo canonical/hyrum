@@ -778,14 +778,11 @@ def _patch_pyproject_uv(
     out = _add_to_uv_table(out, _UV_SOURCES, source_lines)
 
     if ops.kind == 'path':
-        # A path source is installed editable (see ``OpsSource.uv_source_inline``),
-        # and setuptools' default editable install of a flat-layout project is an
-        # import hook that Python follows but static checkers like Pyright do not,
-        # so every ``import ops`` fails to resolve. ``compat`` mode writes a plain
-        # path into the ``.pth`` instead, at the cost of putting the whole
-        # checkout root on ``sys.path``, so its top-level directories (``test``,
-        # ``testing``, ``docs``, …) also resolve. ``ops-scenario`` (src layout)
-        # and ``ops-tracing`` (hatchling) already get a plain path.
+        # A path source is installed editable (see ``OpsSource.uv_source_inline``).
+        # Hatchling (operator main since 3.x) writes a plain path to the ``.pth``,
+        # but ops 2.23 uses setuptools, whose flat-layout editable install is an
+        # import hook that Pyright can't follow. ``compat`` mode makes setuptools
+        # write a plain path too; hatchling ignores the setting.
         out = _strip_uv_table_ops_entries(out, _UV_CONFIG_SETTINGS_PACKAGE)
         out = _add_to_uv_table(
             out, _UV_CONFIG_SETTINGS_PACKAGE, ['ops = { editable_mode = "compat" }']
