@@ -188,10 +188,8 @@ def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
             )
             continue
         # Some monorepos keep one test harness at the root for the charms
-        # below it, which have no runner or manifest of their own. Those
-        # charms would all be skipped, so run the root instead. A charm that
-        # can run by itself is still run by itself, since that keeps its
-        # outcome separate from the others'.
+        # below it. We only run the root if none of the charms can run
+        # on its own (due to missing a runner or a Python manifest).
         if _has_harness(repo):
             stranded = sum(1 for c in charms if not _has_harness(c))
             if stranded == len(charms):
