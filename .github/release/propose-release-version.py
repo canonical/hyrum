@@ -83,9 +83,12 @@ def main() -> None:
                 f'Could not work out the version after {previous}.'
                 ' Run this again with an explicit version.'
             )
-        fields = dict(line.split('=', 1) for line in output.splitlines())
-        version = fields['version']
-        print(f'The commits since {previous} are a {fields["size"]} release.')
+        try:
+            fields = dict(line.split('=', 1) for line in output.splitlines())
+            version, size = fields['version'], fields['size']
+        except (ValueError, KeyError):
+            fail(f'next-version printed something other than version= and size=: {output!r}')
+        print(f'The commits since {previous} are a {size} release.')
 
     if succeeds('git', 'rev-parse', '-q', '--verify', f'refs/tags/v{version}'):
         fail(f'v{version} is already tagged.')
