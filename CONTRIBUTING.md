@@ -114,7 +114,7 @@ Nothing is published and the tag doesn't exist yet. Edit the draft if you need t
 
 ## 3. Publish the draft
 
-Publishing the draft creates the `vX.Y.Z` tag, which starts the `publish` workflow. That publishes to [PyPI](https://pypi.org/p/hyrum) with Trusted Publishing, and attests the build and its SBOM. It stops before building if the tag doesn't match the version in `pyproject.toml`. If that happens, don't move the tag (the tag ruleset won't let you anyway). Delete the release, and release the next patch version instead.
+Publishing the draft creates the `vX.Y.Z` tag, which starts the `publish` workflow. That publishes to [PyPI](https://pypi.org/p/hyrum) with Trusted Publishing, and attests the build and its SBOM. It stops before building if the tag doesn't match the version in `pyproject.toml`, which leaves the release published and the tag in place, but nothing on PyPI. If that happens, don't move the tag (the tag ruleset won't let you anyway). Delete the release, and release the next patch version instead.
 
 To rehearse a release, run the `publish-test-pypi` workflow manually from the Actions tab: it builds from the current `main` and publishes to [Test PyPI](https://test.pypi.org/p/hyrum). Note that a version can only be uploaded once, so bump the version before re-running it.
 
