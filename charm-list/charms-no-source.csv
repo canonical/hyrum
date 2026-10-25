@@ -72,6 +72,7 @@ elasticsearch-k8s
 enterprise-store
 etcd
 flannel
+forgejo-k8s
 ganglia-node
 gcp-integrator
 geth
@@ -219,4 +220,5 @@ ubuntu-lite
 ubuntu-repository-cache
 userdir-ldap
 vsphere-integrator
+wordpress-k8s
 znc

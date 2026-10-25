@@ -576,3 +576,6 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/mimir-operators,,auto
 ,https://github.com/reductstore/reductstore-k8s,,auto
 ,https://github.com/canonical/gopkg-charmed,,auto
+,https://github.com/canonical/service-mesh,,auto
+,https://github.com/Abuelodelanada/pi-hole-operator,,auto
+,https://github.com/canonical/slurm-charms,,auto
