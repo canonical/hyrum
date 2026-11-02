@@ -114,6 +114,11 @@ llms_txt_description = (
     'of their dependencies first.'
 )
 
+# Use file-suffix mode so the generated markdown files are named e.g. index.html.md
+# instead of index.md. GitHub Pages serves .md files natively and prefers them
+# over .html, so the default "auto" mode's url-suffix files shadow the HTML.
+llms_txt_suffix_mode = 'file-suffix'
+
 ###########################
 # Link checker exceptions #
 ###########################

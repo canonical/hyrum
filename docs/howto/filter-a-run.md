@@ -59,6 +59,7 @@ hyrum check unit --from-results ~/.cache/hyrum/results/unit.auto.json --status t
 A run narrowed this way does not update the rolling results, since it would record every charm it did not run as `skipped`. Pass `--save PATH` to keep its results.
 
 (filter-a-run-passed-baseline)=
+
 ## Run only the charms that passed a baseline
 
 Many charms fail for reasons that predate the change under test. To run a patched check against only the charms that pass on your machine, first save a baseline:

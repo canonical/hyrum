@@ -23,6 +23,7 @@ Each charm produces exactly one outcome. The possible statuses are:
 A non-passing status says what happened, not what to do about it. See [How to triage a run](../howto/triage-a-run) for getting at the detail behind a result with `--verbose` and `--log-dir`.
 
 (patcher-skip-reasons)=
+
 ### Patcher skip reasons
 
 A patcher skips a charm, rather than reporting `patcher_error`, when the charm simply does not use the thing being patched. These skips carry a machine-readable category, which appears as an indented row under `skipped` in the summary table:
