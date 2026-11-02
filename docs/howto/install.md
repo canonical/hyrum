@@ -35,6 +35,7 @@ uv sync --all-groups
 The `uv sync` command creates a virtual environment and installs all dependencies. Run hyrum via `uv run hyrum` or activate the virtual environment first.
 
 (run-hyrum-in-a-workshop)=
+
 ## Run hyrum in a workshop
 
 The hyrum repository defines a `dev` [workshop](https://ubuntu.com/workshop): a container with hyrum installed from the checkout, along with `uv`, `tox`, `make`, `poetry`, and the build packages listed under [Host prerequisites for fleet runs](#host-prerequisites-for-fleet-runs), so none of these needs installing on the host. The workshop's `hyrum` action runs the CLI in the container as a separate `hyrum-check` user. Workshop mounts the hyrum checkout into the container read-write, but `hyrum-check` can only read it, and has no other access to the host.
@@ -76,6 +77,7 @@ When `--patch` points at a git URL or local checkout, you also need:
 See [How to patch ops to a development branch](patch-ops-branch) for details.
 
 (host-prerequisites-for-fleet-runs)=
+
 ## Host prerequisites for fleet runs
 
 A non-trivial fraction of charms pull C/Rust extensions that `pip` or `uv` will build from source if no wheel is available for the host's Python. On a fresh Ubuntu host, missing build tools surface as `failed` outcomes with messages like *"command 'x86_64-linux-gnu-gcc' failed: No such file"* or *"fatal error: Python.h / ffi.h: No such file"*. That is noise rather than a charm regression.

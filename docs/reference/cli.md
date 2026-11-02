@@ -307,6 +307,7 @@ Exits `0` whatever the run contained: `show` displays a run, it does not gate on
 : Print the help text and exit. Available on each subcommand as well.
 
 (exit-codes)=
+
 ## Exit codes
 
 | Code | Meaning |
