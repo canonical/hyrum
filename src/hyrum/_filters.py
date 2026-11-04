@@ -89,9 +89,10 @@ def has_python(repo: pathlib.Path) -> SkipReason:
     ``cluster-api-*`` provider charms): ``ops`` patching has nothing to
     bite on, so they surface as ``patcher_error`` further down. Catch
     them up front by looking for a top-level ``pyproject.toml`` or
-    ``requirements.txt``. Every packable Python charm has one of them,
-    and ``ops`` patching needs one even when the charm declares ops in
-    ``tox.ini``.
+    ``requirements.txt``. The source repository of a Python charm has at
+    least one of them because ``charmcraft pack`` installs the charm's
+    dependencies from it, and ``ops`` patching needs one even when the
+    charm declares ops in ``tox.ini``.
     """
     if (repo / 'pyproject.toml').exists() or (repo / 'requirements.txt').exists():
         return None
