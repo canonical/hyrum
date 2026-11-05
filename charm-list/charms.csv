@@ -337,8 +337,6 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/intel-device-plugins-k8s-operator,,auto-discover
 ,https://github.com/canonical/intro-to-charming-mc,,auto-discover
 ,https://github.com/canonical/irc-bridge-operator,,auto-discover
-,https://github.com/canonical/istio-beacon-k8s-operator,,auto-discover
-,https://github.com/canonical/istio-k8s-operator,,auto-discover
 ,https://github.com/canonical/jimm-k8s-operator,,auto-discover
 ,https://github.com/canonical/johnny,,auto-discover
 ,https://github.com/canonical/juju-introspect-operator,,auto-discover
@@ -579,3 +577,4 @@ openstack-charmers,https://git.launchpad.net/~openstack-charmers/charms/+source/
 ,https://github.com/canonical/service-mesh,,auto
 ,https://github.com/Abuelodelanada/pi-hole-operator,,auto
 ,https://github.com/canonical/slurm-charms,,auto
+,https://github.com/canonical/bingo,,auto
