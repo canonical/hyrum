@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import multiprocessing
+import multiprocessing.synchronize
 import pathlib
 import threading
 import time
@@ -39,7 +40,11 @@ def test_no_lock_root_means_no_lock_file(tmp_path: pathlib.Path):
     assert not locks.lock_root_for(tmp_path).exists()
 
 
-def _hold(cache: str, started, release) -> None:  # type: ignore[no-untyped-def]
+def _hold(
+    cache: str,
+    started: multiprocessing.synchronize.Event,
+    release: multiprocessing.synchronize.Event,
+) -> None:
     root = locks.lock_root_for(pathlib.Path(cache))
     with locks.charm_lock(
         pathlib.Path(cache) / 'a-charm', lock_root=root, base=pathlib.Path(cache)

@@ -4,6 +4,7 @@ import asyncio
 import dataclasses
 import os
 import pathlib
+import typing
 
 import pytest
 
@@ -59,7 +60,7 @@ class FakeSpawner:
         self.calls: list[tuple[tuple[str, ...], str]] = []
         self.kwargs: list[dict[str, object]] = []
 
-    async def __call__(self, *args, **kwargs):
+    async def __call__(self, *args: str, **kwargs: object) -> FakeProc:
         self.calls.append((tuple(args), str(kwargs.get('cwd'))))
         self.kwargs.append(dict(kwargs))
         if not self._procs:
@@ -71,8 +72,12 @@ class FakeSpawner:
         return proc
 
 
+class SpawnerFactory(typing.Protocol):
+    def __call__(self, *new_procs: FakeProc | OSError) -> FakeSpawner: ...
+
+
 @pytest.fixture
-def spawner(monkeypatch):
+def spawner(monkeypatch: pytest.MonkeyPatch) -> SpawnerFactory:
     procs: list[FakeProc | OSError] = []
     fake = FakeSpawner(procs)
     monkeypatch.setattr(asyncio, 'create_subprocess_exec', fake)
@@ -100,7 +105,7 @@ def test_tox_runner_does_not_detect_without_tox_ini(tmp_path: pathlib.Path):
     assert not runners.ToxRunner.detect(tmp_path)
 
 
-async def test_tox_runner_pass(tmp_path: pathlib.Path, spawner):
+async def test_tox_runner_pass(tmp_path: pathlib.Path, spawner: SpawnerFactory):
     spawner(FakeProc(returncode=0))
     result = await runners.ToxRunner(executable='tox').run(tmp_path, 'unit')
     assert result.status is runners.RunStatus.PASSED
@@ -110,14 +115,16 @@ async def test_tox_runner_pass(tmp_path: pathlib.Path, spawner):
     assert result.target == 'unit'
 
 
-async def test_tox_runner_fail(tmp_path: pathlib.Path, spawner):
+async def test_tox_runner_fail(tmp_path: pathlib.Path, spawner: SpawnerFactory):
     spawner(FakeProc(returncode=1, stderr=b'AssertionError'))
     result = await runners.ToxRunner().run(tmp_path, 'unit')
     assert result.status is runners.RunStatus.FAILED
     assert result.output == b'AssertionError'
 
 
-async def test_tox_runner_merges_stderr_into_stdout(tmp_path: pathlib.Path, spawner):
+async def test_tox_runner_merges_stderr_into_stdout(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     # Both descriptors must point at the same pipe: the order tox and its
     # subprocesses wrote in is only available at capture time, and a log that
     # sections the two streams cannot recover it.
@@ -134,7 +141,9 @@ async def test_tox_runner_merges_stderr_into_stdout(tmp_path: pathlib.Path, spaw
     assert result.output == transcript
 
 
-async def test_tox_runner_strips_ansi_from_captured_output(tmp_path: pathlib.Path, spawner):
+async def test_tox_runner_strips_ansi_from_captured_output(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     # tox sets PY_COLORS=1 for its subprocesses (charms hard-code it too),
     # so pytest emits CSI sequences even when stdout is a pipe. Strip at the
     # runner so log files and the summary extractor see plain text.
@@ -149,7 +158,9 @@ async def test_tox_runner_strips_ansi_from_captured_output(tmp_path: pathlib.Pat
     assert result.output == b'FAILED tests/test_x.py::test_y\nE AssertionError\n'
 
 
-async def test_tox_runner_strips_ansi_with_intermediate_bytes(tmp_path: pathlib.Path, spawner):
+async def test_tox_runner_strips_ansi_with_intermediate_bytes(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     # CSI sequences may include intermediate bytes (0x20-0x2F) between the
     # parameter and final bytes, e.g. `ESC[1 q` (set cursor style).
     spawner(FakeProc(returncode=0, stdout=b'before\x1b[1 qafter\n'))
@@ -157,13 +168,13 @@ async def test_tox_runner_strips_ansi_with_intermediate_bytes(tmp_path: pathlib.
     assert result.output == b'beforeafter\n'
 
 
-async def test_tox_runner_no_target_when_rc_254(tmp_path: pathlib.Path, spawner):
+async def test_tox_runner_no_target_when_rc_254(tmp_path: pathlib.Path, spawner: SpawnerFactory):
     spawner(FakeProc(returncode=254))
     result = await runners.ToxRunner().run(tmp_path, 'unit')
     assert result.status is runners.RunStatus.NO_TARGET
 
 
-async def test_tox_runner_timeout_kills_process(tmp_path: pathlib.Path, spawner):
+async def test_tox_runner_timeout_kills_process(tmp_path: pathlib.Path, spawner: SpawnerFactory):
     proc = FakeProc(raise_timeout=True)
     spawner(proc)
     result = await runners.ToxRunner(timeout=0).run(tmp_path, 'unit')
@@ -172,7 +183,9 @@ async def test_tox_runner_timeout_kills_process(tmp_path: pathlib.Path, spawner)
     assert result.returncode is None
 
 
-async def test_tox_runner_missing_executable_is_a_runner_error(tmp_path: pathlib.Path, spawner):
+async def test_tox_runner_missing_executable_is_a_runner_error(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     # A missing tox is a host problem, not a charm problem: it must not be
     # reported as `failed` (a test failure) or escape to the pool's catch-all
     # (which records it as a patcher problem).
@@ -183,7 +196,9 @@ async def test_tox_runner_missing_executable_is_a_runner_error(tmp_path: pathlib
     assert b"could not run 'tox'" in result.output
 
 
-async def test_tox_runner_passes_executable_through(tmp_path: pathlib.Path, spawner):
+async def test_tox_runner_passes_executable_through(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     s = spawner(FakeProc(returncode=0))
     await runners.ToxRunner(executable='uvx tox').run(tmp_path, 'lint')
     argv, _ = s.calls[0]
@@ -197,7 +212,7 @@ def _tox_overrides(spawner_call_kwargs: dict[str, object]) -> list[str]:
 
 
 async def test_tox_runner_tells_tox_not_to_write_a_venv_redirect(
-    tmp_path: pathlib.Path, spawner, monkeypatch
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.delenv('TOX_OVERRIDE', raising=False)
     fake = spawner(FakeProc(returncode=0))
@@ -207,7 +222,7 @@ async def test_tox_runner_tells_tox_not_to_write_a_venv_redirect(
 
 
 async def test_tox_runner_keeps_existing_tox_overrides(
-    tmp_path: pathlib.Path, spawner, monkeypatch
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setenv('TOX_OVERRIDE', 'testenv:unit.pass_env+=FOO;')
     fake = spawner(FakeProc(returncode=0))
@@ -231,7 +246,7 @@ def test_make_runner_also_detects_lowercase_makefile(tmp_path: pathlib.Path):
     assert runners.MakeRunner.detect(tmp_path)
 
 
-async def test_make_runner_pass(tmp_path: pathlib.Path, spawner):
+async def test_make_runner_pass(tmp_path: pathlib.Path, spawner: SpawnerFactory):
     # Probe says target exists (rc 0 or 1 from -nq), then the real run passes.
     spawner(FakeProc(returncode=0), FakeProc(returncode=0))
     result = await runners.MakeRunner().run(tmp_path, 'unit')
@@ -239,7 +254,7 @@ async def test_make_runner_pass(tmp_path: pathlib.Path, spawner):
 
 
 async def test_make_runner_tells_a_nested_tox_not_to_write_a_venv_redirect(
-    tmp_path: pathlib.Path, spawner, monkeypatch
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.delenv('TOX_OVERRIDE', raising=False)
     fake = spawner(FakeProc(returncode=0), FakeProc(returncode=0))
@@ -247,7 +262,7 @@ async def test_make_runner_tells_a_nested_tox_not_to_write_a_venv_redirect(
     assert _tox_overrides(fake.kwargs[1]) == ['tox.venv_redirect=false']
 
 
-async def test_make_runner_no_target_via_probe(tmp_path: pathlib.Path, spawner):
+async def test_make_runner_no_target_via_probe(tmp_path: pathlib.Path, spawner: SpawnerFactory):
     spawner(FakeProc(returncode=2, stderr=b"make: *** No rule to make target 'unit'.  Stop.\n"))
     result = await runners.MakeRunner().run(tmp_path, 'unit')
     assert result.status is runners.RunStatus.NO_TARGET
@@ -255,7 +270,7 @@ async def test_make_runner_no_target_via_probe(tmp_path: pathlib.Path, spawner):
     # (Only one fake was queued; if a second had been requested we'd assert.)
 
 
-async def test_make_runner_failure(tmp_path: pathlib.Path, spawner):
+async def test_make_runner_failure(tmp_path: pathlib.Path, spawner: SpawnerFactory):
     spawner(
         FakeProc(returncode=1),  # probe: rule needs work but exists
         FakeProc(returncode=1, stderr=b'FAILED tests'),  # real run: test failure
@@ -264,7 +279,9 @@ async def test_make_runner_failure(tmp_path: pathlib.Path, spawner):
     assert result.status is runners.RunStatus.FAILED
 
 
-async def test_make_runner_no_target_from_real_run_output(tmp_path: pathlib.Path, spawner):
+async def test_make_runner_no_target_from_real_run_output(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     # Edge case: probe couldn't confirm (e.g. weird Makefile), but the real
     # run's own message is canonical. It arrives on the merged buffer, since
     # the real invocation points stderr at the stdout pipe.
@@ -277,7 +294,7 @@ async def test_make_runner_no_target_from_real_run_output(tmp_path: pathlib.Path
 
 
 async def test_make_runner_marker_in_recipe_output_is_still_a_failure(
-    tmp_path: pathlib.Path, spawner
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
 ):
     # The real invocation merges stderr into stdout, so a recipe that prints
     # the words itself reaches the missing-target check. Without make's own
@@ -294,7 +311,9 @@ async def test_make_runner_marker_in_recipe_output_is_still_a_failure(
     assert result.status is runners.RunStatus.FAILED
 
 
-async def test_make_runner_nested_missing_target_is_a_failure(tmp_path: pathlib.Path, spawner):
+async def test_make_runner_nested_missing_target_is_a_failure(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     # A sub-make reporting a missing target says nothing about the target we
     # asked for, which does exist and did run.
     spawner(
@@ -309,7 +328,7 @@ async def test_make_runner_nested_missing_target_is_a_failure(tmp_path: pathlib.
 
 
 async def test_make_runner_probe_keeps_streams_apart_but_run_merges(
-    tmp_path: pathlib.Path, spawner
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
 ):
     # The `-nq` probe reads stderr as a signal, so it keeps its own pipe; the
     # real invocation is captured for a human, so it merges.
@@ -319,7 +338,9 @@ async def test_make_runner_probe_keeps_streams_apart_but_run_merges(
     assert s.kwargs[1]['stderr'] is asyncio.subprocess.STDOUT
 
 
-async def test_make_runner_missing_executable_is_a_runner_error(tmp_path: pathlib.Path, spawner):
+async def test_make_runner_missing_executable_is_a_runner_error(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     # The `-nq` probe swallows the launch failure so the real invocation can
     # report it with its own status; both calls raise here.
     spawner(_missing('make'), _missing('make'))
@@ -328,7 +349,7 @@ async def test_make_runner_missing_executable_is_a_runner_error(tmp_path: pathli
     assert b"could not run 'make'" in result.output
 
 
-async def test_make_runner_timeout(tmp_path: pathlib.Path, spawner):
+async def test_make_runner_timeout(tmp_path: pathlib.Path, spawner: SpawnerFactory):
     spawner(FakeProc(returncode=0), FakeProc(raise_timeout=True))
     result = await runners.MakeRunner(timeout=0).run(tmp_path, 'unit')
     assert result.status is runners.RunStatus.TIMEOUT
@@ -347,7 +368,9 @@ def test_by_name_unknown_raises():
         runners.by_name('ninja')
 
 
-async def test_auto_picks_tox_when_only_tox_present(tmp_path: pathlib.Path, spawner):
+async def test_auto_picks_tox_when_only_tox_present(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     (tmp_path / 'tox.ini').write_text('[tox]\n')
     spawner(FakeProc(returncode=0))
     result = await runners.auto().run(tmp_path, 'unit')
@@ -355,7 +378,9 @@ async def test_auto_picks_tox_when_only_tox_present(tmp_path: pathlib.Path, spaw
     assert result.status is runners.RunStatus.PASSED
 
 
-async def test_auto_picks_make_when_only_makefile_present(tmp_path: pathlib.Path, spawner):
+async def test_auto_picks_make_when_only_makefile_present(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     (tmp_path / 'Makefile').write_text('unit:\n\ttrue\n')
     spawner(FakeProc(returncode=0), FakeProc(returncode=0))
     result = await runners.auto().run(tmp_path, 'unit')
@@ -363,7 +388,9 @@ async def test_auto_picks_make_when_only_makefile_present(tmp_path: pathlib.Path
     assert result.status is runners.RunStatus.PASSED
 
 
-async def test_auto_falls_back_to_make_when_tox_lacks_target(tmp_path: pathlib.Path, spawner):
+async def test_auto_falls_back_to_make_when_tox_lacks_target(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     (tmp_path / 'tox.ini').write_text('[tox]\n')
     (tmp_path / 'Makefile').write_text('unit:\n\ttrue\n')
     # tox -e unit returns 254 (no env); make probe + real both succeed.
@@ -384,7 +411,9 @@ async def test_auto_reports_no_target_when_no_runner_can_run(tmp_path: pathlib.P
     assert result.runner == 'auto'
 
 
-async def test_auto_falls_back_to_make_when_tox_cannot_launch(tmp_path: pathlib.Path, spawner):
+async def test_auto_falls_back_to_make_when_tox_cannot_launch(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     (tmp_path / 'tox.ini').write_text('[tox]\n')
     (tmp_path / 'Makefile').write_text('unit:\n\ttrue\n')
     spawner(
@@ -397,7 +426,9 @@ async def test_auto_falls_back_to_make_when_tox_cannot_launch(tmp_path: pathlib.
     assert result.status is runners.RunStatus.PASSED
 
 
-async def test_auto_prefers_launch_failure_over_no_target(tmp_path: pathlib.Path, spawner):
+async def test_auto_prefers_launch_failure_over_no_target(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     # "tox is not installed" is more actionable than make's "no such target".
     (tmp_path / 'tox.ini').write_text('[tox]\n')
     (tmp_path / 'Makefile').write_text('lint:\n\ttrue\n')
@@ -410,7 +441,7 @@ async def test_auto_prefers_launch_failure_over_no_target(tmp_path: pathlib.Path
     assert b"could not run 'tox'" in result.output
 
 
-async def test_auto_prefer_order_respected(tmp_path: pathlib.Path, spawner):
+async def test_auto_prefer_order_respected(tmp_path: pathlib.Path, spawner: SpawnerFactory):
     (tmp_path / 'tox.ini').write_text('[tox]\n')
     (tmp_path / 'Makefile').write_text('unit:\n\ttrue\n')
     # When user asks make-first, even with tox.ini present we should hit make.
@@ -419,7 +450,9 @@ async def test_auto_prefer_order_respected(tmp_path: pathlib.Path, spawner):
     assert result.runner == 'make'
 
 
-async def test_auto_prefers_tox_when_a_charm_has_both(tmp_path: pathlib.Path, spawner):
+async def test_auto_prefers_tox_when_a_charm_has_both(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     # The common real layout: a Makefile that mostly delegates, and a tox.ini
     # that holds the actual environments.
     (tmp_path / 'tox.ini').write_text('[testenv:unit]\n')

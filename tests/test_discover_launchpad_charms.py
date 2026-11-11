@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from tools import discover_launchpad_charms as uut
 
 
@@ -50,7 +52,7 @@ def test_non_charm_repos_are_left_alone_without_probing():
     assert client.calls == []
 
 
-def test_discover_emits_the_opendev_url(monkeypatch):
+def test_discover_emits_the_opendev_url(monkeypatch: pytest.MonkeyPatch):
     """The rewrite is applied to the rows discover() returns."""
     monkeypatch.setattr(uut, 'first_marker', lambda *a, **k: 'charmcraft.yaml')
 

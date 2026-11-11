@@ -458,7 +458,7 @@ def _build_runner(
     make_executable: str,
     timeout: int,
     prefer: Sequence[str] = ('tox', 'make'),
-):
+) -> runners.Runner:
     if choice is runners.RunnerChoice.TOX:
         return tox.ToxRunner(executable=tox_executable, timeout=timeout)
     if choice is runners.RunnerChoice.MAKE:

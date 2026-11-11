@@ -85,7 +85,7 @@ def _build_charm(tmp_path: pathlib.Path) -> pathlib.Path:
     return tmp_path
 
 
-def _swap(**overrides) -> patchers.VendoredLibSwap:
+def _swap(**overrides: object) -> patchers.VendoredLibSwap:
     defaults = dict(
         host_charm='operator_libs_linux',
         version=0,

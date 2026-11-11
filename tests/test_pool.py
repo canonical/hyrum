@@ -47,7 +47,7 @@ class FailingPatcher:
     def __enter__(self):  # pragma: no cover — unused
         return self
 
-    def __exit__(self, *args):  # pragma: no cover — unused
+    def __exit__(self, *args: object):  # pragma: no cover — unused
         return False
 
 
@@ -85,7 +85,7 @@ async def test_run_pool_handles_runner_exception_as_patcher_error(tmp_path: path
     class Boom:
         name = 'boom'
 
-        async def run(self, repo, target):
+        async def run(self, repo: pathlib.Path, target: str):
             raise RuntimeError('kaboom')
 
     results = await pool.run_pool(
@@ -191,7 +191,7 @@ def test_add_skipped_appends():
         ([pool.Outcome(repo=pathlib.Path('/x'), status='runner_error')], False),
     ],
 )
-def test_passed(outcomes, expected):
+def test_passed(outcomes: list[pool.Outcome], expected: bool):
     assert pool.passed(outcomes) is expected
 
 
