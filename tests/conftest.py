@@ -62,7 +62,7 @@ def make_charm(
 
 
 @pytest.fixture
-def charm_cache(tmp_path: pathlib.Path):
+def charm_cache(tmp_path: pathlib.Path) -> pathlib.Path:
     cache = tmp_path / 'cache'
     cache.mkdir()
     return cache

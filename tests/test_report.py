@@ -10,7 +10,7 @@ from hyrum import _report as report
 
 
 def _render(
-    outcomes,
+    outcomes: list[pool.Outcome],
     *,
     base: pathlib.Path,
     target: str = 'unit',
@@ -220,7 +220,7 @@ def test_render_falls_back_to_ascii_when_the_stream_cannot_encode(tmp_path: path
 
 
 def _render_markdown(
-    outcomes,
+    outcomes: list[pool.Outcome],
     *,
     base: pathlib.Path,
     target: str = 'unit',

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pathlib
 import textwrap
 import tomllib
+from collections.abc import Sequence
 
 import packaging.requirements
 import pytest
@@ -804,7 +805,7 @@ def test_pyproject_uv_dep_group_companions_install_without_the_sources(
 
 
 def test_pyproject_poetry_injects_git_under_dependencies(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     # Skip the poetry lock subprocess for unit tests.
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
@@ -830,7 +831,7 @@ def test_pyproject_poetry_injects_git_under_dependencies(
 
 
 def test_pyproject_poetry_with_testing_extra(
-    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
@@ -856,7 +857,7 @@ def test_pyproject_poetry_with_testing_extra(
 
 
 def test_pyproject_poetry_swaps_scenario_declared_separately(
-    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     """Split idiom: ``ops = "^X"`` in main deps, ``ops-scenario = "*"`` in a group.
 
@@ -893,7 +894,7 @@ def test_pyproject_poetry_swaps_scenario_declared_separately(
 
 
 def test_pyproject_poetry_leaves_scenario_alone_when_absent(
-    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     """Don't inject ``ops-scenario`` when the charm doesn't declare it.
 
@@ -922,7 +923,7 @@ def test_pyproject_poetry_leaves_scenario_alone_when_absent(
 
 
 def test_pyproject_poetry_injects_into_the_group_that_declared_ops(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     """ops declared only in a named group is patched back into that group.
 
@@ -955,7 +956,7 @@ def test_pyproject_poetry_injects_into_the_group_that_declared_ops(
 
 
 def test_pyproject_poetry_injects_into_every_declaring_table(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     """ops declared in both the base table and a group is patched in both."""
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
@@ -984,7 +985,7 @@ def test_pyproject_poetry_injects_into_every_declaring_table(
 
 
 def test_pyproject_poetry_keeps_a_companion_in_the_table_that_declared_it(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     """ops-scenario goes back where the charm had it, not everywhere ops is.
 
@@ -1021,7 +1022,7 @@ def test_pyproject_poetry_keeps_a_companion_in_the_table_that_declared_it(
 
 
 def test_pyproject_poetry_companion_follows_ops_when_undeclared(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     """A charm that asks for ops[testing] never declared the companion itself."""
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
@@ -1044,7 +1045,7 @@ def test_pyproject_poetry_companion_follows_ops_when_undeclared(
 
 
 def test_pyproject_poetry_keeps_a_companion_in_dev_dependencies(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     """The legacy dev-dependencies table is one Poetry resolves from too."""
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
@@ -1073,7 +1074,7 @@ def test_pyproject_poetry_keeps_a_companion_in_dev_dependencies(
 
 
 def test_pyproject_poetry_rewrites_a_project_array_in_place(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     """Poetry 2 reads [project] dependencies, so ops is patched there."""
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
@@ -1103,7 +1104,7 @@ def test_pyproject_poetry_rewrites_a_project_array_in_place(
 
 
 def test_pyproject_poetry_keeps_dependency_groups_ops_in_place(
-    tmp_path: pathlib.Path, ops_path: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_path: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     """ops in [dependency-groups] stays there, not in [tool.poetry.dependencies].
 
@@ -1152,7 +1153,10 @@ def test_pyproject_poetry_keeps_dependency_groups_ops_in_place(
     ],
 )
 def test_pyproject_poetry_rewrites_ops_as_the_last_array_entry(
-    tmp_path: pathlib.Path, ops_path: patchers.OpsSource, monkeypatch, last_entry: str
+    tmp_path: pathlib.Path,
+    ops_path: patchers.OpsSource,
+    monkeypatch: pytest.MonkeyPatch,
+    last_entry: str,
 ):
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
@@ -1180,7 +1184,7 @@ def test_pyproject_poetry_rewrites_ops_as_the_last_array_entry(
 
 
 def test_pyproject_poetry_rewrites_a_declared_companion_in_place(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
@@ -1202,7 +1206,7 @@ def test_pyproject_poetry_rewrites_a_declared_companion_in_place(
 
 
 def test_pyproject_poetry_adds_companion_beside_underscore_spelling(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
@@ -1224,7 +1228,7 @@ def test_pyproject_poetry_adds_companion_beside_underscore_spelling(
 
 
 def test_pyproject_poetry_mixed_case_ops_is_an_error(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     (tmp_path / 'pyproject.toml').write_text(
@@ -1247,7 +1251,7 @@ def test_pyproject_poetry_mixed_case_ops_is_an_error(
 
 
 def test_pyproject_poetry_invalid_patched_toml_is_a_patcher_error(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     monkeypatch.setattr(
@@ -1270,7 +1274,7 @@ def test_pyproject_poetry_invalid_patched_toml_is_a_patcher_error(
 
 
 def test_pyproject_poetry_pypi_leaves_array_companions_alone(
-    tmp_path: pathlib.Path, ops_pypi: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_pypi: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
@@ -1291,7 +1295,7 @@ def test_pyproject_poetry_pypi_leaves_array_companions_alone(
 
 
 def test_pyproject_poetry_raises_when_an_array_entry_is_not_rewritten(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     """A declaration left as it was would test the locked ops, not the patched one."""
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
@@ -1316,7 +1320,7 @@ def test_pyproject_poetry_raises_when_an_array_entry_is_not_rewritten(
 
 
 def test_pyproject_poetry_raises_when_there_is_nowhere_to_put_ops(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     """With no declaration and no base table, the charm would keep its locked ops.
 
@@ -1344,7 +1348,7 @@ def test_pyproject_poetry_raises_when_there_is_nowhere_to_put_ops(
 
 
 def test_pyproject_poetry_injects_into_a_quoted_group(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
@@ -1366,7 +1370,7 @@ def test_pyproject_poetry_injects_into_a_quoted_group(
 
 
 def test_pyproject_poetry_injection_does_not_add_blank_lines(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     """The patched file is what a person reads when triaging a failure."""
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
@@ -1610,7 +1614,7 @@ def test_pyproject_uv_pypi_rewrites_dependency(
 
 
 def test_pyproject_poetry_pypi_uses_version_string(
-    tmp_path: pathlib.Path, ops_pypi: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_pypi: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
@@ -1756,7 +1760,7 @@ def test_unrecognised_pyproject_raises(tmp_path: pathlib.Path, ops_main: patcher
 
 
 def test_lockfile_snapshots_restored(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
@@ -1798,7 +1802,7 @@ def test_lockfile_snapshots_restored(
         ('', None),
     ],
 )
-def test_min_python_from_constraint(constraint, expected):
+def test_min_python_from_constraint(constraint: str, expected: tuple[int, int] | None):
     assert ops_source._min_python_from_constraint(constraint) == expected
 
 
@@ -1867,11 +1871,11 @@ def test_wrap_with_uv_python_respects_uv_executable():
 
 
 def test_poetry_lock_wrapped_with_uv_run_when_requires_python_present(
-    tmp_path: pathlib.Path, monkeypatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
     captured: dict[str, object] = {}
 
-    def fake_lock(repo, cmd, timeout, **kw):
+    def fake_lock(repo: pathlib.Path, cmd: Sequence[str], timeout: int, **kw: object):
         captured['cmd'] = tuple(cmd)
 
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
@@ -1904,10 +1908,12 @@ def test_poetry_lock_wrapped_with_uv_run_when_requires_python_present(
     )
 
 
-def test_poetry_lock_not_wrapped_when_auto_python_disabled(tmp_path: pathlib.Path, monkeypatch):
+def test_poetry_lock_not_wrapped_when_auto_python_disabled(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
     captured: dict[str, object] = {}
 
-    def fake_lock(repo, cmd, timeout, **kw):
+    def fake_lock(repo: pathlib.Path, cmd: Sequence[str], timeout: int, **kw: object):
         captured['cmd'] = tuple(cmd)
 
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
@@ -1931,10 +1937,12 @@ def test_poetry_lock_not_wrapped_when_auto_python_disabled(tmp_path: pathlib.Pat
     assert captured['cmd'] == ('poetry', 'lock')
 
 
-def test_poetry_lock_not_wrapped_when_no_python_constraint(tmp_path: pathlib.Path, monkeypatch):
+def test_poetry_lock_not_wrapped_when_no_python_constraint(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
     captured: dict[str, object] = {}
 
-    def fake_lock(repo, cmd, timeout, **kw):
+    def fake_lock(repo: pathlib.Path, cmd: Sequence[str], timeout: int, **kw: object):
         captured['cmd'] = tuple(cmd)
 
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
@@ -1957,14 +1965,16 @@ def test_poetry_lock_not_wrapped_when_no_python_constraint(tmp_path: pathlib.Pat
     assert captured['cmd'] == ('poetry', 'lock')
 
 
-def test_uv_lock_not_pinned_to_the_minimum_python(tmp_path: pathlib.Path, monkeypatch):
+def test_uv_lock_not_pinned_to_the_minimum_python(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
     # Regression: with older uv (0.9.x), ``uv lock --python 3.10`` fails for a
     # charm with a group that needs a newer Python (``opcli ; python_version
     # >= '3.12'``), even though the universal lock that plain ``uv lock``
     # produces is fine.
     captured: dict[str, object] = {}
 
-    def fake_lock(repo, cmd, timeout, **kw):
+    def fake_lock(repo: pathlib.Path, cmd: Sequence[str], timeout: int, **kw: object):
         captured['cmd'] = tuple(cmd)
 
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
@@ -1994,7 +2004,9 @@ def test_uv_lock_not_pinned_to_the_minimum_python(tmp_path: pathlib.Path, monkey
     assert captured['cmd'] == ('uv', 'lock')
 
 
-def test_failed_uv_relock_is_a_patcher_error(tmp_path: pathlib.Path, monkeypatch):
+def test_failed_uv_relock_is_a_patcher_error(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
     # A uv charm keeps its stale lock when the relock fails, and its own
     # ``uv run --locked`` then refuses it: that is hyrum failing to apply the
     # patch, not the charm failing under it.
@@ -2027,7 +2039,7 @@ def test_failed_uv_relock_is_a_patcher_error(tmp_path: pathlib.Path, monkeypatch
     assert py.read_text() == original
 
 
-def test_run_lock_strips_virtual_env(tmp_path: pathlib.Path, monkeypatch):
+def test_run_lock_strips_virtual_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
     # Regression: hyrum's own VIRTUAL_ENV (e.g. when invoked via ``uv run``)
     # leaked into the lock subprocess. Poetry then reported "Current Python
     # version (…) is not allowed by the project" because it picked up hyrum's
@@ -2039,7 +2051,7 @@ def test_run_lock_strips_virtual_env(tmp_path: pathlib.Path, monkeypatch):
         stdout = b''
         stderr = b''
 
-    def fake_run(_cmd, **kwargs):  # type: ignore[no-untyped-def]
+    def fake_run(_cmd: Sequence[str], **kwargs: object):
         captured['env'] = kwargs.get('env')
         return _Result()
 
@@ -2052,10 +2064,10 @@ def test_run_lock_strips_virtual_env(tmp_path: pathlib.Path, monkeypatch):
 
 
 def test_lockfile_created_during_patch_is_removed_on_exit(
-    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
     # No lockfile pre-existing; simulate _run_lock creating one.
-    def fake_lock(repo, cmd, timeout, **kw):
+    def fake_lock(repo: pathlib.Path, cmd: Sequence[str], timeout: int, **kw: object):
         (repo / 'uv.lock').write_text('# generated mid-patch\n')
 
     monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fake_lock)
@@ -2162,7 +2174,9 @@ def test_charmlib_patcher_error_interface_lib_no_pyproject(tmp_path: pathlib.Pat
         pass
 
 
-def test_charmlib_patcher_interface_lib_with_pyproject_ok(tmp_path: pathlib.Path, monkeypatch):
+def test_charmlib_patcher_interface_lib_with_pyproject_ok(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
     """No error when interface lib has a pyproject.toml."""
     monkeypatch.setattr('hyrum._patchers.charmlib_source.run_lock', lambda *a, **kw: None)
 
@@ -2207,7 +2221,9 @@ def test_charmlib_patcher_pep621_extras_reapplied(tmp_path: pathlib.Path):
         assert 'subdirectory=nginx_k8s' in patched
 
 
-def test_charmlib_patcher_uv_extras_reapplied(tmp_path: pathlib.Path, monkeypatch):
+def test_charmlib_patcher_uv_extras_reapplied(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.setattr('hyrum._patchers.charmlib_source.run_lock', lambda *a, **kw: None)
     charm_dir = tmp_path / 'charm'
     charm_dir.mkdir()
@@ -2225,7 +2241,9 @@ def test_charmlib_patcher_uv_extras_reapplied(tmp_path: pathlib.Path, monkeypatc
         assert 'subdirectory = "nginx_k8s"' in patched
 
 
-def test_charmlib_patcher_failed_uv_relock_is_a_patcher_error(tmp_path: pathlib.Path, monkeypatch):
+def test_charmlib_patcher_failed_uv_relock_is_a_patcher_error(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
     class _Result:
         returncode = 1
         stdout = b''
@@ -2274,7 +2292,9 @@ def test_charmlib_patcher_pep621_injects_git_dep(tmp_path: pathlib.Path):
     assert 'charmlibs-apt>=1.0' in (charm_dir / 'pyproject.toml').read_text()
 
 
-def test_charmlib_patcher_poetry_injects_git_dep(tmp_path: pathlib.Path, monkeypatch):
+def test_charmlib_patcher_poetry_injects_git_dep(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.setattr('hyrum._patchers.charmlib_source.run_lock', lambda *a, **kw: None)
     charm_dir = tmp_path / 'charm'
     charm_dir.mkdir()

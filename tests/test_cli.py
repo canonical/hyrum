@@ -39,7 +39,7 @@ def _run(argv: list[str]) -> int:
 
 
 @pytest.fixture(autouse=True)
-def runners_installed(monkeypatch):
+def runners_installed(monkeypatch: pytest.MonkeyPatch):
     """Let the runner preflight find tox and make, whatever the host has.
 
     Without this the suite's result would depend on what happens to be on the
@@ -145,7 +145,7 @@ def test_parse_patch_bare_path(tmp_path: pathlib.Path):
     assert parsed == cli.PatchSpec(pkg_name='ops', path=str(tmp_path))
 
 
-def test_parse_patch_home_path(monkeypatch, tmp_path: pathlib.Path):
+def test_parse_patch_home_path(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
     monkeypatch.setenv('HOME', str(tmp_path))
     parsed = cli._parse_patch('ops @ ~/operator')
     assert parsed == cli.PatchSpec(pkg_name='ops', path=str(tmp_path / 'operator'))
@@ -307,7 +307,7 @@ def test_build_patcher_ops_plus_other_stacks():
 
 
 def test_cli_end_to_end_with_stubbed_runner(
-    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):
     """Drives the full CLI: enumerate -> patch -> stub runner -> render."""
     cache = tmp_path / 'cache'
@@ -315,7 +315,7 @@ def test_cli_end_to_end_with_stubbed_runner(
     make_charm(cache / 'alpha', requirements=True)
     make_charm(cache / 'beta', requirements=True)
 
-    async def fake_run(self, repo, target):  # ruff: ignore[unused-async]
+    async def fake_run(self: tox.ToxRunner, repo: pathlib.Path, target: str):  # ruff: ignore[unused-async]
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -341,7 +341,7 @@ def test_cli_end_to_end_with_stubbed_runner(
     assert 'passed' in captured.out
 
 
-async def _fail_run(self, repo, target):  # ruff: ignore[unused-async]
+async def _fail_run(self: tox.ToxRunner, repo: pathlib.Path, target: str):  # ruff: ignore[unused-async]
     return runners.RunResult(
         repo=repo,
         runner=self.name,
@@ -352,7 +352,9 @@ async def _fail_run(self, repo, target):  # ruff: ignore[unused-async]
     )
 
 
-def test_cli_exits_nonzero_by_default_on_failure(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_exits_nonzero_by_default_on_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
@@ -363,7 +365,7 @@ def test_cli_exits_nonzero_by_default_on_failure(monkeypatch, tmp_path: pathlib.
     assert rc == 1
 
 
-def test_cli_no_fail_forces_exit_zero(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_no_fail_forces_exit_zero(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
@@ -375,13 +377,13 @@ def test_cli_no_fail_forces_exit_zero(monkeypatch, tmp_path: pathlib.Path):
 
 
 def test_cli_quiet_suppresses_report(
-    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
 
-    async def pass_run(self, repo, target):  # ruff: ignore[unused-async]
+    async def pass_run(self: tox.ToxRunner, repo: pathlib.Path, target: str):  # ruff: ignore[unused-async]
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -401,7 +403,7 @@ def test_cli_quiet_suppresses_report(
 
 
 def test_cli_quiet_reports_failure_to_stderr(
-    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):
     cache = tmp_path / 'cache'
     cache.mkdir()
@@ -465,7 +467,9 @@ def test_apply_host_env_defaults_uses_target_in_override():
     assert 'testenv:static.pass_env+=PYO3_USE_ABI3_FORWARD_COMPATIBILITY' in env['TOX_OVERRIDE']
 
 
-def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_no_host_env_defaults_leaves_env_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
@@ -473,7 +477,7 @@ def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathli
     monkeypatch.delenv('PYO3_USE_ABI3_FORWARD_COMPATIBILITY', raising=False)
     monkeypatch.delenv('TOX_OVERRIDE', raising=False)
 
-    async def fake_run(self, repo, target):  # ruff: ignore[unused-async]
+    async def fake_run(self: tox.ToxRunner, repo: pathlib.Path, target: str):  # ruff: ignore[unused-async]
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -498,12 +502,12 @@ def test_cli_no_host_env_defaults_leaves_env_alone(monkeypatch, tmp_path: pathli
     assert 'TOX_OVERRIDE' not in os.environ
 
 
-def test_cli_save_writes_json(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_save_writes_json(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
 
-    async def fake_run(self, repo, target):  # ruff: ignore[unused-async] — async to satisfy Runner protocol
+    async def fake_run(self: tox.ToxRunner, repo: pathlib.Path, target: str):  # ruff: ignore[unused-async] — async to satisfy Runner protocol
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -536,14 +540,14 @@ def test_cli_save_writes_json(monkeypatch, tmp_path: pathlib.Path):
 
 
 def test_cli_save_bad_directory_fails_before_running(
-    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
     calls: list[str] = []
 
-    async def fake_run(self, repo, target):  # ruff: ignore[unused-async] — async to satisfy Runner protocol
+    async def fake_run(self: tox.ToxRunner, repo: pathlib.Path, target: str):  # ruff: ignore[unused-async] — async to satisfy Runner protocol
         calls.append(str(repo))
         return runners.RunResult(
             repo=repo,
@@ -572,13 +576,13 @@ def test_cli_save_bad_directory_fails_before_running(
 
 
 def test_cli_save_failure_still_renders_report(
-    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
 
-    async def fake_run(self, repo, target):  # ruff: ignore[unused-async] — async to satisfy Runner protocol
+    async def fake_run(self: tox.ToxRunner, repo: pathlib.Path, target: str):  # ruff: ignore[unused-async] — async to satisfy Runner protocol
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -610,7 +614,7 @@ def test_cli_save_failure_still_renders_report(
 
 
 def _fake_pass_runner(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_run(self, repo, target):  # ruff: ignore[unused-async]
+    async def fake_run(self: tox.ToxRunner, repo: pathlib.Path, target: str):  # ruff: ignore[unused-async]
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -1086,7 +1090,7 @@ def _installed(*programs: str):
     return lambda program: f'/usr/bin/{program}' if program in programs else None
 
 
-def test_available_backends_drops_uninstalled_backend_under_auto(monkeypatch):
+def test_available_backends_drops_uninstalled_backend_under_auto(monkeypatch: pytest.MonkeyPatch):
     # A fleet with no make-driven charms shouldn't need make installed, so the
     # missing backend is dropped rather than being fatal.
     monkeypatch.setattr(shutil, 'which', _installed('tox'))
@@ -1096,7 +1100,9 @@ def test_available_backends_drops_uninstalled_backend_under_auto(monkeypatch):
     assert backends == ('tox',)
 
 
-def test_available_backends_reports_a_dropped_backend_as_an_error(monkeypatch, caplog):
+def test_available_backends_reports_a_dropped_backend_as_an_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
     """A missing tool is a host problem, and has to survive --quiet."""
     monkeypatch.setattr(shutil, 'which', _installed('tox'))
     with caplog.at_level(logging.ERROR):
@@ -1106,7 +1112,7 @@ def test_available_backends_reports_a_dropped_backend_as_an_error(monkeypatch, c
     assert 'make is not installed' in caplog.text
 
 
-def test_available_backends_exits_when_explicit_choice_is_missing(monkeypatch):
+def test_available_backends_exits_when_explicit_choice_is_missing(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(shutil, 'which', _installed('tox'))
     with pytest.raises(SystemExit, match='make'):
         cli._available_backends(
@@ -1114,7 +1120,7 @@ def test_available_backends_exits_when_explicit_choice_is_missing(monkeypatch):
         )
 
 
-def test_available_backends_exits_when_nothing_is_installed(monkeypatch):
+def test_available_backends_exits_when_nothing_is_installed(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(shutil, 'which', _installed())
     with pytest.raises(SystemExit, match='no runner available'):
         cli._available_backends(
@@ -1122,7 +1128,9 @@ def test_available_backends_exits_when_nothing_is_installed(monkeypatch):
         )
 
 
-def test_available_backends_checks_the_program_not_the_whole_command(monkeypatch):
+def test_available_backends_checks_the_program_not_the_whole_command(
+    monkeypatch: pytest.MonkeyPatch,
+):
     monkeypatch.setattr(shutil, 'which', _installed('uvx'))
     backends = cli._available_backends(
         runners.RunnerChoice.TOX, tox_executable='uvx tox', make_executable='make'
@@ -1139,7 +1147,7 @@ def _ls_remote(returncode: int, stderr: bytes = b''):
     """Stand in for ``git ls-remote --exit-code``; no network in the unit suite."""
     calls: list[list[str]] = []
 
-    def fake_run(argv, **kwargs):
+    def fake_run(argv: list[str], **kwargs: object):
         calls.append(list(argv))
         return subprocess.CompletedProcess(argv, returncode, stdout=b'', stderr=stderr)
 
@@ -1147,48 +1155,50 @@ def _ls_remote(returncode: int, stderr: bytes = b''):
     return fake_run
 
 
-def test_unresolvable_ref_accepts_a_ref_the_remote_has(monkeypatch):
+def test_unresolvable_ref_accepts_a_ref_the_remote_has(monkeypatch: pytest.MonkeyPatch):
     fake = _ls_remote(0)
     monkeypatch.setattr(subprocess, 'run', fake)
     assert cli._unresolvable_ref(_URL, 'main') is None
     assert fake.calls == [['git', 'ls-remote', '--exit-code', _URL, 'main']]
 
 
-def test_unresolvable_ref_rejects_a_typo(monkeypatch):
+def test_unresolvable_ref_rejects_a_typo(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(subprocess, 'run', _ls_remote(2))
     problem = cli._unresolvable_ref(_URL, 'this-branch-does-not-exist')
     assert problem is not None
     assert 'this-branch-does-not-exist' in problem
 
 
-def test_unresolvable_ref_accepts_a_full_commit_sha(monkeypatch):
+def test_unresolvable_ref_accepts_a_full_commit_sha(monkeypatch: pytest.MonkeyPatch):
     # ls-remote can't see a bare commit, but git can still fetch it.
     monkeypatch.setattr(subprocess, 'run', _ls_remote(2))
     assert cli._unresolvable_ref(_URL, '75525780ea49e8db64d6716c94d02282d7b6ee81') is None
 
 
-def test_unresolvable_ref_asks_for_the_full_sha_when_abbreviated(monkeypatch):
+def test_unresolvable_ref_asks_for_the_full_sha_when_abbreviated(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(subprocess, 'run', _ls_remote(2))
     problem = cli._unresolvable_ref(_URL, '7552578')
     assert problem is not None
     assert '40-character' in problem
 
 
-def test_unresolvable_ref_does_not_block_on_a_remote_it_cannot_reach(monkeypatch):
+def test_unresolvable_ref_does_not_block_on_a_remote_it_cannot_reach(
+    monkeypatch: pytest.MonkeyPatch,
+):
     # A network or auth failure says nothing about whether the ref exists.
     monkeypatch.setattr(subprocess, 'run', _ls_remote(128, stderr=b'could not read from remote'))
     assert cli._unresolvable_ref(_URL, 'main') is None
 
 
-def test_unresolvable_ref_does_not_block_when_git_is_missing(monkeypatch):
-    def boom(argv, **kwargs):
+def test_unresolvable_ref_does_not_block_when_git_is_missing(monkeypatch: pytest.MonkeyPatch):
+    def boom(argv: list[str], **kwargs: object):
         raise FileNotFoundError(2, 'No such file or directory', 'git')
 
     monkeypatch.setattr(subprocess, 'run', boom)
     assert cli._unresolvable_ref(_URL, 'main') is None
 
 
-def test_preflight_patch_refs_checks_each_pair_once(monkeypatch):
+def test_preflight_patch_refs_checks_each_pair_once(monkeypatch: pytest.MonkeyPatch):
     fake = _ls_remote(0)
     monkeypatch.setattr(subprocess, 'run', fake)
     cli._preflight_patch_refs([
@@ -1200,7 +1210,9 @@ def test_preflight_patch_refs_checks_each_pair_once(monkeypatch):
     assert len(fake.calls) == 1
 
 
-def test_cli_preflight_rejects_an_unresolvable_ref(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_preflight_rejects_an_unresolvable_ref(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
@@ -1219,14 +1231,16 @@ def test_cli_preflight_rejects_an_unresolvable_ref(monkeypatch, tmp_path: pathli
         ])
 
 
-def test_cli_no_preflight_skips_the_ref_check(monkeypatch, tmp_path: pathlib.Path):
+def test_cli_no_preflight_skips_the_ref_check(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+):
     cache = tmp_path / 'cache'
     cache.mkdir()
     make_charm(cache / 'alpha', requirements=True)
     fake = _ls_remote(2)
     monkeypatch.setattr(subprocess, 'run', fake)
 
-    async def fake_run(self, repo, target):  # ruff: ignore[unused-async] — async to satisfy Runner protocol
+    async def fake_run(self: tox.ToxRunner, repo: pathlib.Path, target: str):  # ruff: ignore[unused-async] — async to satisfy Runner protocol
         return runners.RunResult(
             repo=repo,
             runner=self.name,
@@ -1382,7 +1396,10 @@ def test_patch_help_states_its_default_like_every_other_flag(capsys: pytest.Capt
 
 @pytest.mark.parametrize('verbosity', ['debug', 'trace'])
 def test_cli_verbosity_includes_offender_list(
-    verbosity: str, monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    verbosity: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
 ):
     cache = tmp_path / 'cache'
     cache.mkdir()
@@ -1405,7 +1422,7 @@ def test_cli_verbosity_includes_offender_list(
 
 
 def test_cli_brief_is_the_default_rung(
-    monkeypatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ):
     """--brief names the rung the run is already on, so it changes no output."""
     cache = tmp_path / 'cache'
@@ -1589,7 +1606,7 @@ def test_clean_dry_run_removes_nothing(tmp_path: pathlib.Path, capsys: pytest.Ca
 
 
 def test_clean_reports_a_failed_removal_rather_than_swallowing_it(
-    tmp_path: pathlib.Path, monkeypatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
     """A reclaim that did not happen must not exit 0.
 
@@ -1641,7 +1658,9 @@ def _record_locks(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
     taken: list[pathlib.Path] = []
     real = locks.charm_lock
 
-    def spy(repo, *, lock_root, base=None):
+    def spy(
+        repo: pathlib.Path, *, lock_root: pathlib.Path | None, base: pathlib.Path | None = None
+    ):
         if lock_root is not None:
             taken.append(repo)
         return real(repo, lock_root=lock_root, base=base)
@@ -1743,7 +1762,7 @@ def _fake_runner_by_name(
     """Fake ToxRunner.run whose status varies per charm; returns the call log."""
     calls: list[str] = []
 
-    async def fake_run(self, repo, target):  # ruff: ignore[unused-async]
+    async def fake_run(self: tox.ToxRunner, repo: pathlib.Path, target: str):  # ruff: ignore[unused-async]
         calls.append(repo.name)
         status = statuses.get(repo.name, runners.RunStatus.PASSED)
         returncode = 0 if status is runners.RunStatus.PASSED else 1

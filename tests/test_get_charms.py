@@ -69,7 +69,7 @@ class FakeSpawner:
         self.kwargs: list[dict[str, object]] = []
         self.on_spawn: typing.Callable[[], None] | None = None
 
-    async def __call__(self, *args, **kwargs):
+    async def __call__(self, *args: str, **kwargs: object) -> FakeProc:
         self.calls.append((tuple(args), str(kwargs.get('cwd'))))
         self.kwargs.append(dict(kwargs))
         if self.on_spawn is not None:
@@ -85,7 +85,7 @@ class FakeSpawner:
 
 
 @pytest.fixture(autouse=True)
-def no_real_signals(monkeypatch) -> list[int]:
+def no_real_signals(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     """Keep process-group kills inside the test.
 
     Autouse and unconditional: a FakeProc whose pid defaults to 0 would make
@@ -98,8 +98,12 @@ def no_real_signals(monkeypatch) -> list[int]:
     return killed
 
 
+class SpawnerFactory(typing.Protocol):
+    def __call__(self, *procs: FakeProc) -> FakeSpawner: ...
+
+
 @pytest.fixture
-def spawner(monkeypatch, no_real_signals):
+def spawner(monkeypatch: pytest.MonkeyPatch, no_real_signals: list[int]) -> SpawnerFactory:
     fake = FakeSpawner()
     fake.killed_groups = no_real_signals
     monkeypatch.setattr(asyncio, 'create_subprocess_exec', fake)
@@ -188,14 +192,18 @@ def test_select_rows_zero_limit_selects_everything():
     assert get_charms.select_rows(rows, limit=0) == rows
 
 
-def test_select_rows_drops_and_warns_about_rows_without_repository(caplog):
+def test_select_rows_drops_and_warns_about_rows_without_repository(
+    caplog: pytest.LogCaptureFixture,
+):
     rows = [_row(''), _row('https://github.com/canonical/foo')]
     with caplog.at_level(logging.WARNING):
         assert get_charms.select_rows(rows) == [rows[1]]
     assert 'without Repository' in caplog.text
 
 
-def test_select_rows_does_not_count_a_malformed_row_against_the_limit(caplog):
+def test_select_rows_does_not_count_a_malformed_row_against_the_limit(
+    caplog: pytest.LogCaptureFixture,
+):
     rows = [_row(''), _row('https://github.com/canonical/foo')]
     with caplog.at_level(logging.WARNING):
         assert get_charms.select_rows(rows, limit=1) == [rows[1]]
@@ -204,7 +212,9 @@ def test_select_rows_does_not_count_a_malformed_row_against_the_limit(caplog):
 # ---- process_rows -----------------------------------------------------------
 
 
-async def test_process_rows_clones_missing_destination(tmp_path: pathlib.Path, spawner):
+async def test_process_rows_clones_missing_destination(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     fake = spawner(FakeProc(returncode=0))
     rows = [
         {
@@ -221,7 +231,9 @@ async def test_process_rows_clones_missing_destination(tmp_path: pathlib.Path, s
     assert pathlib.Path(cwd) == tmp_path / 'canonical'
 
 
-async def test_process_rows_pulls_existing_destination(tmp_path: pathlib.Path, spawner):
+async def test_process_rows_pulls_existing_destination(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     (tmp_path / 'canonical' / 'foo').mkdir(parents=True)
     fake = spawner(FakeProc(returncode=0))
     rows = [
@@ -238,7 +250,9 @@ async def test_process_rows_pulls_existing_destination(tmp_path: pathlib.Path, s
     assert pathlib.Path(cwd) == (tmp_path / 'canonical' / 'foo').resolve()
 
 
-async def test_process_rows_includes_branch_flag_in_clone(tmp_path: pathlib.Path, spawner):
+async def test_process_rows_includes_branch_flag_in_clone(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     fake = spawner(FakeProc(returncode=0))
     rows = [
         {
@@ -255,7 +269,9 @@ async def test_process_rows_includes_branch_flag_in_clone(tmp_path: pathlib.Path
     assert argv[-1] == str((tmp_path / 'canonical' / 'foo-24.04').resolve())
 
 
-async def test_process_rows_skips_rows_without_repository(tmp_path: pathlib.Path, spawner, caplog):
+async def test_process_rows_skips_rows_without_repository(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, caplog: pytest.LogCaptureFixture
+):
     # No procs queued: any subprocess call would fail the FakeSpawner assertion.
     spawner()
     rows = [
@@ -267,7 +283,9 @@ async def test_process_rows_skips_rows_without_repository(tmp_path: pathlib.Path
     assert sum('Skipping row without Repository' in r.message for r in caplog.records) == 2
 
 
-async def test_process_rows_handles_missing_branch_column(tmp_path: pathlib.Path, spawner):
+async def test_process_rows_handles_missing_branch_column(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     """A CSV without the Branch column shouldn't crash."""
     fake = spawner(FakeProc(returncode=0))
     rows = [{'Repository': 'https://github.com/canonical/foo'}]
@@ -277,7 +295,9 @@ async def test_process_rows_handles_missing_branch_column(tmp_path: pathlib.Path
     assert '--branch' not in argv
 
 
-async def test_process_rows_strips_trailing_slash_from_repository(tmp_path: pathlib.Path, spawner):
+async def test_process_rows_strips_trailing_slash_from_repository(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     fake = spawner(FakeProc(returncode=0))
     rows = [
         {
@@ -292,7 +312,9 @@ async def test_process_rows_strips_trailing_slash_from_repository(tmp_path: path
     assert argv[-1] == str((tmp_path / 'canonical' / 'foo').resolve())
 
 
-async def test_process_rows_logs_error_on_clone_failure(tmp_path: pathlib.Path, spawner, caplog):
+async def test_process_rows_logs_error_on_clone_failure(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, caplog: pytest.LogCaptureFixture
+):
     spawner(FakeProc(returncode=128, stderr_bytes=b'fatal: remote not found\n'))
     rows = [
         {
@@ -310,7 +332,9 @@ async def test_process_rows_logs_error_on_clone_failure(tmp_path: pathlib.Path, 
     assert all('\n' not in r.message for r in caplog.records)
 
 
-async def test_process_rows_logs_summary(tmp_path: pathlib.Path, spawner, caplog):
+async def test_process_rows_logs_summary(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, caplog: pytest.LogCaptureFixture
+):
     spawner(FakeProc(returncode=0), FakeProc(returncode=128))
     rows = [
         {
@@ -332,7 +356,7 @@ async def test_process_rows_logs_summary(tmp_path: pathlib.Path, spawner, caplog
 
 
 async def test_process_rows_clones_a_duplicated_repository_once(
-    tmp_path: pathlib.Path, spawner, caplog
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, caplog: pytest.LogCaptureFixture
 ):
     # One proc queued: a second git call would fail the FakeSpawner assertion.
     fake = spawner(FakeProc(returncode=0))
@@ -349,7 +373,7 @@ async def test_process_rows_clones_a_duplicated_repository_once(
 
 
 async def test_process_rows_dedupes_on_the_destination_not_the_url(
-    tmp_path: pathlib.Path, spawner
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
 ):
     """Two spellings of one repository still flatten to one directory."""
     fake = spawner(FakeProc(returncode=0))
@@ -362,7 +386,9 @@ async def test_process_rows_dedupes_on_the_destination_not_the_url(
     assert len(fake.calls) == 1
 
 
-async def test_process_rows_keeps_rows_that_differ_only_by_branch(tmp_path: pathlib.Path, spawner):
+async def test_process_rows_keeps_rows_that_differ_only_by_branch(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     """A branch gets its own directory, so those rows are not duplicates."""
     fake = spawner(FakeProc(returncode=0), FakeProc(returncode=0))
     rows = [
@@ -375,7 +401,7 @@ async def test_process_rows_keeps_rows_that_differ_only_by_branch(tmp_path: path
 
 
 async def test_process_rows_says_nothing_when_there_are_no_duplicates(
-    tmp_path: pathlib.Path, spawner, caplog
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, caplog: pytest.LogCaptureFixture
 ):
     spawner(FakeProc(returncode=0))
     rows = [
@@ -390,7 +416,9 @@ async def test_process_rows_says_nothing_when_there_are_no_duplicates(
 # ---- timeouts ---------------------------------------------------------------
 
 
-async def test_process_rows_abandons_a_hanging_clone(tmp_path: pathlib.Path, spawner, caplog):
+async def test_process_rows_abandons_a_hanging_clone(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, caplog: pytest.LogCaptureFixture
+):
     proc = FakeProc(hang=True)
     fake = spawner(proc)
     rows = [{'Repository': 'https://git.launchpad.net/charm-keystone'}]
@@ -405,7 +433,9 @@ async def test_process_rows_abandons_a_hanging_clone(tmp_path: pathlib.Path, spa
     assert fake.killed_groups == [proc.pid]
 
 
-async def test_git_is_spawned_in_its_own_process_group(tmp_path: pathlib.Path, spawner):
+async def test_git_is_spawned_in_its_own_process_group(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     """Group-killing on timeout only works if git leads its own group."""
     fake = spawner(FakeProc(returncode=0))
     await get_charms.process_rows([{'Repository': 'https://github.com/canonical/foo'}], tmp_path)
@@ -413,7 +443,9 @@ async def test_git_is_spawned_in_its_own_process_group(tmp_path: pathlib.Path, s
     assert fake.kwargs[0]['start_new_session'] is True
 
 
-async def test_process_rows_abandons_a_hanging_pull(tmp_path: pathlib.Path, spawner, caplog):
+async def test_process_rows_abandons_a_hanging_pull(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, caplog: pytest.LogCaptureFixture
+):
     (tmp_path / 'canonical' / 'foo').mkdir(parents=True)
     proc = FakeProc(hang=True)
     spawner(proc)
@@ -426,7 +458,9 @@ async def test_process_rows_abandons_a_hanging_pull(tmp_path: pathlib.Path, spaw
     assert any('Timed out' in r.message for r in caplog.records)
 
 
-async def test_a_timeout_does_not_stall_the_other_rows(tmp_path: pathlib.Path, spawner, caplog):
+async def test_a_timeout_does_not_stall_the_other_rows(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, caplog: pytest.LogCaptureFixture
+):
     """One unresponsive repo must not stop the rest of the list completing."""
     spawner(FakeProc(hang=True), FakeProc(returncode=0))
     rows = [
@@ -441,7 +475,9 @@ async def test_a_timeout_does_not_stall_the_other_rows(tmp_path: pathlib.Path, s
     assert any('Failed: git.launchpad.net/charm-keystone' in r.message for r in caplog.records)
 
 
-async def test_timed_out_clone_leaves_no_directory_behind(tmp_path: pathlib.Path, spawner):
+async def test_timed_out_clone_leaves_no_directory_behind(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     """A partial clone must not be mistaken for a valid checkout next run."""
     repository = 'https://git.launchpad.net/charm-keystone'
     dest = get_charms.repo_folder(tmp_path, repository, None)
@@ -454,7 +490,7 @@ async def test_timed_out_clone_leaves_no_directory_behind(tmp_path: pathlib.Path
     assert not dest.exists()
 
 
-async def test_zero_timeout_waits_indefinitely(tmp_path: pathlib.Path, spawner):
+async def test_zero_timeout_waits_indefinitely(tmp_path: pathlib.Path, spawner: SpawnerFactory):
     """``--timeout 0`` restores the old unbounded behaviour."""
     spawner(FakeProc(returncode=0))
     rows = [{'Repository': 'https://github.com/canonical/foo'}]
@@ -465,7 +501,9 @@ async def test_zero_timeout_waits_indefinitely(tmp_path: pathlib.Path, spawner):
 # ---- _default_source --------------------------------------------------------
 
 
-def test_default_source_prefers_cwd_charms_csv(tmp_path, monkeypatch):
+def test_default_source_prefers_cwd_charms_csv(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.chdir(tmp_path)
     (tmp_path / 'charms.csv').touch()
     (tmp_path / 'charm-list').mkdir()
@@ -473,14 +511,18 @@ def test_default_source_prefers_cwd_charms_csv(tmp_path, monkeypatch):
     assert get_charms.find_default_source() == pathlib.Path('charms.csv')
 
 
-def test_default_source_falls_back_to_charm_list(tmp_path, monkeypatch):
+def test_default_source_falls_back_to_charm_list(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.chdir(tmp_path)
     (tmp_path / 'charm-list').mkdir()
     (tmp_path / 'charm-list' / 'charms.csv').touch()
     assert get_charms.find_default_source() == pathlib.Path('charm-list/charms.csv')
 
 
-def test_default_source_returns_none_when_none_exist(tmp_path, monkeypatch):
+def test_default_source_returns_none_when_none_exist(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
     monkeypatch.chdir(tmp_path)
     assert get_charms.find_default_source() is None
 
@@ -495,7 +537,7 @@ def test_get_charms_reports_error_when_csv_missing(tmp_path: pathlib.Path):
     assert 'not found' in rc
 
 
-def test_get_charms_creates_dest_and_drives_clone(tmp_path: pathlib.Path, spawner):
+def test_get_charms_creates_dest_and_drives_clone(tmp_path: pathlib.Path, spawner: SpawnerFactory):
     csv_path = tmp_path / 'charms.csv'
     csv_path.write_text(
         'Charm Name,Repository,Branch (if not the default)\n'
@@ -513,7 +555,9 @@ def test_get_charms_creates_dest_and_drives_clone(tmp_path: pathlib.Path, spawne
     assert argv[:2] == ('git', 'clone')
 
 
-def test_get_charms_repo_flag_narrows_what_is_cloned(tmp_path: pathlib.Path, spawner):
+def test_get_charms_repo_flag_narrows_what_is_cloned(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     csv_path = tmp_path / 'charms.csv'
     csv_path.write_text(
         'Charm Name,Repository,Branch (if not the default)\n'
@@ -538,7 +582,7 @@ def test_get_charms_repo_flag_narrows_what_is_cloned(tmp_path: pathlib.Path, spa
     assert 'https://github.com/canonical/bar' in argv
 
 
-def test_get_charms_limit_flag_caps_the_clones(tmp_path: pathlib.Path, spawner):
+def test_get_charms_limit_flag_caps_the_clones(tmp_path: pathlib.Path, spawner: SpawnerFactory):
     csv_path = tmp_path / 'charms.csv'
     csv_path.write_text(
         'Charm Name,Repository,Branch (if not the default)\n'
@@ -561,7 +605,7 @@ def test_get_charms_limit_flag_caps_the_clones(tmp_path: pathlib.Path, spawner):
 
 
 def test_get_charms_reports_when_the_repo_pattern_matches_nothing(
-    tmp_path: pathlib.Path, spawner, capsys
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, capsys: pytest.CaptureFixture[str]
 ):
     csv_path = tmp_path / 'charms.csv'
     csv_path.write_text(
@@ -600,7 +644,9 @@ def test_get_charms_rejects_a_negative_limit(tmp_path: pathlib.Path):
         ])
 
 
-def test_get_charms_still_reports_no_match_under_quiet(tmp_path: pathlib.Path, spawner, capsys):
+def test_get_charms_still_reports_no_match_under_quiet(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, capsys: pytest.CaptureFixture[str]
+):
     """The no-match report survives --quiet, which unattended runs set."""
     csv_path = tmp_path / 'charms.csv'
     csv_path.write_text(
@@ -626,7 +672,9 @@ def test_get_charms_still_reports_no_match_under_quiet(tmp_path: pathlib.Path, s
     assert 'nothing to do' in capsys.readouterr().err
 
 
-def test_get_charms_leaves_no_dest_behind_when_nothing_matches(tmp_path: pathlib.Path, spawner):
+def test_get_charms_leaves_no_dest_behind_when_nothing_matches(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     csv_path = tmp_path / 'charms.csv'
     csv_path.write_text(
         'Charm Name,Repository,Branch (if not the default)\n'
@@ -649,7 +697,9 @@ def test_get_charms_leaves_no_dest_behind_when_nothing_matches(tmp_path: pathlib
     assert not dest.exists()
 
 
-def test_get_charms_does_not_blame_repo_for_an_empty_csv(tmp_path: pathlib.Path, spawner, capsys):
+def test_get_charms_does_not_blame_repo_for_an_empty_csv(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, capsys: pytest.CaptureFixture[str]
+):
     csv_path = tmp_path / 'charms.csv'
     csv_path.write_text('Charm Name,Repository,Branch (if not the default)\n', encoding='utf-8')
     spawner()
@@ -664,7 +714,10 @@ def test_get_charms_does_not_blame_repo_for_an_empty_csv(tmp_path: pathlib.Path,
 
 @pytest.mark.parametrize('repository', ['', '   ', '/'])
 def test_get_charms_does_not_blame_repo_when_no_row_has_a_repository(
-    tmp_path: pathlib.Path, spawner, capsys, repository: str
+    tmp_path: pathlib.Path,
+    spawner: SpawnerFactory,
+    capsys: pytest.CaptureFixture[str],
+    repository: str,
 ):
     csv_path = tmp_path / 'charms.csv'
     csv_path.write_text(
@@ -681,7 +734,9 @@ def test_get_charms_does_not_blame_repo_when_no_row_has_a_repository(
     assert '--repo' not in err
 
 
-def test_get_charms_limit_fetches_the_next_slice_on_a_second_run(tmp_path: pathlib.Path, spawner):
+def test_get_charms_limit_fetches_the_next_slice_on_a_second_run(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     """Two --limit 2 runs fetch four charms, not the same two twice."""
     csv_path = tmp_path / 'charms.csv'
     csv_path.write_text(
@@ -710,7 +765,7 @@ def test_get_charms_limit_fetches_the_next_slice_on_a_second_run(tmp_path: pathl
 
 @pytest.mark.parametrize(('existing', 'expected'), [('foo', 'foo-1.0'), ('foo-1.0', 'foo')])
 def test_get_charms_limit_treats_each_branch_as_its_own_checkout(
-    tmp_path: pathlib.Path, spawner, existing: str, expected: str
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, existing: str, expected: str
 ):
     """A checkout of one branch doesn't count as a checkout of another branch."""
     csv_path = tmp_path / 'charms.csv'
@@ -733,7 +788,7 @@ def test_get_charms_limit_treats_each_branch_as_its_own_checkout(
 
 
 def test_get_charms_reports_when_the_limited_slice_is_already_complete(
-    tmp_path: pathlib.Path, spawner, capsys
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, capsys: pytest.CaptureFixture[str]
 ):
     csv_path = tmp_path / 'charms.csv'
     csv_path.write_text(
@@ -759,7 +814,9 @@ def test_get_charms_reports_when_the_limited_slice_is_already_complete(
     assert 'already in' in capsys.readouterr().err
 
 
-def test_get_charms_without_limit_still_pulls_existing_checkouts(tmp_path: pathlib.Path, spawner):
+def test_get_charms_without_limit_still_pulls_existing_checkouts(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
     """Only --limit skips what is already there; a plain run still refreshes it."""
     csv_path = tmp_path / 'charms.csv'
     csv_path.write_text(

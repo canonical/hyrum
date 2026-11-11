@@ -102,7 +102,7 @@ _UV_TEMPLATE = textwrap.dedent("""\
 """)
 
 
-def test_uv_version_drops_existing_source(tmp_path: pathlib.Path, monkeypatch):
+def test_uv_version_drops_existing_source(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr('hyrum._patchers.generic.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     (tmp_path / 'uv.lock').write_text('')
@@ -123,7 +123,7 @@ def test_uv_version_drops_existing_source(tmp_path: pathlib.Path, monkeypatch):
         assert 'other = { path = "/x" }' in patched
 
 
-def test_uv_git_adds_source_block(tmp_path: pathlib.Path, monkeypatch):
+def test_uv_git_adds_source_block(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr('hyrum._patchers.generic.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     (tmp_path / 'uv.lock').write_text('')
@@ -137,7 +137,9 @@ def test_uv_git_adds_source_block(tmp_path: pathlib.Path, monkeypatch):
         assert 'requests = { git = "https://github.com/psf/requests", rev = "main" }' in patched
 
 
-def test_failed_uv_relock_is_a_patcher_error(tmp_path: pathlib.Path, monkeypatch):
+def test_failed_uv_relock_is_a_patcher_error(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
     class _Result:
         returncode = 1
         stdout = b''
@@ -170,7 +172,7 @@ _POETRY_TEMPLATE = textwrap.dedent("""\
 """)
 
 
-def test_poetry_version_swap(tmp_path: pathlib.Path, monkeypatch):
+def test_poetry_version_swap(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr('hyrum._patchers.generic.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     py.write_text(_POETRY_TEMPLATE)
@@ -182,7 +184,7 @@ def test_poetry_version_swap(tmp_path: pathlib.Path, monkeypatch):
     assert _read(py) == _POETRY_TEMPLATE
 
 
-def test_poetry_git_swap(tmp_path: pathlib.Path, monkeypatch):
+def test_poetry_git_swap(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr('hyrum._patchers.generic.run_lock', lambda *a, **kw: None)
     py = tmp_path / 'pyproject.toml'
     py.write_text(_POETRY_TEMPLATE)

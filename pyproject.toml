@@ -119,6 +119,7 @@ select = [
     "D",     # pydocstyle
     "FA",    # flake8-future-annotations
     "TC",    # flake8-type-checking
+    "ANN",   # flake8-annotations
 ]
 ignore = [
     "typing-only-first-party-import",
@@ -128,13 +129,25 @@ ignore = [
     "undocumented-magic-method",
     "undocumented-public-init",
     "missing-copyright-notice",
+    "missing-return-type-special-method",
+    "any-type",
 ]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = true
+
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["D", "assert", "hardcoded-password-string", "hardcoded-password-func-arg"]
+"tests/*" = [
+    "D",
+    "assert",
+    "hardcoded-password-string",
+    "hardcoded-password-func-arg",
+    "missing-return-type-undocumented-public-function",
+    "missing-return-type-private-function",
+]
 "docs/conf.py" = ["builtin-variable-shadowing", "D"]  # copyright is a standard Sphinx variable name
 
 [tool.pytest.ini_options]
