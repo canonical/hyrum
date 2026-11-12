@@ -413,6 +413,234 @@ async def test_process_rows_says_nothing_when_there_are_no_duplicates(
     assert not any('duplicates' in r.message for r in caplog.records)
 
 
+# ---- commit pins ------------------------------------------------------------
+
+
+_SHA = 'b74166f841a524f43db2f868a85fbe515a50b913'
+_OTHER_SHA = '0123456789abcdef0123456789abcdef01234567'
+
+
+def _write_head(dest: pathlib.Path, head: str) -> None:
+    (dest / '.git').mkdir(parents=True)
+    (dest / '.git' / 'HEAD').write_text(f'{head}\n')
+
+
+async def test_process_rows_clones_a_pinned_row_at_its_commit(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    fake = spawner(*(FakeProc(returncode=0) for _ in range(4)))
+    rows = [{'Repository': 'https://github.com/canonical/foo', 'Commit': _SHA}]
+
+    await get_charms.process_rows(rows, tmp_path)
+
+    dest = (tmp_path / 'canonical' / 'foo').resolve()
+    assert [argv for argv, _ in fake.calls] == [
+        ('git', 'init', '--quiet', str(dest)),
+        ('git', 'remote', 'add', 'origin', 'https://github.com/canonical/foo'),
+        ('git', 'fetch', '--depth=1', '--no-tags', '--quiet', 'origin', _SHA),
+        ('git', 'checkout', '--quiet', '--detach', 'FETCH_HEAD'),
+    ]
+    assert [pathlib.Path(cwd) for _, cwd in fake.calls] == [
+        (tmp_path / 'canonical').resolve(),
+        dest,
+        dest,
+        dest,
+    ]
+
+
+async def test_process_rows_pins_a_branch_row_to_its_commit(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    """The branch still names the folder, but the commit decides what is checked out."""
+    fake = spawner(*(FakeProc(returncode=0) for _ in range(4)))
+    rows = [
+        {
+            'Repository': 'https://github.com/canonical/foo',
+            'Branch (if not the default)': '16/edge',
+            'Commit': _SHA,
+        }
+    ]
+
+    await get_charms.process_rows(rows, tmp_path)
+
+    argvs = [argv for argv, _ in fake.calls]
+    assert argvs[0][-1] == str((tmp_path / 'canonical' / 'foo-16/edge').resolve())
+    assert argvs[2][-1] == _SHA
+    assert not any('16/edge' in arg for argv in argvs[1:] for arg in argv)
+
+
+async def test_process_rows_accepts_an_upper_case_commit(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    fake = spawner(*(FakeProc(returncode=0) for _ in range(4)))
+    rows = [{'Repository': 'https://github.com/canonical/foo', 'Commit': f' {_SHA.upper()} '}]
+
+    await get_charms.process_rows(rows, tmp_path)
+
+    assert fake.calls[2][0][-1] == _SHA
+
+
+@pytest.mark.parametrize('commit', [_SHA[:7], _SHA + '0', 'main', 'g' * 40])
+async def test_process_rows_rejects_a_commit_that_is_not_a_full_sha(
+    tmp_path: pathlib.Path,
+    spawner: SpawnerFactory,
+    caplog: pytest.LogCaptureFixture,
+    commit: str,
+):
+    # No procs queued: any subprocess call would fail the FakeSpawner assertion.
+    spawner()
+    rows = [{'Repository': 'https://github.com/canonical/foo', 'Commit': commit}]
+
+    with caplog.at_level(logging.INFO, logger=get_charms.logger.name):
+        await get_charms.process_rows(rows, tmp_path)
+
+    assert any(
+        'canonical/foo' in r.message and 'not a full 40-character SHA' in r.message
+        for r in caplog.records
+    )
+    assert any('0 succeeded, 1 failed' in r.message for r in caplog.records)
+    assert not (tmp_path / 'canonical' / 'foo').exists()
+
+
+async def test_process_rows_moves_an_existing_checkout_to_its_commit(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    dest = tmp_path / 'canonical' / 'foo'
+    _write_head(dest, _OTHER_SHA)
+    fake = spawner(FakeProc(returncode=0), FakeProc(returncode=0))
+    rows = [{'Repository': 'https://github.com/canonical/foo', 'Commit': _SHA}]
+
+    await get_charms.process_rows(rows, tmp_path)
+
+    assert [argv for argv, _ in fake.calls] == [
+        ('git', 'fetch', '--depth=1', '--no-tags', '--quiet', 'origin', _SHA),
+        ('git', 'checkout', '--quiet', '--detach', 'FETCH_HEAD'),
+    ]
+    assert all(pathlib.Path(cwd) == dest.resolve() for _, cwd in fake.calls)
+
+
+async def test_process_rows_pins_an_existing_branch_checkout(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    """A checkout that was following a branch is pinned rather than pulled."""
+    _write_head(tmp_path / 'canonical' / 'foo', 'ref: refs/heads/main')
+    fake = spawner(FakeProc(returncode=0), FakeProc(returncode=0))
+    rows = [{'Repository': 'https://github.com/canonical/foo', 'Commit': _SHA}]
+
+    await get_charms.process_rows(rows, tmp_path)
+
+    assert [argv[1] for argv, _ in fake.calls] == ['fetch', 'checkout']
+
+
+async def test_process_rows_leaves_a_checkout_already_at_its_commit(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    _write_head(tmp_path / 'canonical' / 'foo', _SHA)
+    # No procs queued: any subprocess call would fail the FakeSpawner assertion.
+    spawner()
+    rows = [{'Repository': 'https://github.com/canonical/foo', 'Commit': _SHA}]
+
+    await get_charms.process_rows(rows, tmp_path)
+
+
+@pytest.mark.parametrize(('branch', 'ref'), [('', 'HEAD'), ('16/edge', '16/edge')])
+async def test_process_rows_moves_a_formerly_pinned_checkout_to_the_tip(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, branch: str, ref: str
+):
+    """``git pull`` fails on a detached HEAD, so fetch the branch tip instead."""
+    repository = 'https://github.com/canonical/foo'
+    _write_head(get_charms.repo_folder(tmp_path, repository, branch or None), _SHA)
+    fake = spawner(FakeProc(returncode=0), FakeProc(returncode=0))
+    rows = [{'Repository': repository, 'Branch (if not the default)': branch}]
+
+    await get_charms.process_rows(rows, tmp_path)
+
+    assert [argv for argv, _ in fake.calls] == [
+        ('git', 'fetch', '--depth=1', '--no-tags', '--quiet', 'origin', ref),
+        ('git', 'checkout', '--quiet', '--detach', 'FETCH_HEAD'),
+    ]
+
+
+async def test_process_rows_pulls_a_checkout_on_a_branch(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    _write_head(tmp_path / 'canonical' / 'foo', 'ref: refs/heads/main')
+    fake = spawner(FakeProc(returncode=0))
+    rows = [{'Repository': 'https://github.com/canonical/foo', 'Commit': ''}]
+
+    await get_charms.process_rows(rows, tmp_path)
+
+    assert [argv[0:2] for argv, _ in fake.calls] == [('git', 'pull')]
+
+
+async def test_failed_pinned_clone_leaves_no_directory_behind(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, caplog: pytest.LogCaptureFixture
+):
+    """Unlike ``git clone``, the steps of a pinned clone don't clean up after themselves."""
+    repository = 'https://github.com/canonical/foo'
+    dest = get_charms.repo_folder(tmp_path, repository, None)
+    fake = spawner(
+        FakeProc(returncode=0),
+        FakeProc(returncode=0),
+        FakeProc(returncode=128, stderr_bytes=b'fatal: remote error: upload-pack: not our ref\n'),
+    )
+    # Model git init having created the checkout.
+    fake.on_spawn = lambda: (dest / '.git').mkdir(parents=True, exist_ok=True)
+    rows = [{'Repository': repository, 'Commit': _SHA}]
+
+    with caplog.at_level(logging.WARNING, logger=get_charms.logger.name):
+        await get_charms.process_rows(rows, tmp_path)
+
+    assert not dest.exists()
+    assert any('not our ref' in r.message for r in caplog.records)
+    assert any('Failed: canonical/foo' in r.message for r in caplog.records)
+
+
+async def test_timed_out_pinned_clone_leaves_no_directory_behind(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    repository = 'https://github.com/canonical/foo'
+    dest = get_charms.repo_folder(tmp_path, repository, None)
+    fake = spawner(FakeProc(returncode=0), FakeProc(returncode=0), FakeProc(hang=True))
+    fake.on_spawn = lambda: (dest / '.git').mkdir(parents=True, exist_ok=True)
+
+    await get_charms.process_rows(
+        [{'Repository': repository, 'Commit': _SHA}], tmp_path, timeout=0.05
+    )
+
+    assert not dest.exists()
+
+
+async def test_failed_pinned_init_leaves_no_directory_behind(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    repository = 'https://github.com/canonical/foo'
+    dest = get_charms.repo_folder(tmp_path, repository, None)
+    fake = spawner(FakeProc(returncode=0), FakeProc(returncode=3))
+    fake.on_spawn = lambda: (dest / '.git').mkdir(parents=True, exist_ok=True)
+
+    await get_charms.process_rows([{'Repository': repository, 'Commit': _SHA}], tmp_path)
+
+    assert not dest.exists()
+    assert len(fake.calls) == 2
+
+
+async def test_failed_check_out_keeps_the_existing_checkout(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, caplog: pytest.LogCaptureFixture
+):
+    """Only a clone this run started is discarded; an existing checkout is not."""
+    dest = tmp_path / 'canonical' / 'foo'
+    _write_head(dest, _OTHER_SHA)
+    spawner(FakeProc(returncode=128, stderr_bytes=b'fatal: not our ref\n'))
+    rows = [{'Repository': 'https://github.com/canonical/foo', 'Commit': _SHA}]
+
+    with caplog.at_level(logging.WARNING, logger=get_charms.logger.name):
+        await get_charms.process_rows(rows, tmp_path)
+
+    assert dest.exists()
+    assert any(f'Could not check out canonical/foo at {_SHA}' in r.message for r in caplog.records)
+
+
 # ---- timeouts ---------------------------------------------------------------
 
 
@@ -553,6 +781,22 @@ def test_get_charms_creates_dest_and_drives_clone(tmp_path: pathlib.Path, spawne
     assert dest.is_dir()
     argv, _ = fake.calls[0]
     assert argv[:2] == ('git', 'clone')
+
+
+def test_get_charms_reads_the_commit_column(tmp_path: pathlib.Path, spawner: SpawnerFactory):
+    csv_path = tmp_path / 'charms.csv'
+    csv_path.write_text(
+        f'Repository,Branch (if not the default),Commit\nhttps://github.com/canonical/foo,,{_SHA}\n',
+        encoding='utf-8',
+    )
+    fake = spawner(*(FakeProc(returncode=0) for _ in range(4)))
+
+    rc = _run_get_charms(['--source', str(csv_path), '--dest', str(tmp_path / 'dest')])
+
+    assert rc == 0
+    assert ('git', 'fetch', '--depth=1', '--no-tags', '--quiet', 'origin', _SHA) in [
+        argv for argv, _ in fake.calls
+    ]
 
 
 def test_get_charms_repo_flag_narrows_what_is_cloned(

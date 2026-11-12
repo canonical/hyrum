@@ -2,7 +2,9 @@
 
 Reads ``charm-list/charms.csv`` (or another path given via ``--source``) and
 ensures each row has an up-to-date checkout in ``--dest``: missing
-repositories are cloned (shallow, single-branch), existing ones are pulled.
+repositories are cloned (shallow, single-branch), existing ones are pulled. A
+row with a ``Commit`` is checked out at exactly that commit instead, both when
+it is first cloned and when an existing checkout is refreshed.
 ``select_rows`` narrows the list first, so a slow or unstable link can
 populate the collection a slice at a time. Network work runs concurrently
 via ``asyncio``.
@@ -39,9 +41,23 @@ CharmRow = typing.TypedDict(
     {
         'Repository': str,
         'Branch (if not the default)': typing.NotRequired[str],
+        'Commit': typing.NotRequired[str],
     },
 )
-"""Expected shape of a row in the charms CSV."""
+"""Expected shape of a row in the charms CSV.
+
+``Commit``, when set, must be a full 40-character SHA: the checkout is pinned
+to it. ``Branch (if not the default)`` still names the checkout's folder when
+a commit is given, but the commit alone decides what is checked out.
+"""
+
+
+_FULL_SHA_RE = re.compile(r'[0-9a-f]{40}')
+"""A full SHA-1 commit id, which is the only form a pin can take.
+
+Forges only serve ``git fetch origin <sha>`` for a full id: an abbreviated one
+is treated as a ref name and is not found.
+"""
 
 
 DEFAULT_SOURCE_CANDIDATES = (
@@ -163,7 +179,18 @@ async def process_rows(
         async with sem:
             return await _clone(repo_path, name, repository, branch, timeout=timeout)
 
+    async def _clone_at_bounded(
+        repo_path: pathlib.Path, name: str, repository: str, commit: str
+    ) -> bool:
+        async with sem:
+            return await _clone_at(repo_path, name, repository, commit, timeout=timeout)
+
+    async def _check_out_bounded(repo_path: pathlib.Path, name: str, ref: str) -> bool:
+        async with sem:
+            return await _check_out(repo_path, name, ref, timeout=timeout)
+
     tasks: list[tuple[str, asyncio.Task[bool]]] = []
+    invalid: list[str] = []
     claimed: dict[pathlib.Path, str] = {}
     duplicates = 0
     async with asyncio.TaskGroup() as tg:
@@ -181,17 +208,33 @@ async def process_rows(
                 )
                 duplicates += 1
                 continue
+            commit = commit_of(row)
+            if commit is not None and not _FULL_SHA_RE.fullmatch(commit):
+                logger.error(
+                    'Skipping %s: Commit %r is not a full 40-character SHA',
+                    name,
+                    row.get('Commit'),
+                )
+                invalid.append(name)
+                continue
             claimed[repo_path] = name
             if repo_path.exists():
-                tasks.append((name, tg.create_task(_pull_bounded(repo_path, name))))
+                if commit is not None:
+                    task = _check_out_bounded(repo_path, name, commit)
+                elif _detached_head(repo_path) is not None:
+                    # A checkout that was pinned before has no branch for
+                    # ``git pull`` to follow, so move it to the tip instead.
+                    task = _check_out_bounded(repo_path, name, branch or 'HEAD')
+                else:
+                    task = _pull_bounded(repo_path, name)
+            elif commit is not None:
+                task = _clone_at_bounded(repo_path, name, repository, commit)
             else:
-                tasks.append((
-                    name,
-                    tg.create_task(_clone_bounded(repo_path, name, repository, branch)),
-                ))
+                task = _clone_bounded(repo_path, name, repository, branch)
+            tasks.append((name, tg.create_task(task)))
 
-    failures = [name for name, task in tasks if not task.result()]
-    succeeded = len(tasks) - len(failures)
+    failures = invalid + [name for name, task in tasks if not task.result()]
+    succeeded = len(tasks) - len(failures) + len(invalid)
     logger.info('get-charms: %d succeeded, %d failed.', succeeded, len(failures))
     if duplicates:
         logger.info('get-charms: %d rows skipped as duplicates of an earlier row.', duplicates)
@@ -202,6 +245,27 @@ async def process_rows(
 def repository_of(row: CharmRow) -> str:
     """Return the row's ``Repository`` URL, or ``''`` if it has none."""
     return (row.get('Repository') or '').strip().rstrip('/')
+
+
+def commit_of(row: CharmRow) -> str | None:
+    """Return the row's ``Commit``, lower-cased, or ``None`` if it has none."""
+    return (row.get('Commit') or '').strip().lower() or None
+
+
+def _detached_head(dest: pathlib.Path) -> str | None:
+    """Return the commit a checkout's detached HEAD is at, or ``None`` if it is on a branch.
+
+    Read from ``.git/HEAD`` rather than asked of ``git``, since it decides
+    which ``git`` commands to run and costs nothing. A checkout whose HEAD
+    can't be read is treated as being on a branch, so it is pulled as before.
+    """
+    try:
+        head = (dest / '.git' / 'HEAD').read_text().strip()
+    except OSError:
+        return None
+    if head.startswith('ref:'):
+        return None
+    return head
 
 
 def _repo_label(repository: str) -> str:
@@ -319,6 +383,77 @@ async def _clone(
     if returncode != 0:
         logger.error('Could not clone %s from %s: %r', name, repository, _decode_stderr(stderr))
         return False
+    return True
+
+
+async def _clone_at(
+    dest: pathlib.Path,
+    name: str,
+    repository: str,
+    commit: str,
+    *,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> bool:
+    """Shallow-clone ``repository`` into ``dest`` at ``commit``. Returns True on success.
+
+    ``git clone`` can only check out a branch or tag, so this builds the
+    clone in steps instead. Anything left behind by a step that fails is
+    removed, since the directory existing is what makes a later run treat it
+    as a complete checkout.
+    """
+    logger.info('Cloning %s from %s at %s into %s', name, repository, commit, dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    steps = [
+        (['git', 'init', '--quiet', str(dest.resolve())], dest.parent),
+        (['git', 'remote', 'add', 'origin', repository], dest),
+    ]
+    for argv, cwd in steps:
+        try:
+            returncode, stderr = await _run_git(argv, cwd.resolve(), timeout=timeout)
+        except _TimeoutError:
+            logger.error(
+                'Timed out after %gs cloning %s from %s; skipping', timeout, name, repository
+            )
+            _discard_partial_clone(dest, name)
+            return False
+        if returncode != 0:
+            logger.error(
+                'Could not clone %s from %s: %r', name, repository, _decode_stderr(stderr)
+            )
+            _discard_partial_clone(dest, name)
+            return False
+    if not await _check_out(dest, name, commit, timeout=timeout):
+        _discard_partial_clone(dest, name)
+        return False
+    return True
+
+
+async def _check_out(
+    dest: pathlib.Path, name: str, ref: str, *, timeout: float = DEFAULT_TIMEOUT
+) -> bool:
+    """Shallow-fetch ``ref`` from ``origin`` and check it out detached. Returns True on success.
+
+    ``ref`` is a full commit SHA for a pinned row, or a branch name (or
+    ``HEAD``, for the remote's default branch) to move a previously pinned
+    checkout to the tip. A checkout that is already at the pinned commit is
+    left alone, so that refreshing a pinned collection needs no network.
+    """
+    if _FULL_SHA_RE.fullmatch(ref) and _detached_head(dest) == ref:
+        logger.info('%s is already at %s', name, ref)
+        return True
+    logger.info('Checking out %s at %s in %s', name, ref, dest)
+    for argv in (
+        ['git', 'fetch', '--depth=1', '--no-tags', '--quiet', 'origin', ref],
+        ['git', 'checkout', '--quiet', '--detach', 'FETCH_HEAD'],
+    ):
+        try:
+            returncode, stderr = await _run_git(argv, dest.resolve(), timeout=timeout)
+        except _TimeoutError:
+            logger.warning('Timed out after %gs checking out %s; skipping', timeout, name)
+            return False
+        if returncode != 0:
+            logger.warning('Could not check out %s at %s: %r', name, ref, _decode_stderr(stderr))
+            return False
     return True
 
 
