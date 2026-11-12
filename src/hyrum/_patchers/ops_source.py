@@ -304,6 +304,65 @@ class OpsSourcePatcher:
             for path, original in snapshots.items():
                 restore(path, original)
 
+    def _rewrite_pyproject(self, text: str, parsed: dict[str, Any], flavour: str) -> str:
+        """Return ``text`` with its ops declarations pointed at ``self.ops``."""
+        ops_extras = _collect_pyproject_ops_extras(parsed)
+        if flavour == 'uv':
+            return _patch_pyproject_uv(text, parsed, self.ops, ops_extras)
+        if flavour == 'poetry':
+            return _patch_pyproject_poetry(text, parsed, self.ops, ops_extras)
+        return _patch_pyproject_pep621(text, self.ops, ops_extras)
+
+    def _patch_path_dependencies(
+        self,
+        repo: pathlib.Path,
+        parsed: dict[str, Any],
+        snapshots: dict[pathlib.Path, str | None],
+    ) -> None:
+        """Patch the local projects that ``repo`` depends on by path, recursively.
+
+        A charm that keeps its shared code in an in-repo package (kafka-operator's
+        ``common/``, say) gets ops through that package, and patching only the
+        charm leaves the package asking for ops from PyPI, so the relock can't
+        reconcile the two. Each patched file is recorded in ``snapshots`` before
+        it is written, so that the caller restores it with everything else.
+
+        Only projects inside the charm's repository are followed: hyrum didn't
+        clone anything outside it, so it has no business writing there.
+        """
+        root = _repository_root(repo)
+        seen = {repo.resolve()}
+        pending = _local_path_dependencies(parsed, repo)
+        while pending:
+            project = pending.pop(0)
+            if project in seen:
+                continue
+            seen.add(project)
+            if not project.is_relative_to(root):
+                logger.info('not patching %s: it is outside the repository %s', project, root)
+                continue
+            pyproject = project / 'pyproject.toml'
+            text = pyproject.read_text()
+            try:
+                dep_parsed = tomllib.loads(text)
+            except tomllib.TOMLDecodeError as exc:
+                # The charm can't install a project its tools can't parse
+                # either, so this is the same skip as a malformed charm.
+                raise base.PatcherSkip(
+                    base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                    f'could not parse {pyproject}: {exc}',
+                ) from exc
+            # A project without ops can still depend on one that has it.
+            pending.extend(_local_path_dependencies(dep_parsed, project))
+            if not _pyproject_declares_ops(dep_parsed):
+                continue
+            # Declaring ops means having a Poetry table or a PEP 621 / 735
+            # array, so this is always one of the patchable flavours.
+            flavour = detect_pyproject_flavour(dep_parsed, (project / 'uv.lock').exists())
+            snapshots[pyproject] = text
+            pyproject.write_text(self._rewrite_pyproject(text, dep_parsed, flavour))
+            logger.debug('patched path dependency %s', pyproject)
+
     def _apply_pyproject(
         self, repo: pathlib.Path, pyproject: pathlib.Path, ops_in_tox: bool = False
     ) -> Generator[None, None, None]:
@@ -324,16 +383,11 @@ class OpsSourcePatcher:
             ) from exc
 
         try:
-            ops_extras = _collect_pyproject_ops_extras(parsed)
             flavour = detect_pyproject_flavour(parsed, uv_lock.exists())
             original_text = snapshots[pyproject] or ''
 
-            if flavour == 'uv':
-                new_text = _patch_pyproject_uv(original_text, parsed, self.ops, ops_extras)
-            elif flavour == 'poetry':
-                new_text = _patch_pyproject_poetry(original_text, parsed, self.ops, ops_extras)
-            elif flavour == 'pep621':
-                new_text = _patch_pyproject_pep621(original_text, self.ops, ops_extras)
+            if flavour in _PATCHABLE_FLAVOURS:
+                new_text = self._rewrite_pyproject(original_text, parsed, flavour)
             elif ops_in_tox:
                 # A pyproject.toml that only holds tool config: the charm
                 # declares ops in tox.ini, which is already patched.
@@ -344,6 +398,9 @@ class OpsSourcePatcher:
                 )
 
             pyproject.write_text(new_text)
+            # Before the re-lock below, which reads the dependency projects'
+            # declarations as well as the charm's own.
+            self._patch_path_dependencies(repo, parsed, snapshots)
 
             if flavour == 'poetry':
                 py_version = _min_python_from_pyproject(parsed) if self.ops.auto_python else None
@@ -369,6 +426,98 @@ class OpsSourcePatcher:
         finally:
             for path, original in snapshots.items():
                 restore(path, original)
+
+
+_PATCHABLE_FLAVOURS = frozenset({'uv', 'poetry', 'pep621'})
+
+
+def _repository_root(charm: pathlib.Path) -> pathlib.Path:
+    """The root of the git checkout that holds ``charm``.
+
+    A charm can sit in a subdirectory of a monorepo, and its path dependencies
+    can point at a sibling (``path = "../common"``), so the charm's own
+    directory is too narrow a boundary. Without a ``.git`` (a file, for a
+    worktree or submodule) anywhere above it, the charm directory is the only
+    boundary there is.
+    """
+    charm = charm.resolve()
+    for directory in (charm, *charm.parents):
+        if (directory / '.git').exists():
+            return directory
+    return charm
+
+
+def _path_sources(spec: Any) -> Iterator[str]:
+    """The ``path`` values of a Poetry dependency or uv source specification.
+
+    Both tools allow a list of specifications, one per marker or platform.
+    """
+    specs: list[Any] = spec if isinstance(spec, list) else [spec]
+    for item in specs:
+        if isinstance(item, dict) and isinstance(item.get('path'), str):
+            yield str(item['path'])
+
+
+def _local_path_dependencies(
+    parsed: dict[str, Any], project_dir: pathlib.Path
+) -> list[pathlib.Path]:
+    """The local projects that a pyproject depends on by path.
+
+    These are Poetry ``path`` dependencies and ``[tool.uv.sources]`` ``path``
+    entries that name a directory holding a ``pyproject.toml``. A path to a
+    wheel or an sdist is a built artefact rather than something to patch.
+    """
+    tool: Any = parsed.get('tool', {})
+    poetry: Any = tool.get('poetry', {}) if isinstance(tool, dict) else {}
+    tables: list[Any] = []
+    if isinstance(poetry, dict):
+        tables.extend(poetry.get(key) for key in ('dependencies', 'dev-dependencies'))
+        groups: Any = poetry.get('group', {})
+        if isinstance(groups, dict):
+            tables.extend(
+                group.get('dependencies') for group in groups.values() if isinstance(group, dict)
+            )
+    uv: Any = tool.get('uv', {}) if isinstance(tool, dict) else {}
+    if isinstance(uv, dict):
+        tables.append(uv.get('sources'))
+
+    found: list[pathlib.Path] = []
+    for table in tables:
+        if not isinstance(table, dict):
+            continue
+        for spec in table.values():
+            for raw in _path_sources(spec):
+                path = (project_dir / raw).resolve()
+                if (path / 'pyproject.toml').is_file() and path not in found:
+                    found.append(path)
+    return found
+
+
+def _pyproject_declares_ops(parsed: dict[str, Any]) -> bool:
+    """Does the pyproject declare ``ops`` or one of its companions anywhere?"""
+    names = {'ops', *(pkg for pkg, _ in _COMPANION_PACKAGES.values())}
+    for _, _, entries in _pep508_dep_arrays(parsed):
+        if any(
+            packaging.utils.canonicalize_name(req.name) in names
+            for req in _pep508_requirements(entries)
+        ):
+            return True
+    tool: Any = parsed.get('tool', {})
+    poetry: Any = tool.get('poetry', {}) if isinstance(tool, dict) else {}
+    if not isinstance(poetry, dict):
+        return False
+    tables: list[Any] = [poetry.get(key) for key in ('dependencies', 'dev-dependencies')]
+    groups: Any = poetry.get('group', {})
+    if isinstance(groups, dict):
+        tables.extend(
+            group.get('dependencies') for group in groups.values() if isinstance(group, dict)
+        )
+    return any(
+        packaging.utils.canonicalize_name(str(key)) in names
+        for table in tables
+        if isinstance(table, dict)
+        for key in table
+    )
 
 
 def _ops_extras_from_pep508_line(line: str) -> set[str]:
