@@ -754,6 +754,40 @@ def test_pyproject_uv_ops_only_in_a_marked_extra(
         assert str(extra[name].marker) == 'python_version >= "3.12"'
 
 
+def test_pyproject_uv_ops_only_in_a_dependency_group(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
+):
+    """A library that needs ops only for its tests doesn't gain runtime companions."""
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "lib"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+            "tenacity>=9.0.0",
+        ]
+
+        [dependency-groups]
+        unit = [
+            "ops[testing]",
+            "pytest",
+        ]
+
+        [tool.uv]
+        exclude-newer = "1 day"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+    assert parsed['project']['dependencies'] == ['tenacity>=9.0.0']
+    unit = _requirements(parsed['dependency-groups']['unit'])
+    assert unit['ops'].url == _BRANCH_URL
+    assert unit['ops-scenario'].url == f'{_BRANCH_URL}#subdirectory=testing'
+    assert unit['ops-tracing'].url == f'{_BRANCH_URL}#subdirectory=tracing'
+
+
 def test_pyproject_uv_companions_take_the_marker_of_ops_in_project_dependencies(
     tmp_path: pathlib.Path, ops_path: patchers.OpsSource
 ):

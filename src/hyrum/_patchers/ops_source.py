@@ -1161,21 +1161,23 @@ def _patch_pyproject_uv(
             declares, marker = _ops_marker(entries)
             if declares:
                 extras_with_ops.append((str(name), marker))
+    group_names = _ops_bearing_dep_group_names(parsed)
     if 'dependencies' in project:
         declares, marker = _ops_marker(project['dependencies'])
         # Without a direct declaration the companions still go here, because
         # ops may only arrive transitively (through coordinated-workers, for
         # example) and uv needs the URL deps hoisted to the top level. The
-        # exception is a project that declares ops only in an extra, like a
-        # library whose ops support is optional: making the companions
-        # unconditional runtime dependencies there is wrong, and with no
-        # marker they can make the project unresolvable for older Pythons it
-        # supports (canonical/hyrum#210).
-        if declares or not extras_with_ops:
+        # exception is a project that declares ops only in an extra or a
+        # dependency group, like a library whose ops support is optional or
+        # only needed for its tests: making the companions unconditional
+        # runtime dependencies there is wrong, and with no marker they can
+        # make the project unresolvable for older Pythons it supports
+        # (canonical/hyrum#210).
+        if declares or not (extras_with_ops or group_names):
             targets.append(('project', 'dependencies', marker))
     targets.extend(('project.optional-dependencies', n, m) for n, m in extras_with_ops)
     groups: Any = parsed.get('dependency-groups', {})
-    for group_name in _ops_bearing_dep_group_names(parsed):
+    for group_name in group_names:
         _, marker = _ops_marker(groups[group_name])
         targets.append(('dependency-groups', group_name, marker))
     for section, array, marker in targets:
