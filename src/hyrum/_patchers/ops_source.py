@@ -597,30 +597,14 @@ def _uv_workspace_members(workspace: Any, root: pathlib.Path) -> list[pathlib.Pa
 
 
 def _pyproject_declares_ops(parsed: dict[str, Any]) -> bool:
-    """Does the pyproject declare ``ops`` or one of its companions anywhere?"""
-    names = {'ops', *(pkg for pkg, _ in _COMPANION_PACKAGES.values())}
-    for _, _, entries in _pep508_dep_arrays(parsed):
-        if any(
-            packaging.utils.canonicalize_name(req.name) in names
-            for req in _pep508_requirements(entries)
-        ):
-            return True
-    tool: Any = parsed.get('tool', {})
-    poetry: Any = tool.get('poetry', {}) if isinstance(tool, dict) else {}
-    if not isinstance(poetry, dict):
-        return False
-    tables: list[Any] = [poetry.get(key) for key in ('dependencies', 'dev-dependencies')]
-    groups: Any = poetry.get('group', {})
-    if isinstance(groups, dict):
-        tables.extend(
-            group.get('dependencies') for group in groups.values() if isinstance(group, dict)
-        )
-    return any(
-        packaging.utils.canonicalize_name(str(key)) in names
-        for table in tables
-        if isinstance(table, dict)
-        for key in table
-    )
+    """Does the pyproject declare ``ops`` or one of its companions anywhere?
+
+    Raises :class:`~hyrum._patchers.base.PatcherSkip` for a malformed
+    dependency table, as it would for the charm's own pyproject: the relock
+    would fail on it anyway.
+    """
+    names = ('ops', *(pkg for pkg, _ in _COMPANION_PACKAGES.values()))
+    return any(_common.pkg_is_declared(parsed, name) for name in names)
 
 
 def _ops_extras_from_pep508_line(line: str) -> set[str]:

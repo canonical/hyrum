@@ -1677,6 +1677,26 @@ def test_malformed_path_dependency_is_skipped(
     assert _read(charm / 'pyproject.toml') == charm_original
 
 
+def test_path_dependency_with_a_malformed_dependency_table_is_skipped(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    charm, common = _monorepo(
+        tmp_path,
+        charm_deps='ops = "^3.0"\ncommon = { path = "../common" }\n',
+        common_deps='',
+    )
+    (common / 'pyproject.toml').write_text('dependency-groups = "not a table"\n')
+    charm_original = _read(charm / 'pyproject.toml')
+    with (
+        pytest.raises(patchers.PatcherSkip) as excinfo,
+        patchers.OpsSourcePatcher(ops_main).apply(charm),
+    ):
+        pass
+    assert excinfo.value.reason is patchers.PatcherSkipReason.MALFORMED_PYPROJECT
+    assert _read(charm / 'pyproject.toml') == charm_original
+
+
 def test_path_dependency_is_restored_when_the_relock_fails(
     tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):
