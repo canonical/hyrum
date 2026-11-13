@@ -1650,6 +1650,69 @@ def test_path_dependency_is_restored_when_the_relock_fails(
     assert _read(common / 'pyproject.toml') == original
 
 
+def test_path_dependency_shared_by_two_charms_is_restored_by_the_last_one_out(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    # Monorepo subcharms take separate locks and run in parallel, so their
+    # patches to a shared path dependency overlap.
+    machines, common = _monorepo(
+        tmp_path,
+        charm_deps='ops = "^3.0"\ncommon = { path = "../common" }\n',
+        common_deps='ops = "^3.0"\n',
+    )
+    k8s = tmp_path / 'k8s'
+    k8s.mkdir()
+    (k8s / 'pyproject.toml').write_text(
+        _poetry_project('k8s', 'ops = "^3.0"\ncommon = { path = "../common" }\n')
+    )
+    (k8s / 'poetry.lock').write_text('')
+    original = _read(common / 'pyproject.toml')
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+
+    first = patchers.OpsSourcePatcher(ops_main).apply(machines)
+    second = patchers.OpsSourcePatcher(ops_main).apply(k8s)
+    first.__enter__()
+    patched = _read(common / 'pyproject.toml')
+    assert patched != original
+    second.__enter__()
+    assert _read(common / 'pyproject.toml') == patched
+    first.__exit__(None, None, None)
+    # The second charm is still running against the shared package.
+    assert _read(common / 'pyproject.toml') == patched
+    second.__exit__(None, None, None)
+    assert _read(common / 'pyproject.toml') == original
+
+
+def test_path_dependency_shared_with_a_different_ops_source_is_an_error(
+    tmp_path: pathlib.Path,
+    ops_main: patchers.OpsSource,
+    ops_branch: patchers.OpsSource,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    machines, common = _monorepo(
+        tmp_path,
+        charm_deps='ops = "^3.0"\ncommon = { path = "../common" }\n',
+        common_deps='ops = "^3.0"\n',
+    )
+    k8s = tmp_path / 'k8s'
+    k8s.mkdir()
+    k8s_original = _poetry_project('k8s', 'ops = "^3.0"\ncommon = { path = "../common" }\n')
+    (k8s / 'pyproject.toml').write_text(k8s_original)
+    original = _read(common / 'pyproject.toml')
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+
+    with patchers.OpsSourcePatcher(ops_main).apply(machines):
+        patched = _read(common / 'pyproject.toml')
+        with (
+            pytest.raises(patchers.PatcherError, match='different ops source'),
+            patchers.OpsSourcePatcher(ops_branch).apply(k8s),
+        ):
+            pass
+        assert _read(common / 'pyproject.toml') == patched
+        assert _read(k8s / 'pyproject.toml') == k8s_original
+    assert _read(common / 'pyproject.toml') == original
+
+
 # ---- OpsSource: PyPI version mode -------------------------------------------
 
 

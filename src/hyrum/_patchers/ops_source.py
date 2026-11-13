@@ -28,6 +28,7 @@ import logging
 import pathlib
 import re
 import shlex
+import threading
 import tomllib
 from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
 from typing import Any
@@ -317,15 +318,15 @@ class OpsSourcePatcher:
         self,
         repo: pathlib.Path,
         parsed: dict[str, Any],
-        snapshots: dict[pathlib.Path, str | None],
+        shared: list[pathlib.Path],
     ) -> None:
         """Patch the local projects that ``repo`` depends on by path, recursively.
 
         A charm that keeps its shared code in an in-repo package (kafka-operator's
         ``common/``, say) gets ops through that package, and patching only the
         charm leaves the package asking for ops from PyPI, so the relock can't
-        reconcile the two. Each patched file is recorded in ``snapshots`` before
-        it is written, so that the caller restores it with everything else.
+        reconcile the two. Each patched file is appended to ``shared``, and the
+        caller hands it back to :data:`_SHARED_PATCHES` when it is done.
 
         Only projects inside the charm's repository are followed: hyrum didn't
         clone anything outside it, so it has no business writing there.
@@ -342,7 +343,9 @@ class OpsSourcePatcher:
                 logger.info('not patching %s: it is outside the repository %s', project, root)
                 continue
             pyproject = project / 'pyproject.toml'
-            text = pyproject.read_text()
+            # Another charm in the same repository may have this patched
+            # already; what it declares is the original, not the patched file.
+            text = _SHARED_PATCHES.original(pyproject)
             try:
                 dep_parsed = tomllib.loads(text)
             except tomllib.TOMLDecodeError as exc:
@@ -359,8 +362,10 @@ class OpsSourcePatcher:
             # Declaring ops means having a Poetry table or a PEP 621 / 735
             # array, so this is always one of the patchable flavours.
             flavour = detect_pyproject_flavour(dep_parsed, (project / 'uv.lock').exists())
-            snapshots[pyproject] = text
-            pyproject.write_text(self._rewrite_pyproject(text, dep_parsed, flavour))
+            _SHARED_PATCHES.acquire(
+                pyproject, text, self._rewrite_pyproject(text, dep_parsed, flavour)
+            )
+            shared.append(pyproject)
             logger.debug('patched path dependency %s', pyproject)
 
     def _apply_pyproject(
@@ -373,6 +378,7 @@ class OpsSourcePatcher:
             poetry_lock: snapshot(poetry_lock),
             uv_lock: snapshot(uv_lock),
         }
+        shared: list[pathlib.Path] = []
 
         try:
             parsed = tomllib.loads(snapshots[pyproject] or '')
@@ -400,7 +406,7 @@ class OpsSourcePatcher:
             pyproject.write_text(new_text)
             # Before the re-lock below, which reads the dependency projects'
             # declarations as well as the charm's own.
-            self._patch_path_dependencies(repo, parsed, snapshots)
+            self._patch_path_dependencies(repo, parsed, shared)
 
             if flavour == 'poetry':
                 py_version = _min_python_from_pyproject(parsed) if self.ops.auto_python else None
@@ -426,9 +432,73 @@ class OpsSourcePatcher:
         finally:
             for path, original in snapshots.items():
                 restore(path, original)
+            for path in shared:
+                _SHARED_PATCHES.release(path)
 
 
 _PATCHABLE_FLAVOURS = frozenset({'uv', 'poetry', 'pep621'})
+
+
+@dataclasses.dataclass
+class _SharedPatch:
+    original: str
+    patched: str
+    holders: int
+
+
+class _SharedPatches:
+    """Patches to files that more than one charm can depend on at once.
+
+    The per-charm lock covers the charm's own directory, and monorepo subcharms
+    lock separately so that they can run in parallel. A path dependency they
+    share (``common/``) is outside both, so snapshot-and-restore would let the
+    second charm take the first's patched file as its original, and the last
+    one out would leave it patched in the cache. Instead the first charm to
+    arrive snapshots and writes, later ones join it, and the last to leave
+    restores.
+
+    This is per process: every charm in a run shares one :class:`OpsSource`,
+    so they all write the same content, and a mismatch is an error rather than
+    a silent overwrite.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._patches: dict[pathlib.Path, _SharedPatch] = {}
+
+    def original(self, path: pathlib.Path) -> str:
+        """Return ``path``'s unpatched content, whether or not it is patched now."""
+        with self._lock:
+            patch = self._patches.get(path.resolve())
+            return patch.original if patch is not None else path.read_text()
+
+    def acquire(self, path: pathlib.Path, original: str, patched: str) -> None:
+        """Make sure ``path`` holds ``patched`` until a matching :meth:`release`."""
+        key = path.resolve()
+        with self._lock:
+            patch = self._patches.get(key)
+            if patch is None:
+                path.write_text(patched)
+                self._patches[key] = _SharedPatch(original, patched, holders=1)
+                return
+            if patch.original != original or patch.patched != patched:
+                raise base.PatcherError(
+                    f'{path} is already patched to a different ops source by another charm'
+                )
+            patch.holders += 1
+
+    def release(self, path: pathlib.Path) -> None:
+        """Drop one hold on ``path``, restoring it when the last one goes."""
+        key = path.resolve()
+        with self._lock:
+            patch = self._patches[key]
+            patch.holders -= 1
+            if patch.holders == 0:
+                del self._patches[key]
+                restore(path, patch.original)
+
+
+_SHARED_PATCHES = _SharedPatches()
 
 
 def _repository_root(charm: pathlib.Path) -> pathlib.Path:
