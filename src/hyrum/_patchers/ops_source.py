@@ -32,6 +32,7 @@ import tomllib
 from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
 from typing import Any
 
+import packaging.markers
 import packaging.requirements
 import packaging.specifiers
 import packaging.utils
@@ -863,6 +864,89 @@ _DEPS_ARRAY_OPENER_RE = re.compile(r'\s*dependencies\s*=\s*\[')
 _NAMED_ARRAY_OPENER_RE = re.compile(r'\s*[A-Za-z_][\w-]*\s*=\s*\[')
 
 
+def _marker_text(marker: packaging.markers.Marker) -> str:
+    """Render ``marker`` for a TOML basic string.
+
+    ``packaging`` normalises marker values to double quotes, which would end
+    the TOML string the requirement is written into.
+    """
+    return str(marker).replace('"', "'")
+
+
+def _entry_marker(quoted: str) -> str | None:
+    """The environment marker of a quoted PEP 508 array element, if it has one."""
+    entry = quoted.strip().strip('"')
+    try:
+        marker = packaging.requirements.Requirement(entry).marker
+    except packaging.requirements.InvalidRequirement:
+        # Not ours to judge: keep whatever follows the separator, as uv will.
+        _, sep, rest = entry.partition(';')
+        return (rest.strip() or None) if sep else None
+    return _marker_text(marker) if marker is not None else None
+
+
+def _with_marker(dep: str, marker: str | None) -> str:
+    """Append ``marker`` to a PEP 508 requirement.
+
+    The space before the separator is required after a URL, where a bare
+    ``;`` would be read as part of the URL; it is also valid after a version.
+    """
+    return f'{dep} ; {marker}' if marker else dep
+
+
+def _ops_marker(entries: object) -> tuple[bool, str | None]:
+    """Whether a dependency array declares ops, and the marker the ops entries share.
+
+    An array may declare ops more than once, for example a different pin per
+    Python version. The companions are needed wherever any of those entries
+    applies, so the markers are combined with ``or``; an unconditional entry
+    makes the whole thing unconditional.
+    """
+    if not isinstance(entries, list):
+        return False, None
+    markers: list[str | None] = []
+    for entry in entries:
+        if not isinstance(entry, str):
+            continue
+        try:
+            req = packaging.requirements.Requirement(entry)
+        except packaging.requirements.InvalidRequirement:
+            continue
+        if req.name == 'ops':
+            markers.append(_marker_text(req.marker) if req.marker is not None else None)
+    if not markers:
+        return False, None
+    if None in markers:
+        return True, None
+    unique = list(dict.fromkeys(m for m in markers if m is not None))
+    if len(unique) == 1:
+        return True, unique[0]
+    return True, ' or '.join(f'({m})' for m in unique)
+
+
+def _prepend_to_array(text: str, section: str, array: str, entries: Sequence[str]) -> str:
+    """Insert ``entries`` at the start of the ``array`` array in ``[section]``.
+
+    Matching on the section as well as the array name matters because the
+    same name is often used for an extra and for a dependency group (``unit``,
+    say), and the companions belong only in the one that declares ops.
+    """
+    opener = re.compile(rf'^\s*{re.escape(array)}\s*=\s*\[')
+    current = ''
+    out: list[str] = []
+    done = False
+    for raw in text.splitlines(keepends=True):
+        header = _SECTION_HEADER_RE.match(raw)
+        if header:
+            current = header.group(1).strip()
+        elif not done and current == section and (match := opener.match(raw)):
+            joined = ', '.join(f'"{entry}"' for entry in entries)
+            raw = f'{raw[: match.end()]}\n    {joined},{raw[match.end() :]}'
+            done = True
+        out.append(raw)
+    return ''.join(out)
+
+
 def _rewrite_pep508_ops_strings(text: str, ops: OpsSource) -> str:
     """Rewrite quoted PEP 508 ops entries in-place to point at the git source.
 
@@ -874,14 +958,21 @@ def _rewrite_pep508_ops_strings(text: str, ops: OpsSource) -> str:
     The companions are left alone too when ``ops`` is from PyPI, since their
     versioning is independent of ``ops``.
     """
-    repl_scenario = f'"{ops.pep508_dep("ops-scenario", subdir="testing")}"'
-    repl_tracing = f'"{ops.pep508_dep("ops-tracing", subdir="tracing")}"'
     companions = ops.overrides_companions()
 
     def repl_ops(match: re.Match[str]) -> str:
         raw_extras = match.group(1) or ''
         extras = [e.strip() for e in raw_extras.strip('[]').split(',') if e.strip()]
-        return f'"{ops.pep508_dep("ops", extras=extras)}"'
+        dep = ops.pep508_dep('ops', extras=extras)
+        return f'"{_with_marker(dep, _entry_marker(match.group(0)))}"'
+
+    def repl_scenario(match: re.Match[str]) -> str:
+        dep = ops.pep508_dep('ops-scenario', subdir='testing')
+        return f'"{_with_marker(dep, _entry_marker(match.group(0)))}"'
+
+    def repl_tracing(match: re.Match[str]) -> str:
+        dep = ops.pep508_dep('ops-tracing', subdir='tracing')
+        return f'"{_with_marker(dep, _entry_marker(match.group(0)))}"'
 
     section = ''
     bracket_depth = 0
@@ -919,8 +1010,8 @@ def _rewrite_pep508_ops_strings(text: str, ops: OpsSource) -> str:
         if line_in_dep_array:
             raw = _OPS_PEP508_RE.sub(repl_ops, raw)
             if companions:
-                raw = _OPS_SCENARIO_PEP508_RE.sub(lambda _m: repl_scenario, raw)
-                raw = _OPS_TRACING_PEP508_RE.sub(lambda _m: repl_tracing, raw)
+                raw = _OPS_SCENARIO_PEP508_RE.sub(repl_scenario, raw)
+                raw = _OPS_TRACING_PEP508_RE.sub(repl_tracing, raw)
 
         # Update bracket depth from the (possibly rewritten) line.
         opens = raw.count('[')
@@ -1008,9 +1099,12 @@ def _patch_pyproject_uv(
     "URL dependencies must be expressed as direct requirements".
 
     The companion direct-deps are injected into every dep-list that
-    declares ``ops`` — both ``[project.dependencies]`` and any PEP 735
-    ``[dependency-groups].<name>`` arrays — so the hoist sits in the
-    same resolution scope as ``ops`` itself.
+    declares ``ops`` — ``[project.dependencies]``, any
+    ``[project.optional-dependencies]`` extra, and any PEP 735
+    ``[dependency-groups].<name>`` array — so the hoist sits in the same
+    resolution scope as ``ops`` itself, under the same environment marker.
+    ``[project.dependencies]`` also gets them when ops isn't declared
+    anywhere, for the transitive case above.
 
     Direct ``"ops..."`` PEP 508 strings under
     ``[project.optional-dependencies]`` / ``[dependency-groups]`` are
@@ -1030,7 +1124,7 @@ def _patch_pyproject_uv(
             1,
         )
 
-    del ops_extras  # uv hoists all companions unconditionally.
+    del ops_extras  # uv hoists all companions, whichever extras are asked for.
     source_lines: list[str] = [f'ops = {ops.uv_source_inline()}']
     companion_direct: list[str] = []
     for pkg, subdir in _COMPANION_PACKAGES.values():
@@ -1058,30 +1152,37 @@ def _patch_pyproject_uv(
             out, _UV_CONFIG_SETTINGS_PACKAGE, ['ops = { editable_mode = "compat" }']
         )
 
-    dep_entries = ', '.join(f'"{d}"' for d in companion_direct)
-    # PEP 621 project deps. Anchored at start-of-line so we don't match
-    # the trailing "dependencies = [" inside e.g. build-constraint-dependencies.
-    if 'dependencies' in parsed.get('project', {}):
-        out = re.sub(
-            r"""(?xm)
-            ^ dependencies   # array name, must start the line
-            \s* = \s* \[     # the array opener
-            """,
-            f'dependencies = [\n  {dep_entries},',
-            out,
-            count=1,
-        )
-    # PEP 735 dep-groups that declare ops directly. Same anchoring.
-    for group_name in _ops_bearing_dep_group_names(parsed):
-        out = re.sub(
-            rf"""(?xm)
-            ^ {re.escape(group_name)}   # the named group, must start the line
-            \s* = \s* \[                # the array opener
-            """,
-            f'{group_name} = [\n    {dep_entries},',
-            out,
-            count=1,
-        )
+    project: Any = parsed.get('project', {})
+    targets: list[tuple[str, str, str | None]] = []
+    extras_with_ops: list[tuple[str, str | None]] = []
+    optional: Any = project.get('optional-dependencies', {})
+    if isinstance(optional, dict):
+        for name, entries in optional.items():
+            declares, marker = _ops_marker(entries)
+            if declares:
+                extras_with_ops.append((str(name), marker))
+    group_names = _ops_bearing_dep_group_names(parsed)
+    if 'dependencies' in project:
+        declares, marker = _ops_marker(project['dependencies'])
+        # Without a direct declaration the companions still go here, because
+        # ops may only arrive transitively (through coordinated-workers, for
+        # example) and uv needs the URL deps hoisted to the top level. The
+        # exception is a project that declares ops only in an extra or a
+        # dependency group, like a library whose ops support is optional or
+        # only needed for its tests: making the companions unconditional
+        # runtime dependencies there is wrong, and with no marker they can
+        # make the project unresolvable for older Pythons it supports
+        # (canonical/hyrum#210).
+        if declares or not (extras_with_ops or group_names):
+            targets.append(('project', 'dependencies', marker))
+    targets.extend(('project.optional-dependencies', n, m) for n, m in extras_with_ops)
+    groups: Any = parsed.get('dependency-groups', {})
+    for group_name in group_names:
+        _, marker = _ops_marker(groups[group_name])
+        targets.append(('dependency-groups', group_name, marker))
+    for section, array, marker in targets:
+        entries = [_with_marker(dep, marker) for dep in companion_direct]
+        out = _prepend_to_array(out, section, array, entries)
 
     # ops HEAD requires Python >=3.10; uv validates against every declared
     # interpreter version, so a lower requires-python causes spurious fails.
@@ -1091,9 +1192,10 @@ def _patch_pyproject_uv(
         "                          # opening quote of the version specifier
         [~>] = 3 \. [89]           # ~=3.8/3.9 or >=3.8/3.9 — the values we lift
         (?: \. \d+ )?              # optional patch component, e.g. >=3.9.2
+        ( , [^"]* )?               # any further clauses, e.g. ,<4.0, kept as they are
         "                          # closing quote
         """,
-        'requires-python = ">=3.10"',
+        r'requires-python = ">=3.10\1"',
         out,
     )
     return out
