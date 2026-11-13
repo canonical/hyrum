@@ -202,7 +202,7 @@ async def process_rows(
 
     tasks: list[tuple[str, asyncio.Task[bool]]] = []
     invalid: list[str] = []
-    claimed: dict[pathlib.Path, str] = {}
+    claimed: dict[pathlib.Path, tuple[str, str | None]] = {}
     duplicates = 0
     async with asyncio.TaskGroup() as tg:
         for row in rows:
@@ -213,13 +213,24 @@ async def process_rows(
             name = _repo_label(repository)
             branch = row.get('Branch (if not the default)') or None
             repo_path = repo_folder(dest, repository, branch)
+            commit = commit_of(row)
             if repo_path in claimed:
-                logger.debug(
-                    'Skipping %s: %s already claims %s', name, claimed[repo_path], repo_path
-                )
+                claimant, claimed_commit = claimed[repo_path]
+                if commit != claimed_commit:
+                    # One checkout can't be at two commits, and someone who
+                    # listed both probably expected two checkouts.
+                    logger.warning(
+                        'Skipping %s at %s: %s already claims %s at %s',
+                        name,
+                        commit or 'its branch tip',
+                        claimant,
+                        repo_path,
+                        claimed_commit or 'its branch tip',
+                    )
+                else:
+                    logger.debug('Skipping %s: %s already claims %s', name, claimant, repo_path)
                 duplicates += 1
                 continue
-            commit = commit_of(row)
             if commit is not None and not _FULL_SHA_RE.fullmatch(commit):
                 logger.error(
                     'Skipping %s: Commit %r is not a full 40-character SHA',
@@ -228,7 +239,7 @@ async def process_rows(
                 )
                 invalid.append(name)
                 continue
-            claimed[repo_path] = name
+            claimed[repo_path] = (name, commit)
             if repo_path.exists():
                 if commit is not None:
                     task = _check_out_bounded(repo_path, name, commit)
