@@ -362,6 +362,7 @@ class OpsSourcePatcher:
             # Declaring ops means having a Poetry table or a PEP 621 / 735
             # array, so this is always one of the patchable flavours.
             flavour = detect_pyproject_flavour(dep_parsed, (project / 'uv.lock').exists())
+            assert flavour in _PATCHABLE_FLAVOURS, flavour
             _SHARED_PATCHES.acquire(
                 pyproject, text, self._rewrite_pyproject(text, dep_parsed, flavour)
             )
