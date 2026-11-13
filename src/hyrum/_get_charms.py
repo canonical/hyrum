@@ -245,7 +245,7 @@ async def process_rows(
             tasks.append((name, tg.create_task(task)))
 
     failures = invalid + [name for name, task in tasks if not task.result()]
-    succeeded = len(tasks) - len(failures) + len(invalid)
+    succeeded = sum(1 for _, task in tasks if task.result())
     logger.info('get-charms: %d succeeded, %d failed.', succeeded, len(failures))
     if duplicates:
         logger.info('get-charms: %d rows skipped as duplicates of an earlier row.', duplicates)
