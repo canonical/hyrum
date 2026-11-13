@@ -114,8 +114,9 @@ def select_rows(
 
     ``skip_existing_in`` is a destination directory whose existing checkouts
     are dropped before ``limit`` is counted, so that consecutive limited runs
-    fetch successive slices instead of the same one. Callers that want every
-    matching row refreshed pass ``None``.
+    fetch successive slices instead of the same one. A pinned row's checkout
+    only counts as existing when it is at the pinned commit. Callers that
+    want every matching row refreshed pass ``None``.
 
     Rows with no ``Repository`` cannot be named, so they are dropped here
     rather than counted against ``limit``. ``process_rows`` guards against
@@ -134,13 +135,23 @@ def select_rows(
         branch = row.get('Branch (if not the default)') or None
         if not pattern.match(_folder_leaf(repository, branch)):
             continue
-        if (
-            skip_existing_in is not None
-            and repo_folder(skip_existing_in, repository, branch).exists()
+        if skip_existing_in is not None and _is_current(
+            repo_folder(skip_existing_in, repository, branch), commit_of(row)
         ):
             continue
         selected.append(row)
     return selected
+
+
+def _is_current(dest: pathlib.Path, commit: str | None) -> bool:
+    """Is there a checkout at ``dest`` that needs nothing from the network?
+
+    For an unpinned row, any checkout will do. For a pinned row, it has to be
+    at the pin: one at another commit is exactly what the pin is there to fix.
+    """
+    if commit is None:
+        return dest.exists()
+    return _detached_head(dest) == commit
 
 
 async def process_rows(

@@ -425,6 +425,37 @@ def _write_head(dest: pathlib.Path, head: str) -> None:
     (dest / '.git' / 'HEAD').write_text(f'{head}\n')
 
 
+def _pinned_row(repository: str, commit: str) -> get_charms.CharmRow:
+    return typing.cast(
+        'get_charms.CharmRow',
+        {'Repository': repository, 'Branch (if not the default)': '', 'Commit': commit},
+    )
+
+
+@pytest.mark.parametrize(
+    ('head', 'selected'),
+    [
+        (_SHA, False),
+        (_OTHER_SHA, True),
+        ('ref: refs/heads/main', True),
+        (None, True),
+    ],
+)
+def test_select_rows_skips_a_pinned_checkout_only_when_it_is_at_the_pin(
+    tmp_path: pathlib.Path, head: str | None, selected: bool
+):
+    if head is not None:
+        _write_head(tmp_path / 'canonical' / 'foo', head)
+    row = _pinned_row('https://github.com/canonical/foo', _SHA.upper())
+    assert get_charms.select_rows([row], skip_existing_in=tmp_path) == ([row] if selected else [])
+
+
+def test_select_rows_skips_any_existing_unpinned_checkout(tmp_path: pathlib.Path):
+    (tmp_path / 'canonical' / 'foo').mkdir(parents=True)
+    row = _row('https://github.com/canonical/foo')
+    assert get_charms.select_rows([row], skip_existing_in=tmp_path) == []
+
+
 async def test_process_rows_clones_a_pinned_row_at_its_commit(
     tmp_path: pathlib.Path, spawner: SpawnerFactory
 ):
