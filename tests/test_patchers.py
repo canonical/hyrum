@@ -1598,6 +1598,52 @@ def test_path_dependency_from_uv_sources_is_patched(
         assert reqs['ops'].extras == {'tracing'}
 
 
+def test_uv_workspace_members_are_patched(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    # A workspace member has no ``path`` anywhere, but the root's relock still
+    # reads its declarations.
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    (tmp_path / '.git').mkdir()
+    (tmp_path / 'pyproject.toml').write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "charm"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = ["ops>=3", "common"]
+
+        [tool.uv.sources]
+        common = { workspace = true }
+
+        [tool.uv.workspace]
+        members = ["libs/*"]
+        exclude = ["libs/excluded"]
+        """)
+    )
+    (tmp_path / 'uv.lock').write_text('')
+    member_text = textwrap.dedent("""\
+        [project]
+        name = "{name}"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = ["ops>=3"]
+        """)
+    for name in ('common', 'excluded'):
+        (tmp_path / 'libs' / name).mkdir(parents=True)
+        (tmp_path / 'libs' / name / 'pyproject.toml').write_text(member_text.format(name=name))
+    common = tmp_path / 'libs' / 'common' / 'pyproject.toml'
+    excluded = tmp_path / 'libs' / 'excluded' / 'pyproject.toml'
+    common_original = _read(common)
+    excluded_original = _read(excluded)
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        deps = tomllib.loads(_read(common))['project']['dependencies']
+        reqs = {req.name: req for req in (packaging.requirements.Requirement(d) for d in deps)}
+        assert reqs['ops'].url == _MAIN_URL
+        assert _read(excluded) == excluded_original
+    assert _read(common) == common_original
+
+
 def test_ops_only_through_a_path_dependency_is_patchable(
     tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
 ):

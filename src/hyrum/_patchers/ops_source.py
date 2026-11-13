@@ -534,7 +534,8 @@ def _local_path_dependencies(
     """The local projects that a pyproject depends on by path.
 
     These are Poetry ``path`` dependencies and ``[tool.uv.sources]`` ``path``
-    entries that name a directory holding a ``pyproject.toml``. A path to a
+    entries that name a directory holding a ``pyproject.toml``, and the members
+    of a ``[tool.uv.workspace]`` the pyproject is the root of. A path to a
     wheel or an sdist is a built artefact rather than something to patch.
     """
     tool: Any = parsed.get('tool', {})
@@ -551,16 +552,48 @@ def _local_path_dependencies(
     if isinstance(uv, dict):
         tables.append(uv.get('sources'))
 
-    found: list[pathlib.Path] = []
+    candidates: list[pathlib.Path] = []
     for table in tables:
         if not isinstance(table, dict):
             continue
         for spec in table.values():
-            for raw in _path_sources(spec):
-                path = (project_dir / raw).resolve()
-                if (path / 'pyproject.toml').is_file() and path not in found:
-                    found.append(path)
+            candidates.extend(project_dir / raw for raw in _path_sources(spec))
+    if isinstance(uv, dict):
+        candidates.extend(_uv_workspace_members(uv.get('workspace'), project_dir))
+
+    found: list[pathlib.Path] = []
+    for candidate in candidates:
+        path = candidate.resolve()
+        if (path / 'pyproject.toml').is_file() and path not in found:
+            found.append(path)
     return found
+
+
+def _uv_workspace_members(workspace: Any, root: pathlib.Path) -> list[pathlib.Path]:
+    """The member directories of a ``[tool.uv.workspace]`` table rooted at ``root``.
+
+    A workspace member is depended on with ``{ workspace = true }`` rather than
+    a ``path``, but ``uv lock`` at the root resolves every member's
+    declarations, so each one is as much a path dependency as a ``path`` entry.
+    ``members`` and ``exclude`` are globs relative to the root.
+    """
+    if not isinstance(workspace, dict):
+        return []
+
+    def expand(key: str) -> list[pathlib.Path]:
+        patterns: Any = workspace.get(key, [])
+        if not isinstance(patterns, list):
+            return []
+        return [
+            match.resolve()
+            for pattern in patterns
+            if isinstance(pattern, str)
+            for match in sorted(root.glob(pattern))
+            if match.is_dir()
+        ]
+
+    excluded = set(expand('exclude'))
+    return [member for member in expand('members') if member not in excluded]
 
 
 def _pyproject_declares_ops(parsed: dict[str, Any]) -> bool:
