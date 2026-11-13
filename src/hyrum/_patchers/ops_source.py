@@ -931,7 +931,7 @@ def _prepend_to_array(text: str, section: str, array: str, entries: Sequence[str
     same name is often used for an extra and for a dependency group (``unit``,
     say), and the companions belong only in the one that declares ops.
     """
-    opener = re.compile(rf'^(\s*){re.escape(array)}\s*=\s*\[')
+    opener = re.compile(rf'^\s*{re.escape(array)}\s*=\s*\[')
     current = ''
     out: list[str] = []
     done = False
