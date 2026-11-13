@@ -52,6 +52,9 @@ CSV_FIELDS = (
     'Source',
 )
 
+COMMIT_FIELD = 'Commit'
+"""Optional column pinning a row to a commit; written only when some row has one."""
+
 NO_SOURCE_CSV_FIELDS = ('Charm Name',)
 
 
@@ -334,19 +337,36 @@ def github_owner_repo(url: str) -> tuple[str, str] | None:
 
 
 def read_csv(path: pathlib.Path) -> list[dict[str, str]]:
-    """Read ``path`` and return rows with every CSV_FIELDS key populated."""
+    """Read ``path`` and return rows with every CSV_FIELDS key populated.
+
+    A row's ``Commit`` is kept when it has one, so that a refresh doesn't
+    drop the pins.
+    """
     with path.open(newline='', encoding='utf-8') as handle:
         reader = csv.DictReader(handle)
-        return [{field: (row.get(field) or '') for field in CSV_FIELDS} for row in reader]
+        rows: list[dict[str, str]] = []
+        for row in reader:
+            out = {field: (row.get(field) or '') for field in CSV_FIELDS}
+            if commit := (row.get(COMMIT_FIELD) or '').strip():
+                out[COMMIT_FIELD] = commit
+            rows.append(out)
+        return rows
 
 
 def write_csv(path: pathlib.Path, rows: list[dict[str, str]]) -> None:
-    """Write ``rows`` to ``path``."""
+    """Write ``rows`` to ``path``.
+
+    The ``Commit`` column is only written when some row is pinned, so an
+    unpinned list doesn't gain an empty column on every line.
+    """
+    fields = CSV_FIELDS
+    if any(row.get(COMMIT_FIELD) for row in rows):
+        fields = (*CSV_FIELDS, COMMIT_FIELD)
     buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=CSV_FIELDS, lineterminator='\n')
+    writer = csv.DictWriter(buffer, fieldnames=fields, lineterminator='\n')
     writer.writeheader()
     for row in rows:
-        writer.writerow({field: row.get(field, '') for field in CSV_FIELDS})
+        writer.writerow({field: row.get(field, '') for field in fields})
     path.write_text(buffer.getvalue(), encoding='utf-8', newline='')
 
 

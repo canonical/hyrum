@@ -247,7 +247,7 @@ Each repository is cloned to `<dest>/<owner>/<name>`, where `<owner>` and `<name
 ### Options
 
 `--source PATH`
-: Path to the charm-list CSV. Only the `Repository` column (required) and `Branch (if not the default)` column (optional) are read; any other column, such as those in the repository's `charm-list/charms.csv`, is ignored.
+: Path to the charm-list CSV. Only the `Repository` column (required), and the `Branch (if not the default)` and `Commit` columns (optional), are read; any other column, such as those in the repository's `charm-list/charms.csv`, is ignored. A `Commit` must be a full 40-character SHA: the checkout is fetched and kept at that commit rather than pulled.
 : Default: `charms.csv` or `charm-list/charms.csv` in the current directory.
 
 `--dest PATH`
