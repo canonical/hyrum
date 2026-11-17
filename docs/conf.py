@@ -5,6 +5,7 @@ Sections marked [BEYOND SPHINX STACK] go beyond what the stack provides.
 """
 
 import datetime
+import os
 
 #######################
 # Project information #
@@ -17,7 +18,7 @@ copyright = f'{datetime.date.today().year}'
 # Sidebar documentation title.
 html_title = project + ' documentation'
 
-html_baseurl = 'https://canonical.github.io/hyrum/'
+html_baseurl = 'https://canonical.com/juju/docs/hyrum/'
 
 # Documentation website URL.
 ogp_site_url = html_baseurl
@@ -29,12 +30,15 @@ ogp_site_name = project
 ogp_image = 'https://assets.ubuntu.com/v1/cc828679-docs_illustration.svg'
 
 # Project slug.
-slug = 'hyrum'
+# Set to the path after https://canonical.com/
+slug = 'juju/docs/hyrum'
 
 # Values passed into the Sphinx context for all pages.
 html_context = {
     # Product page URL, without the 'https://' prefix.
-    'product_page': 'github.com/canonical/hyrum',
+    'product_page': 'canonical.com/juju/docs',
+    # Product tag image; the orange part of your logo, shown in the page header.
+    'product_tag': '_static/logos/juju-logo-no-text.png',
     # Discourse instance URL.
     'discourse': 'https://discourse.charmhub.io',
     # Mattermost channel URL.
@@ -67,6 +71,7 @@ html_context = {
 
 # sphinx-sitemap uses html_baseurl to generate the full URL for each page:
 sitemap_url_scheme = '{link}'
+sitemap_filename = 'doc-sitemap.xml'
 
 # Include `lastmod` dates in the sitemap.
 sitemap_show_lastmod = True
@@ -82,8 +87,7 @@ sitemap_excludes = [
 # Template and asset locations #
 ################################
 
-# There is no '_static' directory yet: the only custom CSS and JS are the
-# Canonical cookie-banner assets, which are loaded from assets.ubuntu.com.
+html_static_path = ['_static']
 templates_path = ['_templates']
 
 #############
@@ -106,6 +110,10 @@ llms_txt_description = (
     'lint or unit tests across many charm repositories, optionally patching one '
     'of their dependencies first.'
 )
+
+# The base URL for references built by sphinx-markdown-builder.
+if os.environ.get('READTHEDOCS'):
+    markdown_http_base = html_baseurl
 
 ###########################
 # Link checker exceptions #
@@ -182,6 +190,7 @@ html_css_files = [
 # Adds custom JavaScript files, located remotely or in 'html_static_path'.
 html_js_files = [
     'https://assets.ubuntu.com/v1/287a5e8f-bundle.js',
+    'overwrite_links.js',
 ]
 
 # Configuration for Intersphinx projects.
