@@ -480,7 +480,7 @@ async def test_process_rows_clones_a_pinned_row_at_its_commit(
 
 
 @pytest.mark.parametrize('second', [_OTHER_SHA, ''])
-async def test_process_rows_warns_when_a_duplicate_wants_a_different_commit(
+async def test_process_rows_fails_a_duplicate_that_wants_a_different_commit(
     tmp_path: pathlib.Path,
     spawner: SpawnerFactory,
     caplog: pytest.LogCaptureFixture,
@@ -494,10 +494,14 @@ async def test_process_rows_warns_when_a_duplicate_wants_a_different_commit(
     with caplog.at_level(logging.INFO, logger=get_charms.logger.name):
         await get_charms.process_rows(rows, tmp_path)
 
-    warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warnings) == 1
-    assert _SHA in warnings[0]
-    assert (second or 'its branch tip') in warnings[0]
+    errors = [r.message for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1
+    assert _SHA in errors[0]
+    assert (second or 'its branch tip') in errors[0]
+    messages = [r.message for r in caplog.records]
+    assert 'get-charms: 1 succeeded, 1 failed.' in messages
+    assert 'Failed: canonical/foo' in messages
+    assert not any('duplicates of an earlier row' in m for m in messages)
 
 
 async def test_process_rows_does_not_warn_about_a_duplicate_at_the_same_commit(

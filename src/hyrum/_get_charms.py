@@ -218,8 +218,9 @@ async def process_rows(
                 claimant, claimed_commit = claimed[repo_path]
                 if commit != claimed_commit:
                     # One checkout can't be at two commits, and someone who
-                    # listed both probably expected two checkouts.
-                    logger.warning(
+                    # listed both probably expected two checkouts, so this
+                    # is a failure rather than a harmless duplicate.
+                    logger.error(
                         'Skipping %s at %s: %s already claims %s at %s',
                         name,
                         commit or 'its branch tip',
@@ -227,8 +228,9 @@ async def process_rows(
                         repo_path,
                         claimed_commit or 'its branch tip',
                     )
-                else:
-                    logger.debug('Skipping %s: %s already claims %s', name, claimant, repo_path)
+                    invalid.append(name)
+                    continue
+                logger.debug('Skipping %s: %s already claims %s', name, claimant, repo_path)
                 duplicates += 1
                 continue
             if commit is not None and not _FULL_SHA_RE.fullmatch(commit):
