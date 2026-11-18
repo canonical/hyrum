@@ -110,8 +110,9 @@ integration-test support.
 ## Documentation
 
 `docs/` is the Canonical Sphinx stack with its own pip venv (`docs/.venv`), not
-`uv`; `make -C docs help` lists the targets. `html` (`--fail-on-warning`),
-`linkcheck`, `spelling`, `vale` and `woke` all run in CI.
+`uv`; `make -C docs help` lists the targets. `linkcheck`, `spelling`, `vale` and
+`woke` all run in CI. Read the Docs builds the HTML (`docs/.readthedocs.yaml`)
+and the site is proxied at `https://canonical.com/juju/docs/hyrum/`.
 
 - `docs/_dev/` is vendored stack tooling: never edit or reformat it.
   `make -C docs update` diffs it against upstream.
