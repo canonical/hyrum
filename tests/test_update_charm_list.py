@@ -202,6 +202,48 @@ def test_appends_new_charm_with_auto_source(tmp_path: pathlib.Path):
     assert new[0]['Team'] == ''
 
 
+def test_refresh_keeps_commit_pins(tmp_path: pathlib.Path):
+    sha = 'b74166f841a524f43db2f868a85fbe515a50b913'
+    csv_path = tmp_path / 'charms.csv'
+    write_csv(
+        csv_path,
+        f"""
+        {HEADER},Commit
+        Data,https://github.com/canonical/foo,,manual,{sha}
+        Data,https://github.com/canonical/baz,,manual,
+        """,
+    )
+    charmhub = FakeCharmhub({'bar': 'https://github.com/canonical/bar'})
+    github = FakeGitHub({
+        ('canonical', 'foo'): 'ok',
+        ('canonical', 'baz'): 'ok',
+        ('canonical', 'bar'): 'ok',
+    })
+    assert uut.run(csv_path, charmhub=charmhub, github=github) is True
+    assert csv_path.read_text(encoding='utf-8') == (
+        f'{HEADER},Commit\n'
+        f'Data,https://github.com/canonical/foo,,manual,{sha}\n'
+        'Data,https://github.com/canonical/baz,,manual,\n'
+        f',https://github.com/canonical/bar,,{uut.AUTO_SOURCE},\n'
+    )
+
+
+def test_unpinned_list_gets_no_commit_column(tmp_path: pathlib.Path):
+    csv_path = tmp_path / 'charms.csv'
+    write_csv(
+        csv_path,
+        f"""
+        {HEADER},Commit
+        Data,https://github.com/canonical/foo,,manual,
+        """,
+    )
+    rows = uut.read_csv(csv_path)
+    uut.write_csv(csv_path, rows)
+    assert csv_path.read_text(encoding='utf-8') == (
+        f'{HEADER}\nData,https://github.com/canonical/foo,,manual\n'
+    )
+
+
 def test_archived_github_row_is_dropped(tmp_path: pathlib.Path):
     csv_path = tmp_path / 'charms.csv'
     write_csv(
