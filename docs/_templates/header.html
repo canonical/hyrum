@@ -1,10 +1,24 @@
 <header id="header" class="p-navigation">
 
-  <!--
-    The Google Tag Manager snippet used by other Canonical Sphinx sites is
-    omitted here: its container is configured for canonical.com-hosted docs,
-    and these docs are served from canonical.github.io.
-  -->
+  <!-- Google Tag Manager -->
+  <script>
+    (function(w, d, s, l, i) {
+      w[l] = w[l] || [];
+      w[l].push({
+        'gtm.start': new Date().getTime(),
+        event: 'gtm.js'
+      });
+      var f = d.getElementsByTagName(s)[0];
+      var j = d.createElement(s);
+      var dl = '';
+      if (l != 'dataLayer') {
+          dl = '&l=' + l;
+      }
+      j.async = true;
+      j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl;
+      f.parentNode.insertBefore(j, f);
+    })(window, document, 'script', 'dataLayer', 'GTM-N384JMX2');
+  </script>
 
   <div class="p-navigation__nav" role="menubar">
 
@@ -12,9 +26,7 @@
 
       <li>
         <a class="p-logo" href="https://{{ product_page }}" aria-current="page">
-          {% if product_tag %}
           <img src="{{ pathto(product_tag,1) }}" alt="Logo" class="p-logo-image">
-          {% endif %}
           <div class="p-logo-text p-heading--4">{{ project }}
           </div>
         </a>

@@ -2,8 +2,7 @@ name: Docs
 
 on:
   push:
-    # 'docs/**' branches build and deploy previews on forks; see the deploy job.
-    branches: [main, 'docs/**']
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -14,33 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build documentation
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          fetch-depth: 0  # needed for sphinx-last-updated-by-git
-          persist-credentials: false
-
-      - name: Build HTML
-        env:
-          # Forks serve the site from their own github.io subdomain.
-          HYRUM_DOCS_OWNER: ${{ github.repository_owner }}
-        run: make -C docs html
-
-      # Upstream publishes only from main; forks publish previews from any
-      # pushed branch, including 'docs/**'.
-      - name: Upload pages artifact
-        if: >-
-          github.event_name == 'push'
-          && (github.repository_owner != 'canonical' || github.ref == 'refs/heads/main')
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
-        with:
-          path: docs/_build
-
   checks:
     name: Prose checks
     runs-on: ubuntu-latest
@@ -73,21 +45,3 @@ jobs:
       - name: Check inclusive language
         if: success() || failure()
         run: make -C docs woke
-
-  deploy:
-    name: Deploy to GitHub Pages
-    if: >-
-      github.event_name == 'push'
-      && (github.repository_owner != 'canonical' || github.ref == 'refs/heads/main')
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write       # deploy the built site to GitHub Pages
-      id-token: write    # OIDC token for actions/deploy-pages
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346  # v5.0.1

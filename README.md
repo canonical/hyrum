@@ -35,4 +35,4 @@ hyrum clean
 
 ## Documentation
 
-Full documentation — including a tutorial, how-to guides, CLI reference, and background explanation — is in the [`docs/`](docs/) directory.
+Full documentation — including a tutorial, how-to guides, CLI reference, and background explanation — is at [canonical.com/juju/docs/hyrum/](https://canonical.com/juju/docs/hyrum/).

@@ -18,12 +18,7 @@ copyright = f'{datetime.date.today().year}'
 # Sidebar documentation title.
 html_title = project + ' documentation'
 
-# [BEYOND SPHINX STACK] These docs are published to GitHub Pages rather than
-# Read the Docs behind the canonical.com proxy, so there is no version slug and
-# no Read the Docs flyout to rewrite. A fork building a preview sets
-# HYRUM_DOCS_OWNER so that canonical URLs point at the preview's own site.
-_docs_owner = os.environ.get('HYRUM_DOCS_OWNER', 'canonical')
-html_baseurl = f'https://{_docs_owner}.github.io/hyrum/'
+html_baseurl = 'https://canonical.com/juju/docs/hyrum/'
 
 # Documentation website URL.
 ogp_site_url = html_baseurl
@@ -35,12 +30,15 @@ ogp_site_name = project
 ogp_image = 'https://assets.ubuntu.com/v1/cc828679-docs_illustration.svg'
 
 # Project slug.
-slug = 'hyrum'
+# Set to the path after https://canonical.com/
+slug = 'juju/docs/hyrum'
 
 # Values passed into the Sphinx context for all pages.
 html_context = {
     # Product page URL, without the 'https://' prefix.
-    'product_page': 'github.com/canonical/hyrum',
+    'product_page': 'canonical.com/juju/docs',
+    # Product tag image; the orange part of your logo, shown in the page header.
+    'product_tag': '_static/logos/juju-logo-no-text.png',
     # Discourse instance URL.
     'discourse': 'https://discourse.charmhub.io',
     # Mattermost channel URL.
@@ -71,9 +69,9 @@ html_context = {
 # Sitemap configuration
 #######################
 
-# The docs are served from the root of the GitHub Pages site, and only one
-# version is published, so page URLs are html_baseurl + link.
+# sphinx-sitemap uses html_baseurl to generate the full URL for each page:
 sitemap_url_scheme = '{link}'
+sitemap_filename = 'doc-sitemap.xml'
 
 # Include `lastmod` dates in the sitemap.
 sitemap_show_lastmod = True
@@ -89,8 +87,7 @@ sitemap_excludes = [
 # Template and asset locations #
 ################################
 
-# There is no '_static' directory yet: the only custom CSS and JS are the
-# Canonical cookie-banner assets, which are loaded from assets.ubuntu.com.
+html_static_path = ['_static']
 templates_path = ['_templates']
 
 #############
@@ -114,10 +111,9 @@ llms_txt_description = (
     'of their dependencies first.'
 )
 
-# Use file-suffix mode so the generated markdown files are named e.g. index.html.md
-# instead of index.md. GitHub Pages serves .md files natively and prefers them
-# over .html, so the default "auto" mode's url-suffix files shadow the HTML.
-llms_txt_suffix_mode = 'file-suffix'
+# The base URL for references built by sphinx-markdown-builder.
+if os.environ.get('READTHEDOCS'):
+    markdown_http_base = html_baseurl
 
 ###########################
 # Link checker exceptions #
@@ -194,6 +190,7 @@ html_css_files = [
 # Adds custom JavaScript files, located remotely or in 'html_static_path'.
 html_js_files = [
     'https://assets.ubuntu.com/v1/287a5e8f-bundle.js',
+    'overwrite_links.js',
 ]
 
 # Configuration for Intersphinx projects.
