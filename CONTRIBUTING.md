@@ -79,8 +79,8 @@ make all
 
 We follow the Charm Tech team style guides:
 
-- [Documentation and docstring style](https://github.com/canonical/charm-tech/blob/main/STYLE.md)
-- [Python style](https://github.com/canonical/charm-tech/blob/main/python/STYLE.md)
+- [Documentation and docstring style](https://github.com/canonical/charm-tech/blob/main/style/docs.md)
+- [Python style](https://github.com/canonical/charm-tech/blob/main/style/python.md)
 
 Most of this is enforced by CI checks.
 

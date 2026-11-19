@@ -34,8 +34,8 @@ Pre-commit hooks mirror the CI checks; install them with `pre-commit install`.
 This project follows the Charm Tech team style guides. Read them if more
 clarification is required:
 
-- [Documentation and docstring style](https://github.com/canonical/charm-tech/blob/main/STYLE.md)
-- [Python style](https://github.com/canonical/charm-tech/blob/main/python/STYLE.md)
+- [Documentation and docstring style](https://github.com/canonical/charm-tech/blob/main/style/docs.md)
+- [Python style](https://github.com/canonical/charm-tech/blob/main/style/python.md)
 
 Ensure that `pre-commit` is installed (with the user's permission) so that
 style is enforced with every commit. If the user does not permit using
