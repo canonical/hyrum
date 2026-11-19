@@ -84,6 +84,33 @@ We follow the Charm Tech team style guides:
 
 Most of this is enforced by CI checks.
 
+# Documentation
+
+The published docs at [canonical.com/juju/docs/hyrum](https://canonical.com/juju/docs/hyrum/) are automatically built from the top-level `docs` directory.
+
+The docs are based on Canonical's [Sphinx Stack](https://github.com/canonical/sphinx-stack). To upgrade Sphinx Stack, see [Update the new Sphinx Stack](https://documentation.ubuntu.com/sphinx-stack/latest/how-to/update-sphinx-stack/new-sphinx-stack/). The hyrum maintainers handle this.
+
+Sphinx Stack provides [`docs/conf.py`](./docs/conf.py), which we've customised with project metadata (as expected).
+
+## Contributing docs
+
+We use [MyST Markdown](https://mystmd.org/) for all pages and arrange the pages according to [Diátaxis](https://diataxis.fr/). Make sure to follow the [Charm Tech documentation style guide](https://github.com/canonical/charm-tech/blob/main/style/docs.md).
+
+To contribute, first fork this repo, then edit the relevant source files:
+
+- Tutorial - [`/docs/tutorial/first-run.md`](./docs/tutorial/first-run.md)
+- How-to guides - [`/docs/howto`](./docs/howto)
+- Reference - [`/docs/reference`](./docs/reference)
+- Explanation - [`/docs/explanation`](./docs/explanation)
+
+Next, build the documentation locally to check that everything looks right:
+
+- `make -C docs run` - Build the docs and serve them locally. The docs automatically rebuild whenever you edit a file.
+- `make -C docs spelling` - Check spelling in the doc source files.
+- `make -C docs help` - List all doc commands.
+
+Finally, [propose your changes using a pull request](#pull-requests). When you create the pull request, our documentation host (Read the Docs) automatically builds a preview of the docs. To open the preview, look for a PR check called `docs/readthedocs.com:canonical-juju-hyrum`, which links to the preview.
+
 # Releases
 
 Releases are published to PyPI by the `publish` workflow, which runs on any `v*` tag.
