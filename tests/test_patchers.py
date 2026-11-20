@@ -2015,7 +2015,7 @@ def test_failed_uv_relock_is_a_patcher_error(
         stdout = b''
         stderr = b'No solution found'
 
-    monkeypatch.setattr('hyrum._patchers._common.subprocess.run', lambda *a, **kw: _Result())
+    monkeypatch.setattr('hyrum._patchers._common._process.run', lambda *a, **kw: _Result())
     py = tmp_path / 'pyproject.toml'
     original = textwrap.dedent("""\
         [project]
@@ -2056,7 +2056,7 @@ def test_run_lock_strips_virtual_env(tmp_path: pathlib.Path, monkeypatch: pytest
         return _Result()
 
     monkeypatch.setenv('VIRTUAL_ENV', '/some/venv')
-    monkeypatch.setattr('hyrum._patchers._common.subprocess.run', fake_run)
+    monkeypatch.setattr('hyrum._patchers._common._process.run', fake_run)
     _common.run_lock(tmp_path, ('uv', 'lock'), 60)
     env = captured['env']
     assert isinstance(env, dict)
@@ -2249,7 +2249,7 @@ def test_charmlib_patcher_failed_uv_relock_is_a_patcher_error(
         stdout = b''
         stderr = b'No solution found'
 
-    monkeypatch.setattr('hyrum._patchers._common.subprocess.run', lambda *a, **kw: _Result())
+    monkeypatch.setattr('hyrum._patchers._common._process.run', lambda *a, **kw: _Result())
     charm_dir = tmp_path / 'charm'
     charm_dir.mkdir()
     py = charm_dir / 'pyproject.toml'

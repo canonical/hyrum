@@ -8,6 +8,7 @@ import pathlib
 import time
 from collections.abc import Sequence
 
+from hyrum import _process
 from hyrum._runners import base
 
 logger = logging.getLogger(__name__)
@@ -50,14 +51,16 @@ class ToxRunner:
                 # the order tox and its subprocesses actually wrote in.
                 stderr=asyncio.subprocess.STDOUT,
                 env=base.subprocess_env(),
+                # Its own process group, so a timeout or Ctrl-C can kill what it
+                # spawns as well -- see hyrum._process.
+                start_new_session=True,
             )
         except OSError as exc:
             logger.error('could not launch %s in %s: %s', argv[0], repo, exc)
             return base.launch_failure(repo, runner=self.name, target=target, argv=argv, exc=exc)
         try:
-            output, _ = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
+            output, _ = await _process.communicate(proc, self._timeout)
         except TimeoutError:
-            await _kill_and_drain(proc, repo)
             return base.RunResult(
                 repo=repo,
                 runner=self.name,
@@ -84,14 +87,3 @@ class ToxRunner:
             duration_s=duration,
             output=base.strip_ansi(output),
         )
-
-
-async def _kill_and_drain(proc: asyncio.subprocess.Process, repo: pathlib.Path) -> None:
-    try:
-        proc.kill()
-    except ProcessLookupError:
-        return
-    try:
-        await asyncio.wait_for(proc.communicate(), timeout=30)
-    except TimeoutError:
-        logger.error('tox in %s did not exit after kill()', repo)
