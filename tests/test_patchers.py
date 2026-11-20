@@ -1410,6 +1410,375 @@ def test_strip_ops_declarations_reports_the_tables_it_stripped_from():
     assert sections == ['tool.poetry.dependencies', 'tool.poetry.group.unit.dependencies']
 
 
+# ---- pyproject.toml: local path dependencies ---------------------------------
+
+
+def _poetry_project(name: str, deps: str, groups: str = '') -> str:
+    return (
+        textwrap.dedent(f"""\
+        [tool.poetry]
+        name = "{name}"
+        version = "0"
+        description = ""
+        authors = ["x <x@x>"]
+
+        [tool.poetry.dependencies]
+        python = "^3.10"
+        """)
+        + textwrap.dedent(deps)
+        + textwrap.dedent(groups)
+    )
+
+
+def _monorepo(
+    tmp_path: pathlib.Path, charm_deps: str, common_deps: str
+) -> tuple[pathlib.Path, pathlib.Path]:
+    """A git checkout with a charm in ``machines/`` and a shared package in ``common/``."""
+    (tmp_path / '.git').mkdir()
+    charm = tmp_path / 'machines'
+    common = tmp_path / 'common'
+    charm.mkdir()
+    common.mkdir()
+    (charm / 'pyproject.toml').write_text(_poetry_project('charm', charm_deps))
+    (charm / 'poetry.lock').write_text('')
+    (common / 'pyproject.toml').write_text(_poetry_project('common', common_deps))
+    return charm, common
+
+
+def test_path_dependency_in_the_repository_is_patched(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    charm, common = _monorepo(
+        tmp_path,
+        charm_deps="""\
+        ops = "^3.0"
+        common = { path = "../common", develop = true }
+        """,
+        common_deps="""\
+        ops = { version = "^3.0.0", extras = ["tracing"] }
+        """,
+    )
+    original = _read(common / 'pyproject.toml')
+    seen_at_lock: list[str] = []
+    monkeypatch.setattr(
+        'hyrum._patchers.ops_source.run_lock',
+        lambda *a, **kw: seen_at_lock.append(_read(common / 'pyproject.toml')),
+    )
+    with patchers.OpsSourcePatcher(ops_main).apply(charm):
+        patched = tomllib.loads(_read(common / 'pyproject.toml'))
+        deps = patched['tool']['poetry']['dependencies']
+        assert deps['ops']['git'] == 'https://github.com/canonical/operator'
+        assert deps['ops']['extras'] == ['tracing']
+        assert deps['ops-tracing']['subdirectory'] == 'tracing'
+    # The charm's relock has to see the shared package already patched.
+    assert len(seen_at_lock) == 1
+    assert 'canonical/operator' in seen_at_lock[0]
+    assert _read(common / 'pyproject.toml') == original
+
+
+def test_path_dependency_outside_the_repository_is_left_alone(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    (repo / '.git').mkdir()
+    outside = tmp_path / 'elsewhere'
+    outside.mkdir()
+    (repo / 'pyproject.toml').write_text(
+        _poetry_project('charm', 'ops = "^3.0"\nelsewhere = { path = "../elsewhere" }\n')
+    )
+    original = _poetry_project('elsewhere', 'ops = "^3.0"\n')
+    (outside / 'pyproject.toml').write_text(original)
+    with patchers.OpsSourcePatcher(ops_main).apply(repo):
+        assert _read(outside / 'pyproject.toml') == original
+
+
+def test_path_dependency_boundary_without_git_is_the_charm(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    charm = tmp_path / 'charm'
+    charm.mkdir()
+    (tmp_path / 'common').mkdir()
+    (charm / 'pyproject.toml').write_text(
+        _poetry_project('charm', 'ops = "^3.0"\ncommon = { path = "../common" }\n')
+    )
+    original = _poetry_project('common', 'ops = "^3.0"\n')
+    (tmp_path / 'common' / 'pyproject.toml').write_text(original)
+    with patchers.OpsSourcePatcher(ops_main).apply(charm):
+        assert _read(tmp_path / 'common' / 'pyproject.toml') == original
+
+
+def test_path_dependency_without_ops_is_left_alone_but_followed(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    charm, common = _monorepo(
+        tmp_path,
+        charm_deps='ops = "^3.0"\ncommon = { path = "../common" }\n',
+        common_deps='requests = "*"\nlibs = { path = "../libs" }\n',
+    )
+    libs = tmp_path / 'libs'
+    libs.mkdir()
+    (libs / 'pyproject.toml').write_text(_poetry_project('libs', 'ops = "^3.0"\n'))
+    common_original = _read(common / 'pyproject.toml')
+    with patchers.OpsSourcePatcher(ops_main).apply(charm):
+        assert _read(common / 'pyproject.toml') == common_original
+        assert 'canonical/operator' in _read(libs / 'pyproject.toml')
+
+
+def test_path_dependency_on_a_built_artefact_is_not_followed(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    (tmp_path / '.git').mkdir()
+    (tmp_path / 'dist').mkdir()
+    (tmp_path / 'dist' / 'lib-1.0-py3-none-any.whl').write_bytes(b'')
+    (tmp_path / 'pyproject.toml').write_text(
+        _poetry_project(
+            'charm', 'ops = "^3.0"\nlib = { path = "dist/lib-1.0-py3-none-any.whl" }\n'
+        )
+    )
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        assert 'canonical/operator' in _read(tmp_path / 'pyproject.toml')
+
+
+def test_path_dependency_cycle_terminates(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    charm, common = _monorepo(
+        tmp_path,
+        charm_deps='ops = "^3.0"\ncommon = { path = "../common" }\n',
+        common_deps='ops = "^3.0"\ncharm = { path = "../machines" }\n',
+    )
+    with patchers.OpsSourcePatcher(ops_main).apply(charm):
+        assert _read(common / 'pyproject.toml').count('ops = {git') == 1
+        assert _read(charm / 'pyproject.toml').count('ops = {git') == 1
+
+
+def test_path_dependency_from_uv_sources_is_patched(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    (tmp_path / '.git').mkdir()
+    charm = tmp_path / 'charm'
+    common = tmp_path / 'common'
+    charm.mkdir()
+    common.mkdir()
+    (charm / 'pyproject.toml').write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "charm"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = ["ops>=3", "common"]
+
+        [tool.uv.sources]
+        common = { path = "../common", editable = true }
+        """)
+    )
+    (charm / 'uv.lock').write_text('')
+    (common / 'pyproject.toml').write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "common"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = ["ops[tracing]>=3"]
+        """)
+    )
+    with patchers.OpsSourcePatcher(ops_main).apply(charm):
+        common_deps = tomllib.loads(_read(common / 'pyproject.toml'))['project']['dependencies']
+        reqs = {
+            req.name: req for req in (packaging.requirements.Requirement(d) for d in common_deps)
+        }
+        assert reqs['ops'].url == _MAIN_URL
+        assert reqs['ops'].extras == {'tracing'}
+
+
+def test_uv_workspace_members_are_patched(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    # A workspace member has no ``path`` anywhere, but the root's relock still
+    # reads its declarations.
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    (tmp_path / '.git').mkdir()
+    (tmp_path / 'pyproject.toml').write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "charm"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = ["ops>=3", "common"]
+
+        [tool.uv.sources]
+        common = { workspace = true }
+
+        [tool.uv.workspace]
+        members = ["libs/*"]
+        exclude = ["libs/excluded"]
+        """)
+    )
+    (tmp_path / 'uv.lock').write_text('')
+    member_text = textwrap.dedent("""\
+        [project]
+        name = "{name}"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = ["ops>=3"]
+        """)
+    for name in ('common', 'excluded'):
+        (tmp_path / 'libs' / name).mkdir(parents=True)
+        (tmp_path / 'libs' / name / 'pyproject.toml').write_text(member_text.format(name=name))
+    common = tmp_path / 'libs' / 'common' / 'pyproject.toml'
+    excluded = tmp_path / 'libs' / 'excluded' / 'pyproject.toml'
+    common_original = _read(common)
+    excluded_original = _read(excluded)
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        deps = tomllib.loads(_read(common))['project']['dependencies']
+        reqs = {req.name: req for req in (packaging.requirements.Requirement(d) for d in deps)}
+        assert reqs['ops'].url == _MAIN_URL
+        assert _read(excluded) == excluded_original
+    assert _read(common) == common_original
+
+
+def test_ops_only_through_a_path_dependency_is_patchable(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    charm, common = _monorepo(
+        tmp_path,
+        charm_deps='common = { path = "../common" }\n',
+        common_deps='ops = "^3.0"\n',
+    )
+    with patchers.OpsSourcePatcher(ops_main).apply(charm):
+        assert 'canonical/operator' in _read(common / 'pyproject.toml')
+
+
+def test_malformed_path_dependency_is_skipped(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    charm, common = _monorepo(
+        tmp_path,
+        charm_deps='ops = "^3.0"\ncommon = { path = "../common" }\n',
+        common_deps='ops = "^3.0"\n',
+    )
+    (common / 'pyproject.toml').write_text('[tool.poetry\n')
+    charm_original = _read(charm / 'pyproject.toml')
+    with (
+        pytest.raises(patchers.PatcherSkip) as excinfo,
+        patchers.OpsSourcePatcher(ops_main).apply(charm),
+    ):
+        pass
+    assert excinfo.value.reason is patchers.PatcherSkipReason.MALFORMED_PYPROJECT
+    assert _read(charm / 'pyproject.toml') == charm_original
+
+
+def test_path_dependency_with_a_malformed_dependency_table_is_skipped(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+    charm, common = _monorepo(
+        tmp_path,
+        charm_deps='ops = "^3.0"\ncommon = { path = "../common" }\n',
+        common_deps='',
+    )
+    (common / 'pyproject.toml').write_text('dependency-groups = "not a table"\n')
+    charm_original = _read(charm / 'pyproject.toml')
+    with (
+        pytest.raises(patchers.PatcherSkip) as excinfo,
+        patchers.OpsSourcePatcher(ops_main).apply(charm),
+    ):
+        pass
+    assert excinfo.value.reason is patchers.PatcherSkipReason.MALFORMED_PYPROJECT
+    assert _read(charm / 'pyproject.toml') == charm_original
+
+
+def test_path_dependency_is_restored_when_the_relock_fails(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    charm, common = _monorepo(
+        tmp_path,
+        charm_deps='ops = "^3.0"\ncommon = { path = "../common" }\n',
+        common_deps='ops = "^3.0"\n',
+    )
+    original = _read(common / 'pyproject.toml')
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise patchers.PatcherError('lock failed')
+
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', fail)
+    with pytest.raises(patchers.PatcherError), patchers.OpsSourcePatcher(ops_main).apply(charm):
+        pass
+    assert _read(common / 'pyproject.toml') == original
+
+
+def test_path_dependency_shared_by_two_charms_is_restored_by_the_last_one_out(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource, monkeypatch: pytest.MonkeyPatch
+):
+    # Monorepo subcharms take separate locks and run in parallel, so their
+    # patches to a shared path dependency overlap.
+    machines, common = _monorepo(
+        tmp_path,
+        charm_deps='ops = "^3.0"\ncommon = { path = "../common" }\n',
+        common_deps='ops = "^3.0"\n',
+    )
+    k8s = tmp_path / 'k8s'
+    k8s.mkdir()
+    (k8s / 'pyproject.toml').write_text(
+        _poetry_project('k8s', 'ops = "^3.0"\ncommon = { path = "../common" }\n')
+    )
+    (k8s / 'poetry.lock').write_text('')
+    original = _read(common / 'pyproject.toml')
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+
+    first = patchers.OpsSourcePatcher(ops_main).apply(machines)
+    second = patchers.OpsSourcePatcher(ops_main).apply(k8s)
+    first.__enter__()
+    patched = _read(common / 'pyproject.toml')
+    assert patched != original
+    second.__enter__()
+    assert _read(common / 'pyproject.toml') == patched
+    first.__exit__(None, None, None)
+    # The second charm is still running against the shared package.
+    assert _read(common / 'pyproject.toml') == patched
+    second.__exit__(None, None, None)
+    assert _read(common / 'pyproject.toml') == original
+
+
+def test_path_dependency_shared_with_a_different_ops_source_is_an_error(
+    tmp_path: pathlib.Path,
+    ops_main: patchers.OpsSource,
+    ops_branch: patchers.OpsSource,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    machines, common = _monorepo(
+        tmp_path,
+        charm_deps='ops = "^3.0"\ncommon = { path = "../common" }\n',
+        common_deps='ops = "^3.0"\n',
+    )
+    k8s = tmp_path / 'k8s'
+    k8s.mkdir()
+    k8s_original = _poetry_project('k8s', 'ops = "^3.0"\ncommon = { path = "../common" }\n')
+    (k8s / 'pyproject.toml').write_text(k8s_original)
+    original = _read(common / 'pyproject.toml')
+    monkeypatch.setattr('hyrum._patchers.ops_source.run_lock', lambda *a, **kw: None)
+
+    with patchers.OpsSourcePatcher(ops_main).apply(machines):
+        patched = _read(common / 'pyproject.toml')
+        with (
+            pytest.raises(patchers.PatcherError, match='different ops source'),
+            patchers.OpsSourcePatcher(ops_branch).apply(k8s),
+        ):
+            pass
+        assert _read(common / 'pyproject.toml') == patched
+        assert _read(k8s / 'pyproject.toml') == k8s_original
+    assert _read(common / 'pyproject.toml') == original
+
+
 # ---- OpsSource: PyPI version mode -------------------------------------------
 
 

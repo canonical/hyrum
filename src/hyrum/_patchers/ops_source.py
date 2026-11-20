@@ -28,6 +28,7 @@ import logging
 import pathlib
 import re
 import shlex
+import threading
 import tomllib
 from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
 from typing import Any
@@ -304,6 +305,70 @@ class OpsSourcePatcher:
             for path, original in snapshots.items():
                 restore(path, original)
 
+    def _rewrite_pyproject(self, text: str, parsed: dict[str, Any], flavour: str) -> str:
+        """Return ``text`` with its ops declarations pointed at ``self.ops``."""
+        ops_extras = _collect_pyproject_ops_extras(parsed)
+        if flavour == 'uv':
+            return _patch_pyproject_uv(text, parsed, self.ops, ops_extras)
+        if flavour == 'poetry':
+            return _patch_pyproject_poetry(text, parsed, self.ops, ops_extras)
+        return _patch_pyproject_pep621(text, self.ops, ops_extras)
+
+    def _patch_path_dependencies(
+        self,
+        repo: pathlib.Path,
+        parsed: dict[str, Any],
+        shared: list[pathlib.Path],
+    ) -> None:
+        """Patch the local projects that ``repo`` depends on by path, recursively.
+
+        A charm that keeps its shared code in an in-repo package (kafka-operator's
+        ``common/``, say) gets ops through that package, and patching only the
+        charm leaves the package asking for ops from PyPI, so the relock can't
+        reconcile the two. Each patched file is appended to ``shared``, and the
+        caller hands it back to :data:`_SHARED_PATCHES` when it is done.
+
+        Only projects inside the charm's repository are followed: hyrum didn't
+        clone anything outside it, so it has no business writing there.
+        """
+        root = _repository_root(repo)
+        seen = {repo.resolve()}
+        pending = _local_path_dependencies(parsed, repo)
+        while pending:
+            project = pending.pop(0)
+            if project in seen:
+                continue
+            seen.add(project)
+            if not project.is_relative_to(root):
+                logger.info('not patching %s: it is outside the repository %s', project, root)
+                continue
+            pyproject = project / 'pyproject.toml'
+            # Another charm in the same repository may have this patched
+            # already; what it declares is the original, not the patched file.
+            text = _SHARED_PATCHES.original(pyproject)
+            try:
+                dep_parsed = tomllib.loads(text)
+            except tomllib.TOMLDecodeError as exc:
+                # The charm can't install a project its tools can't parse
+                # either, so this is the same skip as a malformed charm.
+                raise base.PatcherSkip(
+                    base.PatcherSkipReason.MALFORMED_PYPROJECT,
+                    f'could not parse {pyproject}: {exc}',
+                ) from exc
+            # A project without ops can still depend on one that has it.
+            pending.extend(_local_path_dependencies(dep_parsed, project))
+            if not _pyproject_declares_ops(dep_parsed):
+                continue
+            # Declaring ops means having a Poetry table or a PEP 621 / 735
+            # array, so this is always one of the patchable flavours.
+            flavour = detect_pyproject_flavour(dep_parsed, (project / 'uv.lock').exists())
+            assert flavour in _PATCHABLE_FLAVOURS, flavour
+            _SHARED_PATCHES.acquire(
+                pyproject, text, self._rewrite_pyproject(text, dep_parsed, flavour)
+            )
+            shared.append(pyproject)
+            logger.debug('patched path dependency %s', pyproject)
+
     def _apply_pyproject(
         self, repo: pathlib.Path, pyproject: pathlib.Path, ops_in_tox: bool = False
     ) -> Generator[None, None, None]:
@@ -314,6 +379,7 @@ class OpsSourcePatcher:
             poetry_lock: snapshot(poetry_lock),
             uv_lock: snapshot(uv_lock),
         }
+        shared: list[pathlib.Path] = []
 
         try:
             parsed = tomllib.loads(snapshots[pyproject] or '')
@@ -324,16 +390,11 @@ class OpsSourcePatcher:
             ) from exc
 
         try:
-            ops_extras = _collect_pyproject_ops_extras(parsed)
             flavour = detect_pyproject_flavour(parsed, uv_lock.exists())
             original_text = snapshots[pyproject] or ''
 
-            if flavour == 'uv':
-                new_text = _patch_pyproject_uv(original_text, parsed, self.ops, ops_extras)
-            elif flavour == 'poetry':
-                new_text = _patch_pyproject_poetry(original_text, parsed, self.ops, ops_extras)
-            elif flavour == 'pep621':
-                new_text = _patch_pyproject_pep621(original_text, self.ops, ops_extras)
+            if flavour in _PATCHABLE_FLAVOURS:
+                new_text = self._rewrite_pyproject(original_text, parsed, flavour)
             elif ops_in_tox:
                 # A pyproject.toml that only holds tool config: the charm
                 # declares ops in tox.ini, which is already patched.
@@ -344,6 +405,9 @@ class OpsSourcePatcher:
                 )
 
             pyproject.write_text(new_text)
+            # Before the re-lock below, which reads the dependency projects'
+            # declarations as well as the charm's own.
+            self._patch_path_dependencies(repo, parsed, shared)
 
             if flavour == 'poetry':
                 py_version = _min_python_from_pyproject(parsed) if self.ops.auto_python else None
@@ -369,6 +433,179 @@ class OpsSourcePatcher:
         finally:
             for path, original in snapshots.items():
                 restore(path, original)
+            for path in shared:
+                _SHARED_PATCHES.release(path)
+
+
+_PATCHABLE_FLAVOURS = frozenset({'uv', 'poetry', 'pep621'})
+
+
+@dataclasses.dataclass
+class _SharedPatch:
+    original: str
+    patched: str
+    holders: int
+
+
+class _SharedPatches:
+    """Patches to files that more than one charm can depend on at once.
+
+    The per-charm lock covers the charm's own directory, and monorepo subcharms
+    lock separately so that they can run in parallel. A path dependency they
+    share (``common/``) is outside both, so snapshot-and-restore would let the
+    second charm take the first's patched file as its original, and the last
+    one out would leave it patched in the cache. Instead the first charm to
+    arrive snapshots and writes, later ones join it, and the last to leave
+    restores.
+
+    This is per process: every charm in a run shares one :class:`OpsSource`,
+    so they all write the same content, and a mismatch is an error rather than
+    a silent overwrite.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._patches: dict[pathlib.Path, _SharedPatch] = {}
+
+    def original(self, path: pathlib.Path) -> str:
+        """Return ``path``'s unpatched content, whether or not it is patched now."""
+        with self._lock:
+            patch = self._patches.get(path.resolve())
+            return patch.original if patch is not None else path.read_text()
+
+    def acquire(self, path: pathlib.Path, original: str, patched: str) -> None:
+        """Make sure ``path`` holds ``patched`` until a matching :meth:`release`."""
+        key = path.resolve()
+        with self._lock:
+            patch = self._patches.get(key)
+            if patch is None:
+                path.write_text(patched)
+                self._patches[key] = _SharedPatch(original, patched, holders=1)
+                return
+            if patch.original != original or patch.patched != patched:
+                raise base.PatcherError(
+                    f'{path} is already patched to a different ops source by another charm'
+                )
+            patch.holders += 1
+
+    def release(self, path: pathlib.Path) -> None:
+        """Drop one hold on ``path``, restoring it when the last one goes."""
+        key = path.resolve()
+        with self._lock:
+            patch = self._patches[key]
+            patch.holders -= 1
+            if patch.holders == 0:
+                del self._patches[key]
+                restore(path, patch.original)
+
+
+_SHARED_PATCHES = _SharedPatches()
+
+
+def _repository_root(charm: pathlib.Path) -> pathlib.Path:
+    """The root of the git checkout that holds ``charm``.
+
+    A charm can sit in a subdirectory of a monorepo, and its path dependencies
+    can point at a sibling (``path = "../common"``), so the charm's own
+    directory is too narrow a boundary. Without a ``.git`` (a file, for a
+    worktree or submodule) anywhere above it, the charm directory is the only
+    boundary there is.
+    """
+    charm = charm.resolve()
+    for directory in (charm, *charm.parents):
+        if (directory / '.git').exists():
+            return directory
+    return charm
+
+
+def _path_sources(spec: Any) -> Iterator[str]:
+    """The ``path`` values of a Poetry dependency or uv source specification.
+
+    Both tools allow a list of specifications, one per marker or platform.
+    """
+    specs: list[Any] = spec if isinstance(spec, list) else [spec]
+    for item in specs:
+        if isinstance(item, dict) and isinstance(item.get('path'), str):
+            yield str(item['path'])
+
+
+def _local_path_dependencies(
+    parsed: dict[str, Any], project_dir: pathlib.Path
+) -> list[pathlib.Path]:
+    """The local projects that a pyproject depends on by path.
+
+    These are Poetry ``path`` dependencies and ``[tool.uv.sources]`` ``path``
+    entries that name a directory holding a ``pyproject.toml``, and the members
+    of a ``[tool.uv.workspace]`` the pyproject is the root of. A path to a
+    wheel or an sdist is a built artefact rather than something to patch.
+    """
+    tool: Any = parsed.get('tool', {})
+    poetry: Any = tool.get('poetry', {}) if isinstance(tool, dict) else {}
+    tables: list[Any] = []
+    if isinstance(poetry, dict):
+        tables.extend(poetry.get(key) for key in ('dependencies', 'dev-dependencies'))
+        groups: Any = poetry.get('group', {})
+        if isinstance(groups, dict):
+            tables.extend(
+                group.get('dependencies') for group in groups.values() if isinstance(group, dict)
+            )
+    uv: Any = tool.get('uv', {}) if isinstance(tool, dict) else {}
+    if isinstance(uv, dict):
+        tables.append(uv.get('sources'))
+
+    candidates: list[pathlib.Path] = []
+    for table in tables:
+        if not isinstance(table, dict):
+            continue
+        for spec in table.values():
+            candidates.extend(project_dir / raw for raw in _path_sources(spec))
+    if isinstance(uv, dict):
+        candidates.extend(_uv_workspace_members(uv.get('workspace'), project_dir))
+
+    found: list[pathlib.Path] = []
+    for candidate in candidates:
+        path = candidate.resolve()
+        if (path / 'pyproject.toml').is_file() and path not in found:
+            found.append(path)
+    return found
+
+
+def _uv_workspace_members(workspace: Any, root: pathlib.Path) -> list[pathlib.Path]:
+    """The member directories of a ``[tool.uv.workspace]`` table rooted at ``root``.
+
+    A workspace member is depended on with ``{ workspace = true }`` rather than
+    a ``path``, but ``uv lock`` at the root resolves every member's
+    declarations, so each one is as much a path dependency as a ``path`` entry.
+    ``members`` and ``exclude`` are globs relative to the root.
+    """
+    if not isinstance(workspace, dict):
+        return []
+
+    def expand(key: str) -> list[pathlib.Path]:
+        patterns: Any = workspace.get(key, [])
+        if not isinstance(patterns, list):
+            return []
+        return [
+            match.resolve()
+            for pattern in patterns
+            if isinstance(pattern, str)
+            for match in sorted(root.glob(pattern))
+            if match.is_dir()
+        ]
+
+    excluded = set(expand('exclude'))
+    return [member for member in expand('members') if member not in excluded]
+
+
+def _pyproject_declares_ops(parsed: dict[str, Any]) -> bool:
+    """Does the pyproject declare ``ops`` or one of its companions anywhere?
+
+    Raises :class:`~hyrum._patchers.base.PatcherSkip` for a malformed
+    dependency table, as it would for the charm's own pyproject: the relock
+    would fail on it anyway.
+    """
+    names = ('ops', *(pkg for pkg, _ in _COMPANION_PACKAGES.values()))
+    return any(_common.pkg_is_declared(parsed, name) for name in names)
 
 
 def _ops_extras_from_pep508_line(line: str) -> set[str]:

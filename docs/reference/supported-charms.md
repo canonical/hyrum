@@ -20,6 +20,8 @@ Whether hyrum can run a charm depends on three things: how the charm declares it
 
 The `ops[testing]` and `ops[tracing]` extras are handled, including the companion packages they pull from subdirectories of the operator monorepo.
 
+hyrum also patches the local projects that a charm depends on by path, as long as they are inside the charm's repository. These are Poetry `path` dependencies, `path` entries in `[tool.uv.sources]`, and the members of a `[tool.uv.workspace]`.
+
 ## What can be patched
 
 | Subject | Patcher | Form |
