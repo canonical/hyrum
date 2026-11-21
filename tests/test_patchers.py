@@ -682,6 +682,222 @@ def test_pyproject_uv_bumps_low_requires_python(
         assert 'requires-python = ">=3.10"' in patched
 
 
+def test_pyproject_uv_lifts_requires_python_with_an_upper_bound(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.8,<4.0"
+        dependencies = [
+          "ops>=2.10",
+        ]
+
+        [tool.uv]
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        assert 'requires-python = ">=3.10,<4.0"' in _read(py)
+
+
+def _requirements(entries: Sequence[str]) -> dict[str, packaging.requirements.Requirement]:
+    return {req.name: req for req in map(packaging.requirements.Requirement, entries)}
+
+
+def test_pyproject_uv_ops_only_in_a_marked_extra(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
+):
+    """A library with optional, marker-gated ops support keeps its markers.
+
+    Modelled on postgresql-single-kernel-library (canonical/hyrum#210): the
+    companions belong in the extra that declares ops, under its marker, and not
+    in the library's unconditional runtime dependencies.
+    """
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "lib"
+        version = "0"
+        requires-python = ">=3.8,<4.0"
+        dependencies = [
+            "tenacity>=9.0.0",
+        ]
+
+        [project.optional-dependencies]
+        postgresql = [
+            "httpx; python_version >= '3.12'",
+            "ops[tracing]>=2.0.0; python_version >= '3.12'",
+        ]
+        db-driver = [
+            "psycopg2>=2.9.10",
+        ]
+
+        [tool.uv]
+        exclude-newer = "1 day"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+    project = parsed['project']
+    assert project['dependencies'] == ['tenacity>=9.0.0']
+    assert project['optional-dependencies']['db-driver'] == ['psycopg2>=2.9.10']
+    extra = _requirements(project['optional-dependencies']['postgresql'])
+    assert extra['ops'].url == _BRANCH_URL
+    assert extra['ops'].extras == {'tracing'}
+    assert extra['ops-scenario'].url == f'{_BRANCH_URL}#subdirectory=testing'
+    assert extra['ops-tracing'].url == f'{_BRANCH_URL}#subdirectory=tracing'
+    for name in ('ops', 'ops-scenario', 'ops-tracing', 'httpx'):
+        assert str(extra[name].marker) == 'python_version >= "3.12"'
+
+
+def test_pyproject_uv_ops_only_in_a_dependency_group(
+    tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
+):
+    """A library that needs ops only for its tests doesn't gain runtime companions."""
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "lib"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+            "tenacity>=9.0.0",
+        ]
+
+        [dependency-groups]
+        unit = [
+            "ops[testing]",
+            "pytest",
+        ]
+
+        [tool.uv]
+        exclude-newer = "1 day"
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_branch).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+    assert parsed['project']['dependencies'] == ['tenacity>=9.0.0']
+    unit = _requirements(parsed['dependency-groups']['unit'])
+    assert unit['ops'].url == _BRANCH_URL
+    assert unit['ops-scenario'].url == f'{_BRANCH_URL}#subdirectory=testing'
+    assert unit['ops-tracing'].url == f'{_BRANCH_URL}#subdirectory=tracing'
+
+
+def test_pyproject_uv_companions_take_the_marker_of_ops_in_project_dependencies(
+    tmp_path: pathlib.Path, ops_path: patchers.OpsSource
+):
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops>=2.10; python_version >= '3.11'",
+        ]
+
+        [tool.uv]
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_path).apply(tmp_path):
+        deps = _requirements(tomllib.loads(_read(py))['project']['dependencies'])
+    assert set(deps) == {'ops', 'ops-scenario', 'ops-tracing'}
+    for req in deps.values():
+        assert req.url is not None
+        assert str(req.marker) == 'python_version >= "3.11"'
+
+
+def test_pyproject_uv_companions_cover_every_ops_marker(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
+    """Two ops entries with different markers need the companions under either."""
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+        dependencies = [
+          "ops<3; python_version < '3.11'",
+          "ops>=3; python_version >= '3.11'",
+        ]
+
+        [tool.uv]
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        entries = tomllib.loads(_read(py))['project']['dependencies']
+    scenario = [
+        r for r in map(packaging.requirements.Requirement, entries) if r.name == 'ops-scenario'
+    ]
+    assert len(scenario) == 1
+    marker = scenario[0].marker
+    assert marker is not None
+    assert marker.evaluate({'python_version': '3.10'})
+    assert marker.evaluate({'python_version': '3.12'})
+
+
+def test_pyproject_uv_companions_only_in_the_array_that_declares_ops(
+    tmp_path: pathlib.Path, ops_main: patchers.OpsSource
+):
+    """An extra and a group can share a name; only the one with ops gets companions."""
+    py = tmp_path / 'pyproject.toml'
+    py.write_text(
+        textwrap.dedent("""\
+        [project]
+        name = "c"
+        version = "0"
+        requires-python = ">=3.10"
+
+        [project.optional-dependencies]
+        unit = [
+          "pytest",
+        ]
+
+        [dependency-groups]
+        unit = [
+          "ops[testing]",
+        ]
+
+        [tool.uv]
+    """)
+    )
+    with patchers.OpsSourcePatcher(ops_main).apply(tmp_path):
+        parsed = tomllib.loads(_read(py))
+    assert parsed['project']['optional-dependencies']['unit'] == ['pytest']
+    group = _requirements(parsed['dependency-groups']['unit'])
+    assert {'ops', 'ops-scenario', 'ops-tracing'} <= set(group)
+
+
+@pytest.mark.parametrize(
+    ('entry', 'expected_marker'),
+    [
+        ('"ops>=2; python_version >= \'3.12\'"', 'python_version >= "3.12"'),
+        ('"ops[testing]==2.17.0 ; sys_platform == \'linux\'"', 'sys_platform == "linux"'),
+        ('"ops"', None),
+    ],
+)
+def test_rewrite_pep508_keeps_markers(entry: str, expected_marker: str | None):
+    text = f'[project]\ndependencies = [\n  {entry},\n]\n'
+    for ops in (
+        patchers.OpsSource(branch='fix/X'),
+        patchers.OpsSource(path='/srv/operator'),
+        patchers.OpsSource(version='3.9.0'),
+    ):
+        out = ops_source._rewrite_pep508_ops_strings(text, ops)
+        (dep,) = tomllib.loads(out)['project']['dependencies']
+        req = packaging.requirements.Requirement(dep)
+        assert req.name == 'ops'
+        assert (str(req.marker) if req.marker else None) == expected_marker
+
+
 def test_pyproject_uv_dep_groups_recognised_and_hoisted(
     tmp_path: pathlib.Path, ops_branch: patchers.OpsSource
 ):
