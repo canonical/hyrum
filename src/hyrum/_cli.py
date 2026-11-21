@@ -1514,7 +1514,7 @@ def _run_check(args: argparse.Namespace) -> int:
 
     with _process.cleanup_on_exit():
         results: list[pool.Outcome] = asyncio.run(
-            _process.kill_all_if_cancelled(
+            _process.kill_all_on_error(
                 pool.run_pool(
                     repos,
                     patcher=patcher,

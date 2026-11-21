@@ -82,7 +82,7 @@ def test_tracked_leaves_the_group_alone_on_success(killed: list[int]):
     assert not _process._groups
 
 
-async def test_kill_all_if_cancelled_kills_tracked_groups(killed: list[int]):
+async def test_kill_all_on_error_kills_tracked_groups(killed: list[int]):
     # A lock running in a worker thread can't be cancelled, and asyncio.run
     # waits for that thread before returning, so cancelling the pool has to
     # kill the lock's group for Ctrl-C to take effect promptly.
@@ -94,7 +94,7 @@ async def test_kill_all_if_cancelled_kills_tracked_groups(killed: list[int]):
             await asyncio.sleep(3600)
 
     _process._groups.add(5151)  # As if a lock were running in a worker thread.
-    task = asyncio.create_task(_process.kill_all_if_cancelled(pool()))
+    task = asyncio.create_task(_process.kill_all_on_error(pool()))
     await started.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):

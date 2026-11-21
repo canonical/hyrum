@@ -1,11 +1,5 @@
 """Run subprocesses so that nothing they start can outlive hyrum.
 
-``tox`` and ``make`` hand the real work to grandchildren -- ``poetry
-install``, ``uv sync``, ``pytest`` -- and killing the runner alone reparents
-those to init, where they carry on. A ``poetry lock`` that never resolves
-then spins at 100% of a core, holding gigabytes of memory, for as long as the
-machine stays up.
-
 Every subprocess started here is the leader of its own process group, and a
 timeout, a cancelled task, or hyrum itself exiting kills the whole group. Its
 own group also means a Ctrl-C at the terminal no longer reaches the
@@ -20,20 +14,18 @@ import asyncio
 import contextlib
 import logging
 import os
+import pathlib
 import signal
 import subprocess  # ruff: ignore[suspicious-subprocess-import] — this module exists to run subprocesses
-import typing
-from collections.abc import Awaitable, Generator, Sequence
+from collections.abc import Awaitable, Generator, Mapping, Sequence
 from typing import Any, TypeVar
 
 _T = TypeVar('_T')
 
 logger = logging.getLogger(__name__)
 
-# Process groups started and not yet reaped. A plain set rather than one
-# guarded by a lock, because :func:`kill_all` runs from a signal handler, and
-# a handler that waits on a lock the interrupted code holds never returns.
-# Adding, discarding and copying are each a single operation under the GIL.
+# Process groups started and not yet reaped. No lock: kill_all runs from a
+# signal handler, which would deadlock on a lock the interrupted code holds.
 _groups: set[int] = set()
 
 # How long to wait for a killed process to be reaped before giving up on it.
@@ -96,7 +88,11 @@ async def communicate(
 
 
 def run(
-    cmd: Sequence[str], *, timeout: float, **kwargs: Any
+    cmd: Sequence[str],
+    *,
+    timeout: float,
+    cwd: pathlib.Path | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     """Like :func:`subprocess.run`, but a timeout kills the whole process group.
 
@@ -109,21 +105,27 @@ def run(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=True,
-        **kwargs,
+        cwd=cwd,
+        env=env,
     )
     with tracked(proc.pid):
         try:
-            stdout, stderr = typing.cast('tuple[bytes, bytes]', proc.communicate(timeout=timeout))
+            stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             kill_group(proc.pid)
-            with contextlib.suppress(subprocess.TimeoutExpired):
+            try:
                 proc.communicate(timeout=_REAP_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                logger.error('process %d did not exit after SIGKILL', proc.pid)
             raise
     return subprocess.CompletedProcess(list(cmd), proc.returncode, stdout, stderr)
 
 
-async def kill_all_if_cancelled(awaitable: Awaitable[_T]) -> _T:
+async def kill_all_on_error(awaitable: Awaitable[_T]) -> _T:
     """Await ``awaitable``, killing every tracked group if it raises.
+
+    That's usually a cancellation from Ctrl-C, but a crash in the pool should
+    take its subprocesses with it too.
 
     Subprocesses run from worker threads (lockfile regeneration) can't be
     cancelled, and :func:`asyncio.run` waits for those threads before it
