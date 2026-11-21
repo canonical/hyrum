@@ -142,6 +142,35 @@ def test_fixture_charms_are_not_run_as_charms(
     assert found == ['real']
 
 
+def test_examples_are_run_when_they_are_the_only_charms(owner: pathlib.Path, cache: pathlib.Path):
+    """canonical/operator is in the collection for its example charms."""
+    make_charm(owner / 'operator' / 'test' / 'charms' / 'fixture')
+    make_charm(owner / 'operator' / 'examples' / 'k8s-1-minimal')
+    make_charm(owner / 'operator' / 'examples' / 'machine-tinyproxy')
+    found = [p.relative_to(cache).as_posix() for p in _enumerate.iter_charm_repos(cache)]
+    assert found == [
+        'canonical/operator/examples/k8s-1-minimal',
+        'canonical/operator/examples/machine-tinyproxy',
+    ]
+
+
+def test_nested_examples_are_not_a_fallback(owner: pathlib.Path, cache: pathlib.Path):
+    make_charm(owner / 'repo' / 'docs' / 'examples' / 'fixture')
+    make_charm(owner / 'repo' / 'src' / 'examples' / 'fixture')
+    found = list(_enumerate.iter_charm_repos(cache))
+    assert found == []
+
+
+def test_a_repo_with_only_empty_examples_is_logged(
+    owner: pathlib.Path, cache: pathlib.Path, caplog: pytest.LogCaptureFixture
+):
+    (owner / 'repo' / 'examples' / 'not-a-charm').mkdir(parents=True)
+    with caplog.at_level(logging.WARNING):
+        found = list(_enumerate.iter_charm_repos(cache))
+    assert found == []
+    assert 'No charm found in' in caplog.text
+
+
 def test_symlinked_directories_are_not_followed(owner: pathlib.Path, cache: pathlib.Path):
     repo = owner / 'repo'
     make_charm(repo / 'charms' / 'real')

@@ -7,6 +7,7 @@ Charm-Tech,https://github.com/tonyandrewmeyer/exim-operator,,manual
 Charm-Tech,https://github.com/benhoyt/snappass-test,,manual
 Charm-Tech,https://github.com/tonyandrewmeyer/takahe-operator,,manual
 Charm-Tech,https://github.com/benhoyt/test-charms/,,manual
+Charm-Tech,https://github.com/canonical/operator,,manual
 Commercial Systems,https://github.com/canonical/ranger-k8s-operator,,manual
 Commercial Systems,https://github.com/canonical/superset-k8s-operator,,manual
 Commercial Systems,https://github.com/canonical/temporal-admin-k8s-operator,,manual
