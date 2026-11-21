@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import itertools
 import os
 import pathlib
 import typing
@@ -29,20 +30,19 @@ class FakeProc:
     stderr: bytes = b''
     merged: bytes | None = None
     raise_timeout: bool = False
+    # Never a real pid: the fake killpg below swallows every signal anyway.
+    pid: int = dataclasses.field(default_factory=itertools.count(1_000_000).__next__)
     killed: bool = dataclasses.field(default=False, init=False)
     merge_streams: bool = dataclasses.field(default=False, init=False)
 
     async def communicate(self):
         if self.raise_timeout and not self.killed:
-            # Block until the test kills us; then the drain returns immediately.
+            # Block until the test kills our group; then the drain returns.
             await asyncio.sleep(3600)
         if self.merge_streams:
             merged = self.stdout + self.stderr if self.merged is None else self.merged
             return merged, None
         return self.stdout, self.stderr
-
-    def kill(self) -> None:
-        self.killed = True
 
 
 class FakeSpawner:
@@ -59,6 +59,7 @@ class FakeSpawner:
         self._procs = list(procs)
         self.calls: list[tuple[tuple[str, ...], str]] = []
         self.kwargs: list[dict[str, object]] = []
+        self.spawned: dict[int, FakeProc] = {}
 
     async def __call__(self, *args: str, **kwargs: object) -> FakeProc:
         self.calls.append((tuple(args), str(kwargs.get('cwd'))))
@@ -69,7 +70,13 @@ class FakeSpawner:
         if isinstance(proc, OSError):
             raise proc
         proc.merge_streams = kwargs.get('stderr') is asyncio.subprocess.STDOUT
+        self.spawned[proc.pid] = proc
         return proc
+
+    def killpg(self, pgid: int, _sig: int) -> None:
+        """Stand in for os.killpg: mark the group's leader killed, signal nothing."""
+        if pgid in self.spawned:
+            self.spawned[pgid].killed = True
 
 
 class SpawnerFactory(typing.Protocol):
@@ -81,6 +88,7 @@ def spawner(monkeypatch: pytest.MonkeyPatch) -> SpawnerFactory:
     procs: list[FakeProc | OSError] = []
     fake = FakeSpawner(procs)
     monkeypatch.setattr(asyncio, 'create_subprocess_exec', fake)
+    monkeypatch.setattr(os, 'killpg', fake.killpg)
 
     def _setup(*new_procs: FakeProc | OSError) -> FakeSpawner:
         fake._procs.extend(new_procs)
@@ -181,6 +189,33 @@ async def test_tox_runner_timeout_kills_process(tmp_path: pathlib.Path, spawner:
     assert result.status is runners.RunStatus.TIMEOUT
     assert proc.killed
     assert result.returncode is None
+
+
+@pytest.mark.parametrize('runner', [runners.ToxRunner, runners.MakeRunner])
+async def test_runner_starts_its_own_process_group(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, runner: type[runners.ToxRunner]
+):
+    # Its own group is what lets a timeout reach the poetry or pytest that tox
+    # or make started, rather than leaving them running under init.
+    fake = spawner(FakeProc(returncode=0), FakeProc(returncode=0))
+    await runner().run(tmp_path, 'unit')
+    assert fake.kwargs
+    assert all(kw.get('start_new_session') is True for kw in fake.kwargs)
+
+
+async def test_tox_runner_cancelled_kills_process_group(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    # Ctrl-C cancels the pool's tasks; the subprocesses are in their own
+    # groups and don't see the SIGINT, so cancelling has to kill them.
+    proc = FakeProc(raise_timeout=True)
+    spawner(proc)
+    task = asyncio.create_task(runners.ToxRunner(timeout=3600).run(tmp_path, 'unit'))
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert proc.killed
 
 
 async def test_tox_runner_missing_executable_is_a_runner_error(
@@ -350,9 +385,11 @@ async def test_make_runner_missing_executable_is_a_runner_error(
 
 
 async def test_make_runner_timeout(tmp_path: pathlib.Path, spawner: SpawnerFactory):
-    spawner(FakeProc(returncode=0), FakeProc(raise_timeout=True))
+    proc = FakeProc(raise_timeout=True)
+    spawner(FakeProc(returncode=0), proc)
     result = await runners.MakeRunner(timeout=0).run(tmp_path, 'unit')
     assert result.status is runners.RunStatus.TIMEOUT
+    assert proc.killed
 
 
 # ---- by_name + auto ----------------------------------------------------------

@@ -10,12 +10,13 @@ import logging
 import os
 import pathlib
 import re
-import subprocess  # ruff: ignore[suspicious-subprocess-import] — subprocess is core to running poetry/uv lock
+import subprocess  # ruff: ignore[suspicious-subprocess-import] — for TimeoutExpired
 from collections.abc import Sequence
 from typing import Any
 
 import packaging.requirements
 
+from hyrum import _process
 from hyrum._patchers import base
 
 logger = logging.getLogger(__name__)
@@ -456,14 +457,10 @@ def run_lock(
     # project's requires-python — even when we wrap with ``uv run --python``.
     env = {k: v for k, v in os.environ.items() if k != 'VIRTUAL_ENV'}
     try:
-        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] — cmd built from project config
-            list(cmd),
-            cwd=repo,
-            check=False,
-            capture_output=True,
-            timeout=timeout,
-            env=env,
-        )
+        # Through _process so that a timeout kills everything the lock
+        # started: a ``uv run --python ... poetry lock`` wrapper otherwise
+        # leaves the resolver running after the wrapper is killed.
+        result = _process.run(cmd, cwd=repo, timeout=timeout, env=env)
     except FileNotFoundError as exc:
         if on_failure_remove is None:
             raise base.PatcherError(f'{cmd[0]} not found, could not lock') from exc
