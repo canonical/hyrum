@@ -39,6 +39,9 @@ _REAP_TIMEOUT = 30
 # How long an interrupted subprocess gets to clean up before it is killed.
 _INTERRUPT_GRACE = 10
 
+# How often to check whether an interrupted subprocess has exited.
+_EXIT_POLL = 0.05
+
 
 def kill_group(pgid: int) -> None:
     """Send SIGKILL to every process in the group ``pgid``.
@@ -113,20 +116,34 @@ async def _interrupt(proc: asyncio.subprocess.Process) -> None:
     with contextlib.suppress(ProcessLookupError, PermissionError):
         os.killpg(proc.pid, signal.SIGINT)
     # Keep draining the pipes, or output written during teardown could fill
-    # them and block the process from exiting. Wait on the process itself,
-    # not the drain: a background grandchild can hold the pipes open long
-    # after the process has gone.
+    # them and block the process from exiting.
     drain = asyncio.ensure_future(proc.communicate())
     try:
-        await asyncio.wait_for(proc.wait(), timeout=_INTERRUPT_GRACE)
-    except TimeoutError:
-        logger.warning(
-            'process %d did not exit within %ds of SIGINT; killing it',
-            proc.pid,
-            _INTERRUPT_GRACE,
-        )
+        if not await _exited(proc, _INTERRUPT_GRACE):
+            logger.warning(
+                'process %d did not exit within %ds of SIGINT; killing it',
+                proc.pid,
+                _INTERRUPT_GRACE,
+            )
     finally:
         drain.cancel()
+
+
+async def _exited(proc: asyncio.subprocess.Process, timeout: float) -> bool:
+    """Wait up to ``timeout`` seconds for ``proc`` to exit; return whether it did.
+
+    This doesn't use :meth:`asyncio.subprocess.Process.wait`, because on some
+    Python versions that also waits for the pipes to close, and a background
+    grandchild can hold them open long after ``proc`` has gone.
+    ``returncode`` is set as soon as the exit is seen.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while proc.returncode is None:
+        if loop.time() >= deadline:
+            return False
+        await asyncio.sleep(_EXIT_POLL)
+    return True
 
 
 def run(
