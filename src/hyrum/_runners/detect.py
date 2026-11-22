@@ -82,11 +82,12 @@ def auto(
     make_executable: str | Sequence[str] = 'make',
     timeout: int = 1800,
     prefer: Sequence[str] = ('tox', 'make'),
+    python: base.PythonSelector | None = None,
 ) -> AutoRunner:
     """Build an AutoRunner that tries runners in ``prefer`` order."""
     available: dict[str, base.Runner] = {
-        'tox': tox.ToxRunner(executable=tox_executable, timeout=timeout),
-        'make': make_runner.MakeRunner(executable=make_executable, timeout=timeout),
+        'tox': tox.ToxRunner(executable=tox_executable, timeout=timeout, python=python),
+        'make': make_runner.MakeRunner(executable=make_executable, timeout=timeout, python=python),
     }
     ordered = [available[name] for name in prefer if name in available]
     return AutoRunner(ordered)

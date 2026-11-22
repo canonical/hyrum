@@ -21,3 +21,11 @@ export UV_TOOL_DIR=/opt/hyrum/tools
 export UV_TOOL_BIN_DIR=/opt/hyrum/bin
 uv tool install tox
 uv tool install poetry
+
+# `hyrum check` runs each charm under Python 3.12, or the closest version the
+# charm's requires-python allows, and finds them as pythonX.Y on PATH. The
+# container's own Python is newer than most charms are tested against. The
+# check user runs these too, so they also go in /opt/hyrum.
+export UV_PYTHON_INSTALL_DIR=/opt/hyrum/python
+export UV_PYTHON_BIN_DIR=/opt/hyrum/bin
+uv python install 3.10 3.11 3.12 3.13

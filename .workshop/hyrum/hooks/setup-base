@@ -12,8 +12,10 @@ apt-get install -yqq \
     build-essential \
     git \
     libffi-dev \
+    libldap-dev \
     libmariadb-dev \
     libpq-dev \
+    libsasl2-dev \
     pkg-config \
     python3-dev
 

@@ -28,6 +28,7 @@ from hyrum import _frameworks as frameworks
 from hyrum import _get_charms as get_charms
 from hyrum import _patchers as patchers
 from hyrum import _pool as pool
+from hyrum import _python as python_select
 from hyrum import _report as report
 from hyrum import _runners as runners
 from hyrum import _selection as selection
@@ -458,17 +459,63 @@ def _build_runner(
     make_executable: str,
     timeout: int,
     prefer: Sequence[str] = ('tox', 'make'),
+    python: runners.PythonSelector | None = None,
 ) -> runners.Runner:
     if choice is runners.RunnerChoice.TOX:
-        return tox.ToxRunner(executable=tox_executable, timeout=timeout)
+        return tox.ToxRunner(executable=tox_executable, timeout=timeout, python=python)
     if choice is runners.RunnerChoice.MAKE:
-        return make_runner.MakeRunner(executable=make_executable, timeout=timeout)
+        return make_runner.MakeRunner(executable=make_executable, timeout=timeout, python=python)
     return runners.auto(
         tox_executable=tox_executable,
         make_executable=make_executable,
         timeout=timeout,
         prefer=prefer,
+        python=python,
     )
+
+
+_PYTHON_HOST = 'host'
+
+
+def _python_choice(text: str) -> python_select.Version | str:
+    """Argparse type for ``--python``: ``3.Y`` or ``host``."""
+    if text == _PYTHON_HOST:
+        return text
+    try:
+        return python_select.parse_version(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f'{exc}, or {_PYTHON_HOST!r}') from exc
+
+
+def _build_python_selector(
+    choice: python_select.Version | str | None,
+) -> python_select.Selector | None:
+    """Return the per-charm interpreter selector for ``--python``, or ``None`` for ``host``.
+
+    An explicitly requested version that isn't installed is fatal, once, before
+    any charm runs. The default not being installed is not: hyrum falls back
+    to the closest installed version, which is what it would do for a charm
+    that doesn't allow the default anyway.
+    """
+    if choice == _PYTHON_HOST:
+        return None
+    available = python_select.discover()
+    preferred = choice if isinstance(choice, tuple) else python_select.DEFAULT
+    executable = f'python{python_select.format_version(preferred)}'
+    if preferred not in available:
+        if choice is not None:
+            sys.exit(f'hyrum: error: --python: {executable} not found on PATH.')
+        if not available:
+            logger.warning(
+                'no python3.Y executables found on PATH; charms run on whatever their runner picks'
+            )
+            return None
+        logger.warning(
+            '%s not found on PATH; each charm runs on the closest installed Python it allows (%s)',
+            executable,
+            ', '.join(python_select.format_version(v) for v in available),
+        )
+    return python_select.Selector(preferred, available)
 
 
 # Backends each ``--runner`` choice may end up invoking, in preference order.
@@ -1023,6 +1070,21 @@ def _add_check_subparser(
         help='Per-charm timeout in seconds. [default: 1800]',
     )
     parser.add_argument(
+        '--python',
+        dest='python_choice',
+        metavar='VERSION',
+        type=_python_choice,
+        default=None,
+        help=(
+            "Run each charm's checks under this Python (3.Y), or under the closest "
+            "installed version that the charm's requires-python allows. Sets "
+            'base_python for tox (through TOX_OVERRIDE) and UV_PYTHON for uv. Only '
+            f'python3.Y executables on PATH count as installed. {_PYTHON_HOST!r} leaves '
+            'the choice to tox and uv, so charms run on the Python that tox is installed '
+            f'under. [default: {python_select.format_version(python_select.DEFAULT)}]'
+        ),
+    )
+    parser.add_argument(
         '--no-patch',
         action='store_true',
         help='Skip the dependency-swap; run against whatever the charm already pins.',
@@ -1507,6 +1569,7 @@ def _run_check(args: argparse.Namespace) -> int:
         make_executable=args.make_executable,
         timeout=args.timeout,
         prefer=prefer,
+        python=_build_python_selector(args.python_choice),
     )
 
     if args.log_dir is not None:

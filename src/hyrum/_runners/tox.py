@@ -28,9 +28,11 @@ class ToxRunner:
         *,
         executable: str | Sequence[str] = 'tox',
         timeout: int = 1800,
+        python: base.PythonSelector | None = None,
     ):
         self._executable = base.split_executable(executable)
         self._timeout = timeout
+        self._python = python
 
     @classmethod
     def detect(cls, repo: pathlib.Path) -> bool:
@@ -39,8 +41,9 @@ class ToxRunner:
 
     async def run(self, repo: pathlib.Path, target: str) -> base.RunResult:
         """Invoke ``tox -e <target>`` in ``repo`` and capture the result."""
+        python = self._python(repo) if self._python is not None else None
         argv = [*self._executable, '-e', target]
-        logger.info('tox %s in %s', target, repo)
+        logger.info('tox %s in %s%s', target, repo, base.describe_python(python))
         started = time.monotonic()
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -50,7 +53,7 @@ class ToxRunner:
                 # Same pipe for both streams so the captured transcript keeps
                 # the order tox and its subprocesses actually wrote in.
                 stderr=asyncio.subprocess.STDOUT,
-                env=base.subprocess_env(),
+                env=base.subprocess_env(python),
                 # Its own process group, so a timeout or Ctrl-C can kill what it
                 # spawns as well -- see hyrum._process.
                 start_new_session=True,
@@ -68,6 +71,7 @@ class ToxRunner:
                 status=base.RunStatus.TIMEOUT,
                 returncode=None,
                 duration_s=time.monotonic() - started,
+                python=python,
             )
 
         duration = time.monotonic() - started
@@ -86,4 +90,5 @@ class ToxRunner:
             returncode=rc,
             duration_s=duration,
             output=base.strip_ansi(output),
+            python=python,
         )

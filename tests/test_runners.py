@@ -240,10 +240,14 @@ async def test_tox_runner_passes_executable_through(
     assert argv[:4] == ('uvx', 'tox', '-e', 'lint')
 
 
-def _tox_overrides(spawner_call_kwargs: dict[str, object]) -> list[str]:
+def _env(spawner_call_kwargs: dict[str, object]) -> dict[str, str]:
     env = spawner_call_kwargs['env']
     assert isinstance(env, dict)
-    return env['TOX_OVERRIDE'].split(';')
+    return typing.cast('dict[str, str]', env)
+
+
+def _tox_overrides(spawner_call_kwargs: dict[str, object]) -> list[str]:
+    return _env(spawner_call_kwargs)['TOX_OVERRIDE'].split(';')
 
 
 async def test_tox_runner_tells_tox_not_to_write_a_venv_redirect(
@@ -266,6 +270,52 @@ async def test_tox_runner_keeps_existing_tox_overrides(
         'testenv:unit.pass_env+=FOO',
         'tox.venv_redirect=false',
     ]
+
+
+async def test_tox_runner_points_tox_and_uv_at_the_selected_python(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv('TOX_OVERRIDE', raising=False)
+    fake = spawner(FakeProc(returncode=0))
+    seen: list[pathlib.Path] = []
+
+    def select(repo: pathlib.Path) -> str:
+        seen.append(repo)
+        return '3.12'
+
+    result = await runners.ToxRunner(python=select).run(tmp_path, 'unit')
+    assert seen == [tmp_path]
+    assert _tox_overrides(fake.kwargs[0]) == [
+        'tox.venv_redirect=false',
+        'testenv.base_python=python3.12',
+        'testenv:.pkg.base_python=python3.12',
+    ]
+    assert _env(fake.kwargs[0])['UV_PYTHON'] == '3.12'
+    assert result.python == '3.12'
+
+
+async def test_tox_runner_without_a_selected_python_sets_no_override(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv('TOX_OVERRIDE', raising=False)
+    monkeypatch.delenv('UV_PYTHON', raising=False)
+    fake = spawner(FakeProc(returncode=0), FakeProc(returncode=0))
+    result = await runners.ToxRunner(python=lambda _repo: None).run(tmp_path, 'unit')
+    assert _tox_overrides(fake.kwargs[0]) == ['tox.venv_redirect=false']
+    assert 'UV_PYTHON' not in _env(fake.kwargs[0])
+    assert result.python is None
+    await runners.ToxRunner().run(tmp_path, 'unit')
+    assert 'UV_PYTHON' not in _env(fake.kwargs[1])
+
+
+async def test_tox_runner_timeout_records_the_selected_python(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    spawner(FakeProc(raise_timeout=True))
+    runner = runners.ToxRunner(timeout=0, python=lambda _repo: '3.10')
+    result = await runner.run(tmp_path, 'unit')
+    assert result.status is runners.RunStatus.TIMEOUT
+    assert result.python == '3.10'
 
 
 # ---- MakeRunner --------------------------------------------------------------
@@ -295,6 +345,35 @@ async def test_make_runner_tells_a_nested_tox_not_to_write_a_venv_redirect(
     fake = spawner(FakeProc(returncode=0), FakeProc(returncode=0))
     await runners.MakeRunner().run(tmp_path, 'unit')
     assert _tox_overrides(fake.kwargs[1]) == ['tox.venv_redirect=false']
+
+
+async def test_make_runner_probe_and_run_both_get_the_selected_python(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, monkeypatch: pytest.MonkeyPatch
+):
+    # A recipe calling uv or tox sees the selection however make was reached,
+    # including ``+`` recipe lines that run during the probe.
+    monkeypatch.delenv('TOX_OVERRIDE', raising=False)
+    fake = spawner(FakeProc(returncode=0), FakeProc(returncode=0))
+    result = await runners.MakeRunner(python=lambda _repo: '3.11').run(tmp_path, 'unit')
+    for kwargs in fake.kwargs:
+        assert _env(kwargs)['UV_PYTHON'] == '3.11'
+        assert 'testenv.base_python=python3.11' in _tox_overrides(kwargs)
+    assert result.python == '3.11'
+
+
+async def test_auto_runner_passes_the_selector_to_both_backends(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    (tmp_path / 'tox.ini').write_text('[tox]\n')
+    (tmp_path / 'Makefile').write_text('unit:\n\ttrue\n')
+    fake = spawner(
+        FakeProc(returncode=254),  # tox: no such env
+        FakeProc(returncode=0),  # make probe
+        FakeProc(returncode=0),  # make run
+    )
+    result = await runners.auto(python=lambda _repo: '3.12').run(tmp_path, 'unit')
+    assert result.runner == 'make'
+    assert [_env(kwargs)['UV_PYTHON'] for kwargs in fake.kwargs] == ['3.12'] * 3
 
 
 async def test_make_runner_no_target_via_probe(tmp_path: pathlib.Path, spawner: SpawnerFactory):
