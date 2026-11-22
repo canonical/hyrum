@@ -121,10 +121,10 @@ def _iter_monorepo(base: pathlib.Path, depth: int) -> Iterator[pathlib.Path]:
     for child in sorted(base.iterdir()):
         if not _walkable(child) or child.name in _PRUNED_DIRS:
             continue
-        if _is_charm_dir(child):
-            yield child
-        elif _is_bundle_dir(child):
+        if _is_bundle_dir(child):
             yield from _iter_bundle(child, warn=False)
+        elif _is_charm_dir(child):
+            yield child
         else:
             yield from _iter_monorepo(child, depth - 1)
 
@@ -171,12 +171,12 @@ def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
         raise NotADirectoryError(f'Cache folder is not a directory: {base}')
 
     for repo in _iter_repos(base):
-        if _is_charm_dir(repo):
-            yield repo
-            continue
         if _is_bundle_dir(repo):
             # _iter_bundle says its own piece about a bundle with no charms/.
             yield from _iter_bundle(repo)
+            continue
+        if _is_charm_dir(repo):
+            yield repo
             continue
         charms = list(_iter_monorepo(repo, _MAX_DEPTH))
         if not charms:
