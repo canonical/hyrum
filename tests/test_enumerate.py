@@ -144,6 +144,7 @@ def test_fixture_charms_are_not_run_as_charms(
 
 def test_examples_are_run_when_they_are_the_only_charms(owner: pathlib.Path, cache: pathlib.Path):
     """canonical/operator is in the collection for its example charms."""
+    # Pruned, as operator's test charms are; the exact list below checks that.
     make_charm(owner / 'operator' / 'test' / 'charms' / 'fixture')
     make_charm(owner / 'operator' / 'examples' / 'k8s-1-minimal')
     make_charm(owner / 'operator' / 'examples' / 'machine-tinyproxy')
