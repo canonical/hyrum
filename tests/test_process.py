@@ -51,6 +51,22 @@ def test_run_timeout_kills_grandchildren(tmp_path: pathlib.Path):
     assert not _process._groups
 
 
+def test_run_success_kills_background_grandchildren(tmp_path: pathlib.Path):
+    # A helper started in the background with its output redirected doesn't
+    # hold the pipes open, so the run finishes normally while it's still alive.
+    pidfile = tmp_path / 'grandchild.pid'
+    script = f'sleep 60 >/dev/null 2>&1 & echo $! > {pidfile}'
+    result = _process.run(['sh', '-c', script], timeout=10)
+    assert result.returncode == 0
+    grandchild = int(pidfile.read_text())
+    try:
+        assert _wait_until_dead(grandchild)
+    finally:
+        if _alive(grandchild):
+            os.kill(grandchild, signal.SIGKILL)
+    assert not _process._groups
+
+
 def test_run_returns_output_and_returncode(tmp_path: pathlib.Path):
     result = _process.run(['sh', '-c', 'echo out; echo err >&2; exit 3'], timeout=10, cwd=tmp_path)
     assert result.returncode == 3
@@ -75,10 +91,11 @@ def test_tracked_kills_the_group_when_the_block_raises(killed: list[int]):
     assert not _process._groups
 
 
-def test_tracked_leaves_the_group_alone_on_success(killed: list[int]):
+def test_tracked_kills_the_group_on_success(killed: list[int]):
     with _process.tracked(4242):
         assert 4242 in _process._groups
-    assert killed == []
+        assert killed == []
+    assert killed == [4242]
     assert not _process._groups
 
 

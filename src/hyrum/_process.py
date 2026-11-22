@@ -1,7 +1,9 @@
 """Run subprocesses so that nothing they start can outlive hyrum.
 
-Every subprocess started here is the leader of its own process group, and a
-timeout, a cancelled task, or hyrum itself exiting kills the whole group. Its
+Every subprocess started here is the leader of its own process group, and
+the whole group is killed once the subprocess has finished, whether it
+exited, timed out, or its task was cancelled, and when hyrum itself exits.
+That includes anything a successful run left behind in the background. Its
 own group also means a Ctrl-C at the terminal no longer reaches the
 subprocess directly, so :func:`kill_all` has to run on the way out instead:
 :func:`cleanup_on_exit` arranges that for the signals that would otherwise end
@@ -52,17 +54,17 @@ def tracked(pid: int) -> Generator[None]:
     """Track ``pid``'s process group for the duration of the block.
 
     ``pid`` must lead its own group (``start_new_session=True``), so the
-    process id doubles as the group id. If the block raises -- a timeout, a
-    cancelled task, a KeyboardInterrupt -- the whole group is killed before
-    the exception propagates.
+    process id doubles as the group id. The whole group is killed when the
+    block exits. If the block raises (a timeout, a cancelled task, a
+    KeyboardInterrupt), that happens before the exception propagates. On
+    success the leader has already exited, so this only kills anything it
+    left running in the background.
     """
     _groups.add(pid)
     try:
         yield
-    except BaseException:
-        kill_group(pid)
-        raise
     finally:
+        kill_group(pid)
         _groups.discard(pid)
 
 
