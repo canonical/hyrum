@@ -81,6 +81,8 @@ async def communicate(
         try:
             return await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except TimeoutError:
+            # Kill now so the drain below returns; tracked() kills again on the
+            # way out, which is harmless.
             kill_group(proc.pid)
             try:
                 await asyncio.wait_for(proc.communicate(), timeout=_REAP_TIMEOUT)
@@ -114,6 +116,8 @@ def run(
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
+            # Kill now so the drain below returns; tracked() kills again on the
+            # way out, which is harmless.
             kill_group(proc.pid)
             try:
                 proc.communicate(timeout=_REAP_TIMEOUT)
