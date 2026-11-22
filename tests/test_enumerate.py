@@ -154,6 +154,27 @@ def test_examples_are_run_when_they_are_the_only_charms(owner: pathlib.Path, cac
     ]
 
 
+def test_a_library_root_harness_is_not_run_in_place_of_its_examples(
+    owner: pathlib.Path, cache: pathlib.Path
+):
+    """operator's root tox.ini tests ops itself, not the example charms.
+
+    The examples are yielded even though none can run by itself, and the
+    runner filters skip them, rather than the library's tests being run as
+    if they were a charm's.
+    """
+    repo = owner / 'operator'
+    make_charm(repo / 'examples' / 'k8s-1-minimal', tox=False)
+    make_charm(repo / 'examples' / 'machine-tinyproxy', tox=False)
+    (repo / 'tox.ini').write_text('[tox]\nenvlist = unit\n')
+    (repo / 'pyproject.toml').write_text('[project]\nname = "ops"\n')
+    found = [p.relative_to(cache).as_posix() for p in _enumerate.iter_charm_repos(cache)]
+    assert found == [
+        'canonical/operator/examples/k8s-1-minimal',
+        'canonical/operator/examples/machine-tinyproxy',
+    ]
+
+
 def test_nested_examples_are_not_a_fallback(owner: pathlib.Path, cache: pathlib.Path):
     make_charm(owner / 'repo' / 'docs' / 'examples' / 'fixture')
     make_charm(owner / 'repo' / 'src' / 'examples' / 'fixture')

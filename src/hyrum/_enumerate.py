@@ -198,11 +198,17 @@ def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
             # _iter_bundle says its own piece about a bundle with no charms/.
             yield from _iter_bundle(repo)
             continue
-        # A repository listed for its examples alone, such as
-        # canonical/operator, has nothing else to run. Elsewhere the examples
-        # sit beside the real charms and stay pruned.
-        charms = list(_iter_monorepo(repo, _MAX_DEPTH)) or list(_iter_examples(repo))
+        charms = list(_iter_monorepo(repo, _MAX_DEPTH))
         if not charms:
+            # A repository listed for its examples alone, such as
+            # canonical/operator, has nothing else to run. Elsewhere the
+            # examples sit beside the real charms and stay pruned. Its root
+            # harness tests the library rather than the examples, so unlike
+            # a monorepo's (below) it's never run in their place.
+            examples = list(_iter_examples(repo))
+            if examples:
+                yield from examples
+                continue
             logger.warning(
                 'No charm found in %s (no charmcraft.yaml or metadata.yaml '
                 'within %d directory levels)',
