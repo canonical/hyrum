@@ -13,7 +13,7 @@ Handles:
   * monorepos whose tests run from the root: when the root has a runner and
     a Python manifest and none of the charms below it has both, the root is
     yielded in their place,
-  * repositories whose only charms are under a top-level `examples/`, such
+  * repositories whose only charms are under a top-level ``examples/``, such
     as canonical/operator.
 
 Reactive and classic hook-based charms are dropped by the ``not_legacy``
