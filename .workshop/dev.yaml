@@ -10,7 +10,11 @@ actions:
   # `hyrum check` runs each charm's tests -- third-party code -- so run hyrum
   # as `hyrum-check`, which can read the /project mount of the host checkout
   # but not write to it (see hooks/setup-base). sudo resets PATH, which would
-  # lose /opt/hyrum/bin (tox, poetry). The umask keeps new cache files group
+  # lose /opt/hyrum/bin (tox, poetry, and the extra Pythons). The workshop
+  # user's own PATH won't do either: it starts with ~/.local/bin, which the
+  # check user can't search, so a charm's test that runs a missing hook tool
+  # such as `juju-log` gets a PermissionError rather than the
+  # FileNotFoundError it expects. The umask keeps new cache files group
   # writable, so the workshop user can clear them. The `hyrum` after the
   # script becomes its $0, and the action's arguments follow as "$@".
-  hyrum: sudo -u hyrum-check env PATH="$PATH" sh -c 'umask 002; exec /opt/hyrum/venv/bin/hyrum "$@"' hyrum "$@"
+  hyrum: sudo -u hyrum-check env PATH=/opt/hyrum/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin sh -c 'umask 002; exec /opt/hyrum/venv/bin/hyrum "$@"' hyrum "$@"
