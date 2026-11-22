@@ -5,6 +5,7 @@ import dataclasses
 import itertools
 import os
 import pathlib
+import signal
 import typing
 
 import pytest
@@ -33,6 +34,7 @@ class FakeProc:
     # Never a real pid: the fake killpg below swallows every signal anyway.
     pid: int = dataclasses.field(default_factory=itertools.count(1_000_000).__next__)
     killed: bool = dataclasses.field(default=False, init=False)
+    signals: list[int] = dataclasses.field(default_factory=list[int], init=False)
     merge_streams: bool = dataclasses.field(default=False, init=False)
 
     async def communicate(self):
@@ -43,6 +45,11 @@ class FakeProc:
             merged = self.stdout + self.stderr if self.merged is None else self.merged
             return merged, None
         return self.stdout, self.stderr
+
+    async def wait(self) -> int:
+        if self.raise_timeout and not self.killed:
+            await asyncio.sleep(3600)
+        return self.returncode
 
 
 class FakeSpawner:
@@ -73,9 +80,14 @@ class FakeSpawner:
         self.spawned[proc.pid] = proc
         return proc
 
-    def killpg(self, pgid: int, _sig: int) -> None:
-        """Stand in for os.killpg: mark the group's leader killed, signal nothing."""
+    def killpg(self, pgid: int, sig: int) -> None:
+        """Stand in for os.killpg: record the signal and mark the leader as exited.
+
+        Any signal ends a fake process, an interrupt included, but nothing is
+        actually sent.
+        """
         if pgid in self.spawned:
+            self.spawned[pgid].signals.append(sig)
             self.spawned[pgid].killed = True
 
 
@@ -207,7 +219,8 @@ async def test_tox_runner_cancelled_kills_process_group(
     tmp_path: pathlib.Path, spawner: SpawnerFactory
 ):
     # Ctrl-C cancels the pool's tasks; the subprocesses are in their own
-    # groups and don't see the SIGINT, so cancelling has to kill them.
+    # groups and don't see the SIGINT, so cancelling has to pass it on and
+    # then kill whatever is left.
     proc = FakeProc(raise_timeout=True)
     spawner(proc)
     task = asyncio.create_task(runners.ToxRunner(timeout=3600).run(tmp_path, 'unit'))
@@ -215,7 +228,7 @@ async def test_tox_runner_cancelled_kills_process_group(
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert proc.killed
+    assert proc.signals == [signal.SIGINT, signal.SIGKILL]
 
 
 async def test_tox_runner_missing_executable_is_a_runner_error(

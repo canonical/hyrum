@@ -131,3 +131,70 @@ def test_cleanup_on_exit_restores_signal_handlers(killed: list[int]):
     with _process.cleanup_on_exit():
         assert signal.getsignal(signal.SIGTERM) is not before
     assert signal.getsignal(signal.SIGTERM) is before
+
+
+async def _spawn(script: str) -> asyncio.subprocess.Process:
+    return await asyncio.create_subprocess_exec(
+        'sh',
+        '-c',
+        script,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+
+async def _wait_for_file(path: pathlib.Path, timeout: float = 5) -> None:
+    deadline = time.monotonic() + timeout
+    while not path.exists():
+        assert time.monotonic() < deadline, f'{path} never appeared'
+        await asyncio.sleep(0.02)
+
+
+async def test_cancel_interrupts_before_killing(tmp_path: pathlib.Path):
+    # The trap stands in for pytest running fixture teardown on Ctrl-C. The
+    # background sleep ignores SIGINT (a non-interactive shell's background
+    # jobs do), so it's still there for tracked() to kill.
+    ready = tmp_path / 'ready'
+    tore_down = tmp_path / 'tore-down'
+    pidfile = tmp_path / 'grandchild.pid'
+    script = (
+        f'trap "touch {tore_down}; exit 130" INT; '
+        f'sleep 60 & echo $! > {pidfile}; touch {ready}; wait'
+    )
+    proc = await _spawn(script)
+    task = asyncio.create_task(_process.communicate(proc, None))
+    await _wait_for_file(ready)
+    start = time.monotonic()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    # Not the whole grace period: the sleep holds the pipes open, but the
+    # shell itself has exited.
+    assert time.monotonic() - start < _process._INTERRUPT_GRACE / 2
+    assert tore_down.exists()
+    assert proc.returncode == 130
+    grandchild = int(pidfile.read_text())
+    try:
+        assert _wait_until_dead(grandchild)
+    finally:
+        if _alive(grandchild):
+            os.kill(grandchild, signal.SIGKILL)
+    assert not _process._groups
+
+
+async def test_cancel_kills_after_the_grace_period(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(_process, '_INTERRUPT_GRACE', 0.2)
+    ready = tmp_path / 'ready'
+    proc = await _spawn(f'trap "" INT; touch {ready}; sleep 60')
+    task = asyncio.create_task(_process.communicate(proc, None))
+    await _wait_for_file(ready)
+    start = time.monotonic()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert time.monotonic() - start < 5
+    assert await asyncio.wait_for(proc.wait(), timeout=5) == -signal.SIGKILL
+    assert not _process._groups

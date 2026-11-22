@@ -3,9 +3,12 @@
 Every subprocess started here is the leader of its own process group, and
 the whole group is killed once the subprocess has finished, whether it
 exited, timed out, or its task was cancelled, and when hyrum itself exits.
-That includes anything a successful run left behind in the background. Its
-own group also means a Ctrl-C at the terminal no longer reaches the
-subprocess directly, so :func:`kill_all` has to run on the way out instead:
+That includes anything a successful run left behind in the background.
+
+Its own group also means a Ctrl-C at the terminal no longer reaches the
+subprocess directly. Instead, a cancelled task sends its group SIGINT and
+allows a short grace period before the kill, so a test run can still tear its
+fixtures down. :func:`kill_all` covers whatever is left on the way out, and
 :func:`cleanup_on_exit` arranges that for the signals that would otherwise end
 hyrum without unwinding.
 """
@@ -32,6 +35,9 @@ _groups: set[int] = set()
 
 # How long to wait for a killed process to be reaped before giving up on it.
 _REAP_TIMEOUT = 30
+
+# How long an interrupted subprocess gets to clean up before it is killed.
+_INTERRUPT_GRACE = 10
 
 
 def kill_group(pgid: int) -> None:
@@ -75,7 +81,12 @@ async def communicate(
 
     ``proc`` must have been started with ``start_new_session=True``. On a
     timeout the group is killed, the process reaped, and :class:`TimeoutError`
-    raised. Cancelling the awaiting task kills the group too.
+    raised.
+
+    Cancelling the awaiting task sends the group SIGINT, as a Ctrl-C at the
+    terminal would, so that tox or make can stop their tests and pytest can
+    run fixture teardown. The process then has :data:`_INTERRUPT_GRACE`
+    seconds to exit before the group is killed.
     """
     with tracked(proc.pid):
         try:
@@ -89,6 +100,33 @@ async def communicate(
             except TimeoutError:
                 logger.error('process %d did not exit after SIGKILL', proc.pid)
             raise
+        except asyncio.CancelledError:
+            await _interrupt(proc)
+            raise
+
+
+async def _interrupt(proc: asyncio.subprocess.Process) -> None:
+    """Send ``proc``'s group SIGINT and wait for ``proc`` to exit, within the grace period.
+
+    Whatever is still running afterwards is left for :func:`tracked` to kill.
+    """
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(proc.pid, signal.SIGINT)
+    # Keep draining the pipes, or output written during teardown could fill
+    # them and block the process from exiting. Wait on the process itself,
+    # not the drain: a background grandchild can hold the pipes open long
+    # after the process has gone.
+    drain = asyncio.ensure_future(proc.communicate())
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=_INTERRUPT_GRACE)
+    except TimeoutError:
+        logger.warning(
+            'process %d did not exit within %ds of SIGINT; killing it',
+            proc.pid,
+            _INTERRUPT_GRACE,
+        )
+    finally:
+        drain.cancel()
 
 
 def run(
