@@ -21,6 +21,13 @@ apt-get install -yqq \
     pkg-config \
     python3-dev
 
+# Charms are tested on Ubuntu 24.04, which has GNU coreutils, and some depend
+# on it: on 26.04's Rust coreutils, `uname -p` prints "unknown", so Python's
+# platform.processor() returns '' and a charm that looks up its snap by
+# architecture fails. Switch back to GNU so they behave as in their own CI.
+# The two coreutils packages conflict, and the Rust one is essential.
+apt-get install -yqq --allow-remove-essential coreutils-from-gnu coreutils-from-uutils-
+
 # A few charms' unit tests call tools outside Python: `go test` for a charm
 # whose workload is in Go, `keytool` from Java for TLS keystores, and
 # `charmcraft fetch-libs` to fetch charm libraries before the tests run.
