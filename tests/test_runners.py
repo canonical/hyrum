@@ -289,6 +289,8 @@ async def test_tox_runner_points_tox_and_uv_at_the_selected_python(
         'tox.venv_redirect=false',
         'testenv.base_python=python3.12',
         'testenv:.pkg.base_python=python3.12',
+        # A basepython in [testenv:unit] beats the testenv override.
+        'testenv:unit.base_python=python3.12',
     ]
     assert _env(fake.kwargs[0])['UV_PYTHON'] == '3.12'
     assert result.python == '3.12'

@@ -53,7 +53,7 @@ class ToxRunner:
                 # Same pipe for both streams so the captured transcript keeps
                 # the order tox and its subprocesses actually wrote in.
                 stderr=asyncio.subprocess.STDOUT,
-                env=base.subprocess_env(python),
+                env=base.subprocess_env(python, tox_env=target),
                 # Its own process group, so a timeout or Ctrl-C can kill what it
                 # spawns as well -- see hyrum._process.
                 start_new_session=True,

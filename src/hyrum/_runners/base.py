@@ -128,7 +128,7 @@ def launch_failure(
     )
 
 
-def subprocess_env(python: str | None = None) -> dict[str, str]:
+def subprocess_env(python: str | None = None, *, tox_env: str | None = None) -> dict[str, str]:
     """Return hyrum's environment, with tox told not to write into the checkout.
 
     Used for make as well as tox, since some charms' Makefiles call tox.
@@ -137,7 +137,9 @@ def subprocess_env(python: str | None = None) -> dict[str, str]:
     tox through ``base_python`` overrides, for the test envs and for the
     ``.pkg`` env that builds the charm, which doesn't inherit from
     ``testenv``; uv, whether tox, make, or the charm's own commands run it,
-    through ``UV_PYTHON``.
+    through ``UV_PYTHON``. A ``basepython`` in an env's own section beats an
+    override of ``testenv``, so with ``tox_env`` that section is overridden
+    too.
     """
     env = dict(os.environ)
     overrides = [o.strip() for o in env.get('TOX_OVERRIDE', '').split(';') if o.strip()]
@@ -147,6 +149,8 @@ def subprocess_env(python: str | None = None) -> dict[str, str]:
             f'testenv.base_python=python{python}',
             f'testenv:.pkg.base_python=python{python}',
         ]
+        if tox_env is not None:
+            overrides.append(f'testenv:{tox_env}.base_python=python{python}')
         env['UV_PYTHON'] = python
     env['TOX_OVERRIDE'] = ';'.join(overrides)
     return env
