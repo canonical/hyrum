@@ -295,3 +295,30 @@ def test_interleaved_transcript():
     assert '1 failed' in out
     assert '102 passed' in out
     assert 'ValueError: bad thing happened' in out
+
+
+def test_poetry_dependency_conflict_names_poetry():
+    stdout = (
+        b'unit: commands_pre[0]> poetry install --only unit,charm\n'
+        b'Resolving dependencies...\n\n'
+        b'Because charmed-service-mesh-helpers (0.5.0) depends on ops (>=2.5,<3.0)\n'
+        b' and no versions of charmed-service-mesh-helpers match >0.5.0,<0.6.0,'
+        b' charmed-service-mesh-helpers (>=0.5.0,<0.6.0) requires ops (>=2.5,<3.0).\n'
+        b'So, because minio-operator depends on both ops (3.10.0) and'
+        b' charmed-service-mesh-helpers (^0.5.0), version solving failed.\n'
+    )
+    assert _s(stdout=stdout) == 'poetry resolve: dependency conflict'
+
+
+def test_uv_dependency_conflict_names_uv():
+    stderr = (
+        b'  x No solution found when resolving dependencies:\n'
+        b'  `-> Because charm depends on ops>=3 and ops<3, we can conclude that'
+        b' your requirements are unsatisfiable.\n'
+    )
+    assert _s(stderr=stderr) == 'uv resolve: no solution'
+
+
+def test_unattributed_dependency_conflict_names_neither_tool():
+    stderr = b'Because charm depends on ops>=3 and ops<3, the requirements conflict.\n'
+    assert _s(stderr=stderr) == 'resolve: dependency conflict'
