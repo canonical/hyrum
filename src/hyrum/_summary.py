@@ -30,16 +30,6 @@ _PYTEST_SUMMARY_RE = re.compile(
     re.VERBOSE,
 )
 
-# Pytest's "no tests collected" / "no tests ran" line.
-_NO_TESTS_RE = re.compile(
-    rb"""
-    =+ \s* no \s+ tests \s+ ran   # banner + "no tests ran"
-    \s+ in \s+ [\d.]+ \s* s \s*   # duration trailer
-    =+                            # closing banner
-    """,
-    re.I | re.VERBOSE,
-)
-
 # Exception class name shape: optional dotted module prefix
 # (``unittest.mock.``, ``scenario.errors.``…), optional CamelCase head, and a
 # ``Error`` / ``Exception`` / ``Warning`` suffix. Used in three regexes below.
@@ -314,6 +304,8 @@ def from_run_output(
     if status == 'timeout':
         return 'timed out'
     if status == 'no_target':
+        if _runners_base.ran_no_tests(_runners_base.strip_ansi(output)):
+            return 'pytest: no tests ran'
         return 'target not present'
 
     combined = _runners_base.strip_ansi(output)
@@ -363,7 +355,7 @@ def from_run_output(
         path = collection.group(1).decode('utf-8', 'replace')
         return truncate(f'collection error in {path}: {exc}')
 
-    if _NO_TESTS_RE.search(combined):
+    if _runners_base.NO_TESTS_RE.search(combined):
         return 'pytest: no tests ran'
 
     if _MISSING_COVERAGE_RE.search(combined):

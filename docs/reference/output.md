@@ -14,7 +14,7 @@ Each charm produces exactly one outcome. The possible statuses are:
 |-----------------|---------|
 | `passed`        | The runner exited 0. |
 | `failed`        | The runner exited non-zero. |
-| `no_target`     | The requested tox environment or make target does not exist in this charm. Not counted as a failure. |
+| `no_target`     | The requested tox environment or make target does not exist in this charm, or it ran pytest and collected no tests. Not counted as a failure. |
 | `timeout`       | The runner was killed after `--timeout` seconds (default: 1800). The charm may have a very slow test suite, or it may be hanging. |
 | `runner_error`  | The runner itself could not be launched — for example, `make` is not installed. This is a host problem, not a charm result. `--preflight` (on by default) catches a missing runner before the run starts, so this status usually means the executable disappeared mid-run or is not executable. |
 | `patcher_error` | The patch could not be applied — for example, the charm's `pyproject.toml` could not be parsed, or `poetry lock` failed. This is distinct from a runner failure: it points to an infrastructure problem, not a charm test failure. |
