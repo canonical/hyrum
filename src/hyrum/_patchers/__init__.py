@@ -25,6 +25,7 @@ from hyrum._patchers.base import (
     PatcherSkip,
     PatcherSkipReason,
     PatcherStack,
+    UnresolvableError,
 )
 from hyrum._patchers.charmlib_source import CharmlibPatcher, CharmlibSource
 from hyrum._patchers.generic import DepSource, GenericDepPatcher
@@ -44,6 +45,7 @@ __all__ = [
     'PatcherSkip',
     'PatcherSkipReason',
     'PatcherStack',
+    'UnresolvableError',
     'VendoredLibPatcher',
     'VendoredLibSwap',
 ]

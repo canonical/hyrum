@@ -107,6 +107,17 @@ class Outcome:
         return cls(repo=repo, status='skipped', skip_reason=reason, skip_reason_kind=kind)
 
     @classmethod
+    def unresolvable(cls, repo: pathlib.Path, target: str, message: str) -> Outcome:
+        """Build a failed outcome for a charm that doesn't resolve once patched."""
+        return cls(
+            repo=repo,
+            status='failed',
+            target=target,
+            error=message,
+            summary=_summary.from_lock_failure(message),
+        )
+
+    @classmethod
     def patcher_error(cls, repo: pathlib.Path, target: str, message: str) -> Outcome:
         """Build an outcome for a patcher failure (distinct from a run failure)."""
         return cls(
@@ -171,17 +182,14 @@ def _dump_patcher_error_log(
     repo: pathlib.Path,
     target: str,
     error: str,
+    *,
+    status: str = 'patcher_error',
 ) -> None:
-    """Write a per-charm log for a patcher_error outcome (no runner output)."""
+    """Write a per-charm log for an outcome the patcher decided (no runner output)."""
     path = _log_path(log_dir, repo, base)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        f'=== meta ===\n'
-        f'repo: {repo}\n'
-        f'target: {target}\n'
-        f'status: patcher_error\n'
-        f'=== error ===\n'
-        f'{error}\n'
+        f'=== meta ===\nrepo: {repo}\ntarget: {target}\nstatus: {status}\n=== error ===\n{error}\n'
     )
 
 
@@ -235,6 +243,11 @@ async def _run_one_locked(
     except patchers.PatcherSkip as exc:
         logger.info('skipping %s: %s', repo, exc)
         return Outcome.skipped(repo, str(exc), kind=exc.reason)
+    except patchers.UnresolvableError as exc:
+        logger.info('%s does not resolve once patched: %s', repo, exc)
+        if log_dir is not None:
+            _dump_patcher_error_log(log_dir, log_base, repo, target, str(exc), status='failed')
+        return Outcome.unresolvable(repo, target, str(exc))
     except patchers.PatcherError as exc:
         logger.warning('patcher error in %s: %s', repo, exc)
         if log_dir is not None:

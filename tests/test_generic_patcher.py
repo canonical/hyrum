@@ -137,9 +137,7 @@ def test_uv_git_adds_source_block(tmp_path: pathlib.Path, monkeypatch: pytest.Mo
         assert 'requests = { git = "https://github.com/psf/requests", rev = "main" }' in patched
 
 
-def test_failed_uv_relock_is_a_patcher_error(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_failed_uv_relock_is_unresolvable(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
     class _Result:
         returncode = 1
         stdout = b''
@@ -151,7 +149,7 @@ def test_failed_uv_relock_is_a_patcher_error(
     py.write_text(_UV_TEMPLATE)
     source = patchers.DepSource(pkg_name='requests', version='==2.32.0')
     with (
-        pytest.raises(patchers.PatcherError, match='No solution found'),
+        pytest.raises(patchers.UnresolvableError, match='No solution found'),
         patchers.GenericDepPatcher(source).apply(tmp_path),
     ):
         pass

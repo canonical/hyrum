@@ -37,6 +37,7 @@ Patching a charm means rewriting its working tree, so two runs over one charms d
 
 - A pre-pool skip (filtered out before patching): `status='skipped'`.
 - A patcher failure: `status='patcher_error'` with the error message in `outcome.error`.
+- A charm whose dependencies do not resolve with the patch applied: `status='failed'`, with the lock's error in `outcome.error`. This is a charm result rather than a patcher fault.
 - A runner result (pass, fail, no-target, timeout, or a runner that could not be launched): status from `RunStatus`.
 
 The distinction between the infrastructure statuses and `failed` is important: `patcher_error` means hyrum could not apply the patch, and `runner_error` means tox or make itself could not be launched. A `failed` outcome means the charm's own tests reported failure. Mixing these together would make the "N charms broke" count misleading.

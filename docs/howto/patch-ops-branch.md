@@ -50,7 +50,7 @@ Both are sourced from the same git ref as `ops` itself. No extra flags are neede
 
 When patching a charm that uses Poetry or uv (detected by the presence of `poetry.lock` or `uv.lock`), hyrum regenerates the lockfile so the dependency graph is consistent with the new source.
 
-If regeneration fails (for example, because the charm has an unresolvable dependency under the new `ops` source), hyrum logs a warning, deletes the stale lockfile, and continues. The runner may then re-generate it on demand, or fail with an informative error.
+If the charm's dependencies do not resolve under the new `ops` source, the charm is reported as `failed`, with the lock's error as the reason. For example, a dependency might pin `ops<3`. The run does not continue to the tests, because they would fail with the same conflict.
 
 ### Tune the lock timeout
 

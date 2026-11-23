@@ -295,3 +295,24 @@ def test_interleaved_transcript():
     assert '1 failed' in out
     assert '102 passed' in out
     assert 'ValueError: bad thing happened' in out
+
+
+def test_lock_failure_uses_the_resolver_label():
+    message = (
+        'uv lock failed: Using CPython 3.12.14\n'
+        'error: No solution found when resolving dependencies for split\n'
+        '  cause: Because there is no version of ops==3.9.0 ...\n'
+    )
+    assert _summary.from_lock_failure(message) == 'relock: uv resolve: no solution'
+
+
+def test_lock_failure_prefers_the_error_line():
+    message = 'uv lock failed: Using CPython 3.12.14\nerror: something new went wrong\n'
+    assert _summary.from_lock_failure(message) == 'relock: error: something new went wrong'
+
+
+def test_lock_failure_falls_back_to_the_first_line():
+    assert (
+        _summary.from_lock_failure('poetry lock failed: odd\n')
+        == 'relock: poetry lock failed: odd'
+    )

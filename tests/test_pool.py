@@ -51,6 +51,13 @@ class FailingPatcher:
         return False
 
 
+class UnresolvablePatcher:
+    def apply(self, repo: pathlib.Path):
+        raise patchers.UnresolvableError(
+            'uv lock failed: error: No solution found when resolving dependencies'
+        )
+
+
 async def test_run_one_passed(tmp_path: pathlib.Path):
     runner = StubRunner(runners.RunStatus.PASSED)
     outcome = await pool.run_one(tmp_path, 'unit', patcher=patchers.NullPatcher(), runner=runner)
@@ -66,6 +73,16 @@ async def test_run_one_patcher_error_short_circuits(tmp_path: pathlib.Path):
     assert outcome.status == 'patcher_error'
     assert 'could not patch' in outcome.error
     assert runner.seen == []  # runner never invoked
+
+
+async def test_run_one_unresolvable_is_a_failure(tmp_path: pathlib.Path):
+    runner = StubRunner(runners.RunStatus.PASSED)
+    outcome = await pool.run_one(tmp_path, 'unit', patcher=UnresolvablePatcher(), runner=runner)
+    assert outcome.status == 'failed'
+    assert outcome.target == 'unit'
+    assert 'No solution found' in outcome.error
+    assert outcome.summary == 'relock: uv resolve: no solution'
+    assert runner.seen == []  # the tests would only hit the same conflict
 
 
 async def test_run_pool_concurrent_workers(tmp_path: pathlib.Path):
@@ -162,6 +179,21 @@ async def test_log_dir_dumps_patcher_error(tmp_path: pathlib.Path):
     content = log.read_text()
     assert 'status: patcher_error' in content
     assert 'could not patch' in content
+
+
+async def test_log_dir_dumps_unresolvable_as_failed(tmp_path: pathlib.Path):
+    log_dir = tmp_path / 'logs'
+    await pool.run_one(
+        tmp_path / 'charm',
+        'unit',
+        patcher=UnresolvablePatcher(),
+        runner=StubRunner(),
+        log_dir=log_dir,
+        log_base=tmp_path,
+    )
+    content = (log_dir / 'charm.log').read_text()
+    assert 'status: failed' in content
+    assert 'No solution found' in content
 
 
 def test_add_skipped_appends():

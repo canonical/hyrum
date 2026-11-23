@@ -363,7 +363,6 @@ class _Completed:
         # A lock that cannot be regenerated under the patched source must not
         # be left behind: the run would then install the charm's original
         # pins and report on the wrong dependency.
-        (_Completed(1, b'no solution found'), False),
         (subprocess.TimeoutExpired(cmd='uv', timeout=1), False),
         # A missing tool is a host problem rather than a charm one, so the
         # charm's own lockfile is left as it was.
@@ -384,12 +383,11 @@ def test_a_failed_lock_does_not_leave_a_stale_lockfile(
 @pytest.mark.parametrize(
     ('result', 'message'),
     [
-        (_Completed(1, b'no solution found'), 'uv lock failed: no solution found'),
         (subprocess.TimeoutExpired(cmd='uv', timeout=1), 'uv lock timed out after 60s'),
         (FileNotFoundError(2, 'No such file or directory', 'uv'), 'uv not found'),
     ],
 )
-def test_a_failed_lock_with_nothing_to_remove_is_a_patcher_error(
+def test_a_lock_that_cannot_finish_with_nothing_to_remove_is_a_patcher_error(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, result: Any, message: str
 ):
     # Without a lockfile to fall back from, the charm would run against its
@@ -397,8 +395,40 @@ def test_a_failed_lock_with_nothing_to_remove_is_a_patcher_error(
     lockfile = tmp_path / 'uv.lock'
     lockfile.write_text('version = 1\n')
     monkeypatch.setattr(common.subprocess, 'run', _Recorder(result))
-    with pytest.raises(base.PatcherError, match=message):
+    with pytest.raises(base.PatcherError, match=message) as excinfo:
         common.run_lock(tmp_path, ['uv', 'lock'], 60)
+    assert not isinstance(excinfo.value, base.UnresolvableError)
+
+
+@pytest.mark.parametrize('remove', [False, True])
+def test_a_lock_that_refuses_the_patch_is_unresolvable(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, remove: bool
+):
+    # Whether or not there's a lockfile to fall back from: the charm doesn't
+    # resolve against the patched source, and its own install would only hit
+    # the same conflict.
+    lockfile = tmp_path / 'poetry.lock'
+    monkeypatch.setattr(common.subprocess, 'run', _Recorder(_Completed(1, b'no solution found')))
+    with pytest.raises(base.UnresolvableError, match='uv lock failed: no solution found'):
+        common.run_lock(
+            tmp_path, ['uv', 'lock'], 60, on_failure_remove=lockfile if remove else None
+        )
+
+
+@pytest.mark.parametrize(
+    ('cmd', 'tool'),
+    [
+        (['uv', 'lock'], 'uv'),
+        (['uv', 'run', '--python', '3.10', 'poetry', 'lock'], 'poetry'),
+        (['/opt/hyrum/bin/poetry', 'lock'], 'poetry'),
+    ],
+)
+def test_a_failed_lock_names_the_tool_that_locked(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, cmd: list[str], tool: str
+):
+    monkeypatch.setattr(common.subprocess, 'run', _Recorder(_Completed(1, b'conflict')))
+    with pytest.raises(base.UnresolvableError, match=f'^{tool} lock failed: conflict$'):
+        common.run_lock(tmp_path, cmd, 60)
 
 
 def test_lock_runs_without_hyrums_own_virtualenv(
