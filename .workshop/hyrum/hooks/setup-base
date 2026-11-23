@@ -10,7 +10,9 @@ snap install --classic astral-uv
 apt-get update -qq
 apt-get install -yqq \
     build-essential \
+    default-jre-headless \
     git \
+    golang-go \
     libffi-dev \
     libldap-dev \
     libmariadb-dev \
@@ -18,6 +20,11 @@ apt-get install -yqq \
     libsasl2-dev \
     pkg-config \
     python3-dev
+
+# A few charms' unit tests call tools outside Python: `go test` for a charm
+# whose workload is in Go, `keytool` from Java for TLS keystores, and
+# `charmcraft fetch-libs` to fetch charm libraries before the tests run.
+snap install --classic charmcraft
 
 # `hyrum check` runs each charm's test suite, which is arbitrary third-party
 # code. Workshop mounts the project directory into every workshop read-write,
