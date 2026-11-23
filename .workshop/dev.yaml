@@ -1,12 +1,15 @@
 name: dev
 base: ubuntu@26.04
 sdks:
+  - name: pi
+    channel: latest/stable
   - name: project-hyrum
 actions:
   all: make all
   format: make format
   lint: make lint ARGS="$*"
   unit: make unit ARGS="$*"
+  pi: pi "$@"
   # `hyrum check` runs each charm's tests -- third-party code -- so run hyrum
   # as `hyrum-check`, which can read the /project mount of the host checkout
   # but not write to it (see hooks/setup-base). sudo resets PATH, which would

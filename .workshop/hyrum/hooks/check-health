@@ -11,8 +11,15 @@
 chown -R hyrum-check:workshop /home/hyrum-check/.cache/hyrum
 chmod 2775 /home/hyrum-check/.cache/hyrum
 
-if sudo -u hyrum-check test -w /home/hyrum-check/.cache/hyrum; then
-    workshopctl set-health okay
-else
+# The checks run third-party code as `hyrum-check`, so it must not be able to
+# reach the workshop user's home directory, where Pi keeps its settings and
+# credentials. That holds only because /home/workshop is 0750 and
+# `hyrum-check` isn't in the `workshop` group. Nothing here sets that mode, so
+# check it.
+if ! sudo -u hyrum-check test -w /home/hyrum-check/.cache/hyrum; then
     workshopctl set-health error
+elif sudo -u hyrum-check test -x /home/workshop; then
+    workshopctl set-health error
+else
+    workshopctl set-health okay
 fi
