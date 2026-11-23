@@ -174,12 +174,23 @@ async def test_tox_runner_no_target_when_rc_254(tmp_path: pathlib.Path, spawner:
     assert result.status is runners.RunStatus.NO_TARGET
 
 
+async def test_tox_runner_no_target_when_tox3_colours_diagnostic(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    spawner(FakeProc(returncode=1, stdout=b"\x1b[31mERROR: unknown environment 'unit'\n\x1b[0m"))
+    result = await runners.ToxRunner().run(tmp_path, 'unit')
+    assert result.status is runners.RunStatus.NO_TARGET
+    assert result.output == b"ERROR: unknown environment 'unit'\n"
+
+
 @pytest.mark.parametrize(
     ('output', 'expected'),
     [
         (b"ERROR: unknown environment 'unit'\n", runners.RunStatus.NO_TARGET),
         (
-            b'ROOT: install_deps> python -m pip install tox\n'
+            b'ROOT: will run in automatically provisioned tox, host '
+            b'/opt/hyrum/tools/tox/bin/python '
+            b'is missing [requires (has)]: pip<20.3, virtualenv<20.0 (21.15.9)\n'
             b'ROOT: provision> .tox/.tox/bin/python -P -m tox -e unit\n'
             b"ERROR: unknown environment 'unit'\n",
             runners.RunStatus.NO_TARGET,
@@ -192,7 +203,7 @@ async def test_tox_runner_no_target_when_rc_254(tmp_path: pathlib.Path, spawner:
         (b"ERROR: unknown environment 'unit'\nother error\n", runners.RunStatus.FAILED),
     ],
 )
-async def test_tox3_unknown_environment(
+async def test_tox_runner_no_target_when_tox3_has_no_env(
     tmp_path: pathlib.Path, spawner: SpawnerFactory, output: bytes, expected: runners.RunStatus
 ):
     spawner(FakeProc(returncode=1, stdout=output))
