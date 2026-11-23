@@ -65,6 +65,19 @@ def test_bundle_with_charmcraft_expands_children(
     assert list(_enumerate.iter_charm_repos(cache)) == [first, second]
 
 
+@pytest.mark.parametrize('nested', [False, True])
+def test_charm_with_deployment_bundle_is_yielded(
+    owner: pathlib.Path, cache: pathlib.Path, nested: bool
+):
+    charm = owner / 'repo'
+    if nested:
+        charm /= 'subproject'
+    charm.mkdir(parents=True)
+    (charm / 'charmcraft.yaml').write_text('type: charm\n')
+    (charm / 'bundle.yaml').write_text('applications: {}\n')
+    assert list(_enumerate.iter_charm_repos(cache)) == [charm]
+
+
 def test_monorepo_with_charm_subdirs(charm_cache: pathlib.Path):
     mono = charm_cache / 'operators'
     mono.mkdir()
