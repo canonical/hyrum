@@ -25,6 +25,7 @@ import re
 import time
 from collections.abc import Sequence
 
+from hyrum import _process
 from hyrum._runners import base
 
 logger = logging.getLogger(__name__)
@@ -48,9 +49,11 @@ class MakeRunner:
         *,
         executable: str | Sequence[str] = 'make',
         timeout: int = 1800,
+        python: base.PythonSelector | None = None,
     ):
         self._executable = base.split_executable(executable)
         self._timeout = timeout
+        self._python = python
 
     @classmethod
     def detect(cls, repo: pathlib.Path) -> bool:
@@ -59,7 +62,8 @@ class MakeRunner:
 
     async def run(self, repo: pathlib.Path, target: str) -> base.RunResult:
         """Probe with ``-nq`` for the target, then invoke make and capture."""
-        if await self._target_missing(repo, target):
+        python = self._python(repo) if self._python is not None else None
+        if await self._target_missing(repo, target, python):
             return base.RunResult(
                 repo=repo,
                 runner=self.name,
@@ -70,7 +74,7 @@ class MakeRunner:
             )
 
         argv = [*self._executable, target]
-        logger.info('make %s in %s', target, repo)
+        logger.info('make %s in %s%s', target, repo, base.describe_python(python))
         started = time.monotonic()
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -80,15 +84,17 @@ class MakeRunner:
                 # Same pipe for both streams so the captured transcript keeps
                 # the order make and its recipes actually wrote in.
                 stderr=asyncio.subprocess.STDOUT,
-                env=base.subprocess_env(),
+                env=base.subprocess_env(python),
+                # Its own process group, so a timeout or Ctrl-C can kill what it
+                # spawns as well -- see hyrum._process.
+                start_new_session=True,
             )
         except OSError as exc:
             logger.error('could not launch %s in %s: %s', argv[0], repo, exc)
             return base.launch_failure(repo, runner=self.name, target=target, argv=argv, exc=exc)
         try:
-            output, _ = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
+            output, _ = await _process.communicate(proc, self._timeout)
         except TimeoutError:
-            await _kill_and_drain(proc, repo)
             return base.RunResult(
                 repo=repo,
                 runner=self.name,
@@ -96,6 +102,7 @@ class MakeRunner:
                 status=base.RunStatus.TIMEOUT,
                 returncode=None,
                 duration_s=time.monotonic() - started,
+                python=python,
             )
 
         duration = time.monotonic() - started
@@ -115,9 +122,10 @@ class MakeRunner:
             returncode=rc,
             duration_s=duration,
             output=output,
+            python=python,
         )
 
-    async def _target_missing(self, repo: pathlib.Path, target: str) -> bool:
+    async def _target_missing(self, repo: pathlib.Path, target: str, python: str | None) -> bool:
         """Return True if ``make -nq <target>`` reports the target unknown."""
         argv = [*self._executable, '-nq', target]
         try:
@@ -128,30 +136,21 @@ class MakeRunner:
                 stderr=asyncio.subprocess.PIPE,
                 # make still runs ``+`` recipe lines under -n and -q, so a
                 # ``+tox`` recipe would run here too.
-                env=base.subprocess_env(),
+                env=base.subprocess_env(python),
+                # Its own process group, so a timeout or Ctrl-C can kill what it
+                # spawns as well -- see hyrum._process.
+                start_new_session=True,
             )
         except OSError:
             # make can't be launched; let the real invocation report it as a
             # runner_error rather than swallowing the cause here.
             return False
         try:
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+            _, stderr = await _process.communicate(proc, 30)
         except TimeoutError:
-            await _kill_and_drain(proc, repo)
             return False
         return _looks_like_missing_target(stderr)
 
 
 def _looks_like_missing_target(output: bytes) -> bool:
     return _NO_RULE_RE.search(output) is not None
-
-
-async def _kill_and_drain(proc: asyncio.subprocess.Process, repo: pathlib.Path) -> None:
-    try:
-        proc.kill()
-    except ProcessLookupError:
-        return
-    try:
-        await asyncio.wait_for(proc.communicate(), timeout=30)
-    except TimeoutError:
-        logger.error('make in %s did not exit after kill()', repo)

@@ -30,7 +30,7 @@ import os
 import pathlib
 import re
 import shlex
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Protocol, runtime_checkable
 
 # tox 4.64 writes a PEP 832 ``.venv`` redirect file into the project root after
@@ -77,6 +77,8 @@ class RunResult:
 
     When the process never started, this carries the launch error instead.
     """
+    python: str | None = None
+    """The ``X.Y`` interpreter the run was pointed at, or ``None`` if left to the runner."""
 
     @property
     def passed(self) -> bool:
@@ -126,15 +128,36 @@ def launch_failure(
     )
 
 
-def subprocess_env() -> dict[str, str]:
+def subprocess_env(python: str | None = None, *, tox_env: str | None = None) -> dict[str, str]:
     """Return hyrum's environment, with tox told not to write into the checkout.
 
     Used for make as well as tox, since some charms' Makefiles call tox.
+
+    With ``python`` (``X.Y``), tox and uv are both pointed at that interpreter:
+    tox through ``base_python`` overrides, for the test envs and for the
+    ``.pkg`` env that builds the charm, which doesn't inherit from
+    ``testenv``; uv, whether tox, make, or the charm's own commands run it,
+    through ``UV_PYTHON``. A ``basepython`` in an env's own section beats an
+    override of ``testenv``, so with ``tox_env`` that section is overridden
+    too.
     """
     env = dict(os.environ)
     overrides = [o.strip() for o in env.get('TOX_OVERRIDE', '').split(';') if o.strip()]
-    env['TOX_OVERRIDE'] = ';'.join([*overrides, _TOX_NO_VENV_REDIRECT])
+    overrides.append(_TOX_NO_VENV_REDIRECT)
+    if python is not None:
+        overrides += [
+            f'testenv.base_python=python{python}',
+            f'testenv:.pkg.base_python=python{python}',
+        ]
+        if tox_env is not None:
+            overrides.append(f'testenv:{tox_env}.base_python=python{python}')
+        env['UV_PYTHON'] = python
+    env['TOX_OVERRIDE'] = ';'.join(overrides)
     return env
+
+
+PythonSelector = Callable[[pathlib.Path], 'str | None']
+"""Returns the ``X.Y`` interpreter to run a charm under, or ``None`` for no override."""
 
 
 def split_executable(executable: str | Sequence[str]) -> list[str]:
@@ -142,3 +165,8 @@ def split_executable(executable: str | Sequence[str]) -> list[str]:
     if isinstance(executable, str):
         return shlex.split(executable)
     return list(executable)
+
+
+def describe_python(python: str | None) -> str:
+    """Return a log-message suffix naming the interpreter, if one was chosen."""
+    return f' (Python {python})' if python is not None else ''

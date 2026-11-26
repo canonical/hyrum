@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
@@ -1136,6 +1137,65 @@ def test_available_backends_checks_the_program_not_the_whole_command(
         runners.RunnerChoice.TOX, tox_executable='uvx tox', make_executable='make'
     )
     assert backends == ('tox',)
+
+
+# ---- --python ----------------------------------------------------------------
+
+
+def test_python_host_leaves_the_interpreter_alone(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(shutil, 'which', _installed('python3.12'))
+    assert cli._build_python_selector('host') is None
+
+
+def test_python_defaults_to_3_12(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(shutil, 'which', _installed('python3.10', 'python3.12', 'python3.14'))
+    selector = cli._build_python_selector(None)
+    assert selector is not None
+    assert selector.preferred == (3, 12)
+    assert selector.available == ((3, 10), (3, 12), (3, 14))
+
+
+def test_python_explicit_version(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(shutil, 'which', _installed('python3.10', 'python3.12'))
+    selector = cli._build_python_selector((3, 10))
+    assert selector is not None
+    assert selector.preferred == (3, 10)
+
+
+def test_python_explicit_version_not_installed_is_fatal(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(shutil, 'which', _installed('python3.12'))
+    with pytest.raises(SystemExit, match=r'python3\.10 not found'):
+        cli._build_python_selector((3, 10))
+
+
+def test_python_default_not_installed_falls_back_with_a_warning(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    monkeypatch.setattr(shutil, 'which', _installed('python3.14'))
+    with caplog.at_level(logging.WARNING):
+        selector = cli._build_python_selector(None)
+    assert selector is not None
+    assert selector.available == ((3, 14),)
+    assert 'python3.12 not found on PATH' in caplog.text
+
+
+def test_python_nothing_installed_leaves_the_interpreter_alone(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    monkeypatch.setattr(shutil, 'which', _installed())
+    with caplog.at_level(logging.WARNING):
+        assert cli._build_python_selector(None) is None
+    assert 'no python3.Y executables' in caplog.text
+
+
+@pytest.mark.parametrize(('text', 'expected'), [('3.11', (3, 11)), ('host', 'host')])
+def test_python_choice_parses(text: str, expected: object):
+    assert cli._python_choice(text) == expected
+
+
+def test_python_choice_rejects_other_values():
+    with pytest.raises(argparse.ArgumentTypeError, match="or 'host'"):
+        cli._python_choice('python3.12')
 
 
 # ---- preflight: --patch git refs ---------------------------------------------

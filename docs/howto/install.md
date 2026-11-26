@@ -87,17 +87,27 @@ The [workshop](#run-hyrum-in-a-workshop) has these installed already. Elsewhere,
 ```bash
 sudo apt-get install -y \
     build-essential \
+    default-jre-headless \
+    golang-go \
     pkg-config \
     libffi-dev \
+    libldap-dev \
     libpq-dev \
     libmariadb-dev \
+    libsasl2-dev \
     python3-dev   # or python3.<minor>-dev matching the Python uv selects
+
+# A few charms' unit tests run `charmcraft fetch-libs` first:
+sudo snap install --classic charmcraft
 
 # Poetry is invoked by ~5% of charms' tox envs:
 uv tool install poetry
+
+# The interpreters `hyrum check --python` chooses from, as python3.Y on PATH:
+uv python install 3.10 3.11 3.12 3.13
 ```
 
-A handful of charms shell out to other tools (for example `yq`, `go`, `skopeo`, a JDK, libjpeg) from their tox env or Makefile. They are not installed up-front since they only affect a few charms; they surface as `failed` with a `command not found` line in the per-charm log. Install the missing tool to unmask the underlying charm result. A missing `tox` or `make` itself is caught up front by `--preflight` (on by default) rather than once per charm.
+A handful of charms shell out to other tools (for example `yq`, `skopeo`, libjpeg) from their tox env or Makefile. They are not installed up-front since they only affect a few charms; they surface as `failed` with a `command not found` line in the per-charm log. Install the missing tool to unmask the underlying charm result. A missing `tox` or `make` itself is caught up front by `--preflight` (on by default) rather than once per charm.
 
 ### Python-version-specific build issues
 
