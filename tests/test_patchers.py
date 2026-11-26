@@ -2004,9 +2004,7 @@ def test_uv_lock_not_pinned_to_the_minimum_python(
     assert captured['cmd'] == ('uv', 'lock')
 
 
-def test_failed_uv_relock_is_a_patcher_error(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_failed_uv_relock_is_unresolvable(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
     # A uv charm keeps its stale lock when the relock fails, and its own
     # ``uv run --locked`` then refuses it: that is hyrum failing to apply the
     # patch, not the charm failing under it.
@@ -2032,7 +2030,7 @@ def test_failed_uv_relock_is_a_patcher_error(
     (tmp_path / 'uv.lock').write_text('# original\n')
     ops = patchers.OpsSource(branch='b')
     with (
-        pytest.raises(patchers.PatcherError, match='No solution found'),
+        pytest.raises(patchers.UnresolvableError, match='No solution found'),
         patchers.OpsSourcePatcher(ops).apply(tmp_path),
     ):
         pass
@@ -2241,7 +2239,7 @@ def test_charmlib_patcher_uv_extras_reapplied(
         assert 'subdirectory = "nginx_k8s"' in patched
 
 
-def test_charmlib_patcher_failed_uv_relock_is_a_patcher_error(
+def test_charmlib_patcher_failed_uv_relock_is_unresolvable(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
     class _Result:
@@ -2262,7 +2260,7 @@ def test_charmlib_patcher_failed_uv_relock_is_a_patcher_error(
     (charm_dir / 'uv.lock').write_text('# original\n')
     src = patchers.CharmlibSource(pkg_name='nginx_k8s', branch='mybranch')
     with (
-        pytest.raises(patchers.PatcherError, match='No solution found'),
+        pytest.raises(patchers.UnresolvableError, match='No solution found'),
         patchers.CharmlibPatcher(src).apply(charm_dir),
     ):
         pass

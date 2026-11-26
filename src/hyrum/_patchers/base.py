@@ -17,6 +17,17 @@ class PatcherError(RuntimeError):
     """
 
 
+class UnresolvableError(PatcherError):
+    """Raised when the charm's dependencies don't resolve once patched.
+
+    The lock ran and refused, usually because something the charm depends on
+    excludes the patched source. That is a charm result, the kind of break
+    hyrum exists to find, so the charm is reported as ``failed`` rather than
+    ``patcher_error``. It subclasses :class:`PatcherError` so that anything
+    restoring files on a patcher error does the same here.
+    """
+
+
 class PatcherSkipReason(enum.Enum):
     """Machine-readable categorisation of why a patcher skipped a charm."""
 

@@ -431,6 +431,18 @@ def _drop_uv_source(content: str, pkg_name: str) -> str:
     return ''.join(out)
 
 
+def _lock_tool(cmd: Sequence[str]) -> str:
+    """Return the name of the tool doing the locking in ``cmd``.
+
+    That's the word before ``lock``, so ``poetry`` for a ``poetry lock``
+    wrapped in ``uv run --python``, rather than the ``uv`` the command starts
+    with.
+    """
+    if len(cmd) >= 2 and cmd[-1] == 'lock':
+        return pathlib.PurePath(cmd[-2]).name
+    return cmd[0]
+
+
 def run_lock(
     repo: pathlib.Path,
     cmd: Sequence[str],
@@ -440,15 +452,17 @@ def run_lock(
 ) -> None:
     """Regenerate a lockfile after patching.
 
-    Some charms have unresolvable dev dependencies under the patched
-    source. With ``on_failure_remove``, a failed lock is logged and that
-    lockfile is deleted so the runner can install without it. Without it,
-    the charm would run against its stale lockfile and fail for a reason
-    that has nothing to do with the patched source, so a failed lock
-    raises :class:`~hyrum._patchers.base.PatcherError` instead. This
-    includes a lock that fails because the charm doesn't resolve against
-    the patched source. That is a charm result rather than a host problem,
-    but it is still reported as a patcher error (canonical/hyrum#179).
+    A lock that runs and exits non-zero means the charm doesn't resolve
+    against the patched source. That is a charm result, so it raises
+    :class:`~hyrum._patchers.base.UnresolvableError`, which reports the charm
+    as failed with the lock's error as the reason.
+
+    A lock that can't finish, because the tool is missing or the lock timed
+    out, is a host problem. With ``on_failure_remove``, it is logged, and on a
+    timeout that lockfile is deleted so the runner can resolve without it.
+    Without it, the charm would run against its stale lockfile and fail for a
+    reason that has nothing to do with the patched source, so it raises
+    :class:`~hyrum._patchers.base.PatcherError`.
     """
     # Strip ``VIRTUAL_ENV`` so the charm's lock isn't pinned to hyrum's own
     # venv. Poetry in particular reads ``VIRTUAL_ENV`` to decide the project's
@@ -471,15 +485,11 @@ def run_lock(
         return
     except subprocess.TimeoutExpired as exc:
         if on_failure_remove is None:
-            raise base.PatcherError(f'{cmd[0]} lock timed out after {timeout}s') from exc
-        logger.warning('%s lock timed out after %ds for %s', cmd[0], timeout, repo)
+            raise base.PatcherError(f'{_lock_tool(cmd)} lock timed out after {timeout}s') from exc
+        logger.warning('%s lock timed out after %ds for %s', _lock_tool(cmd), timeout, repo)
         if on_failure_remove.exists():
             on_failure_remove.unlink()
         return
     if result.returncode != 0:
         stderr = result.stderr.decode(errors='replace').strip()
-        if on_failure_remove is None:
-            raise base.PatcherError(f'{cmd[0]} lock failed: {stderr}')
-        logger.warning('%s lock failed for %s: %s', cmd[0], repo, stderr)
-        if on_failure_remove.exists():
-            on_failure_remove.unlink()
+        raise base.UnresolvableError(f'{_lock_tool(cmd)} lock failed: {stderr}')

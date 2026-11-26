@@ -299,6 +299,20 @@ def _resolver_or_build(buf: bytes) -> str | None:
     return None
 
 
+def from_lock_failure(message: str) -> str:
+    """Return a one-line summary for a lock that refused the patched dependencies.
+
+    ``message`` is the lock's error, as the patcher reported it.
+    """
+    label = _resolver_or_build(message.encode())
+    if label is None:
+        lines = [line.strip() for line in message.splitlines() if line.strip()]
+        # Tools print progress ("Using CPython 3.12.14") before the error.
+        errors = [line for line in lines if line.lower().startswith('error')]
+        label = (errors or lines or ['lock failed'])[0]
+    return truncate(f'relock: {label}')
+
+
 def from_run_output(
     output: bytes,
     *,
