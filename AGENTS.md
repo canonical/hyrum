@@ -102,8 +102,12 @@ integration-test support.
 - Unit tests live in `tests/` and follow the layout of `src/hyrum/`.
 - Subprocess-driven runners are tested with a `FakeProc` / `FakeSpawner`
   pair (see `tests/test_runners.py`) that monkeypatches
-  `asyncio.create_subprocess_exec` — no real subprocesses are spawned in
-  the unit suite.
+  `asyncio.create_subprocess_exec`, so the runner tests spawn no real
+  subprocesses.
+- `tests/test_process.py` is the exception: a few of its tests run `sh` for
+  real, because killing a whole process group (grandchildren included) is
+  what `hyrum._process` is for, and a fake can't show that. Keep real
+  processes to that file, and keep them short-lived.
 - The ops-source patcher's lockfile regeneration is monkeypatched out (the
   `_run_lock` helper) so unit tests don't spawn `poetry` / `uv`.
 

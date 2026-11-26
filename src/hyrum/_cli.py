@@ -21,7 +21,7 @@ from collections.abc import Sequence
 
 import packaging.requirements
 
-from hyrum import _clean, _compare, _enumerate, _locks, _results, _version
+from hyrum import _clean, _compare, _enumerate, _locks, _process, _results, _version
 from hyrum import _config as config_loader
 from hyrum import _filters as filt
 from hyrum import _frameworks as frameworks
@@ -1512,18 +1512,21 @@ def _run_check(args: argparse.Namespace) -> int:
     if args.log_dir is not None:
         args.log_dir.mkdir(parents=True, exist_ok=True)
 
-    results: list[pool.Outcome] = asyncio.run(
-        pool.run_pool(
-            repos,
-            patcher=patcher,
-            runner=runner,
-            target=args.target,
-            workers=args.workers,
-            log_dir=args.log_dir,
-            log_base=charms_dir,
-            lock_root=None if args.no_lock else _locks.lock_root_for(charms_dir),
+    with _process.cleanup_on_exit():
+        results: list[pool.Outcome] = asyncio.run(
+            _process.kill_all_on_error(
+                pool.run_pool(
+                    repos,
+                    patcher=patcher,
+                    runner=runner,
+                    target=args.target,
+                    workers=args.workers,
+                    log_dir=args.log_dir,
+                    log_base=charms_dir,
+                    lock_root=None if args.no_lock else _locks.lock_root_for(charms_dir),
+                )
+            )
         )
-    )
     pool.add_skipped(results, skipped)
     results.sort(key=lambda o: str(o.repo))
 
