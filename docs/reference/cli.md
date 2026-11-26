@@ -84,6 +84,11 @@ hyrum check [OPTIONS] TARGET
 : Per-charm timeout in seconds. Charms that exceed this are marked `timeout`.
 : Default: `1800`
 
+`--python VERSION`
+: Run each charm's checks under Python `VERSION` (`3.Y`), or, when the charm's `requires-python` (or Poetry's `python` dependency) excludes it, under the closest installed version that the charm allows. Only `python3.Y` executables on PATH count as installed. hyrum sets `base_python` for tox (with `TOX_OVERRIDE`, for the test environments and the `.pkg` environment) and `UV_PYTHON` for uv. A `VERSION` that is not installed is an error; when the default is not installed, hyrum warns and uses the closest installed version.
+: `host`: set nothing, so tox and uv choose, which usually means the Python that tox is installed under.
+: Default: `3.12`
+
 ### Dependency patching
 
 `--no-patch`

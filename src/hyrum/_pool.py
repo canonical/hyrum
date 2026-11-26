@@ -156,6 +156,7 @@ def _dump_run_log(
         f'status: {result.status.value}\n'
         f'returncode: {result.returncode}\n'
         f'duration_s: {result.duration_s:.2f}\n'
+        f'python: {result.python or "not set"}\n'
     )
     with path.open('wb') as fp:
         fp.write(header.encode())

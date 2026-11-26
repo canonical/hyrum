@@ -145,7 +145,7 @@ def test_failed_uv_relock_is_a_patcher_error(
         stdout = b''
         stderr = b'No solution found'
 
-    monkeypatch.setattr('hyrum._patchers._common.subprocess.run', lambda *a, **kw: _Result())
+    monkeypatch.setattr('hyrum._patchers._common._process.run', lambda *a, **kw: _Result())
     py = tmp_path / 'pyproject.toml'
     (tmp_path / 'uv.lock').write_text('# original\n')
     py.write_text(_UV_TEMPLATE)

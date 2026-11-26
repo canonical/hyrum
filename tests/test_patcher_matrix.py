@@ -335,7 +335,7 @@ def test_a_local_path_also_rejects_an_unknown_flavour():
 
 
 class _Recorder:
-    """Stands in for subprocess.run, recording the call and replaying a result."""
+    """Stands in for _process.run, recording the call and replaying a result."""
 
     def __init__(self, result: Any):
         self.result = result
@@ -376,7 +376,7 @@ def test_a_failed_lock_does_not_leave_a_stale_lockfile(
     lockfile = tmp_path / 'uv.lock'
     lockfile.write_text('version = 1\n')
     recorder = _Recorder(result)
-    monkeypatch.setattr(common.subprocess, 'run', recorder)
+    monkeypatch.setattr(common._process, 'run', recorder)
     common.run_lock(tmp_path, ['uv', 'lock'], 60, on_failure_remove=lockfile)
     assert lockfile.exists() is lock_survives
 
@@ -396,7 +396,7 @@ def test_a_failed_lock_with_nothing_to_remove_is_a_patcher_error(
     # stale lock and fail for a reason that has nothing to do with the patch.
     lockfile = tmp_path / 'uv.lock'
     lockfile.write_text('version = 1\n')
-    monkeypatch.setattr(common.subprocess, 'run', _Recorder(result))
+    monkeypatch.setattr(common._process, 'run', _Recorder(result))
     with pytest.raises(base.PatcherError, match=message):
         common.run_lock(tmp_path, ['uv', 'lock'], 60)
 
@@ -408,7 +408,7 @@ def test_lock_runs_without_hyrums_own_virtualenv(
     # refuses the lock when it disagrees with requires-python.
     monkeypatch.setenv('VIRTUAL_ENV', '/somewhere/hyrum/.venv')
     recorder = _Recorder(_Completed(0))
-    monkeypatch.setattr(common.subprocess, 'run', recorder)
+    monkeypatch.setattr(common._process, 'run', recorder)
     monkeypatch.setenv('HYRUM_SENTINEL', 'kept')
     common.run_lock(tmp_path, ['poetry', 'lock'], 60)
     assert recorder.env is not None

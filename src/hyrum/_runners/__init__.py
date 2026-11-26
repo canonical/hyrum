@@ -6,13 +6,14 @@ files are present, with an explicit ``--runner`` flag overriding the
 choice.
 """
 
-from hyrum._runners.base import Runner, RunResult, RunStatus
+from hyrum._runners.base import PythonSelector, Runner, RunResult, RunStatus
 from hyrum._runners.detect import RunnerChoice, auto, by_name
 from hyrum._runners.make_runner import MakeRunner
 from hyrum._runners.tox import ToxRunner
 
 __all__ = [
     'MakeRunner',
+    'PythonSelector',
     'RunResult',
     'RunStatus',
     'Runner',
