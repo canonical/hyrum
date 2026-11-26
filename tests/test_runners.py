@@ -174,6 +174,48 @@ async def test_tox_runner_no_target_when_rc_254(tmp_path: pathlib.Path, spawner:
     assert result.status is runners.RunStatus.NO_TARGET
 
 
+_NO_TESTS = b'collected 0 items\n\n=================== no tests ran in 0.02s ===================\n'
+
+
+@pytest.mark.parametrize('returncode', [4, 5])
+async def test_tox_runner_no_target_when_pytest_collects_nothing(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory, returncode: int
+):
+    spawner(FakeProc(returncode=returncode, stdout=_NO_TESTS + b'unit: FAIL code 4\n'))
+    result = await runners.ToxRunner().run(tmp_path, 'unit')
+    assert result.status is runners.RunStatus.NO_TARGET
+    assert result.returncode == returncode
+
+
+async def test_tox_runner_no_tests_with_ansi_is_no_target(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    spawner(FakeProc(returncode=5, stdout=b'\x1b[33m===== no tests ran in 0.02s =====\x1b[0m\n'))
+    result = await runners.ToxRunner().run(tmp_path, 'unit')
+    assert result.status is runners.RunStatus.NO_TARGET
+
+
+async def test_tox_runner_fails_when_another_session_collected_tests(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    spawner(
+        FakeProc(
+            returncode=5,
+            stdout=b'========== 3 passed in 0.10s ==========\n' + _NO_TESTS,
+        )
+    )
+    result = await runners.ToxRunner().run(tmp_path, 'unit')
+    assert result.status is runners.RunStatus.FAILED
+
+
+async def test_tox_runner_passes_when_no_tests_ran_but_exit_is_zero(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    spawner(FakeProc(returncode=0, stdout=_NO_TESTS))
+    result = await runners.ToxRunner().run(tmp_path, 'unit')
+    assert result.status is runners.RunStatus.PASSED
+
+
 async def test_tox_runner_timeout_kills_process(tmp_path: pathlib.Path, spawner: SpawnerFactory):
     proc = FakeProc(raise_timeout=True)
     spawner(proc)
@@ -277,6 +319,17 @@ async def test_make_runner_failure(tmp_path: pathlib.Path, spawner: SpawnerFacto
     )
     result = await runners.MakeRunner().run(tmp_path, 'unit')
     assert result.status is runners.RunStatus.FAILED
+
+
+async def test_make_runner_no_target_when_pytest_collects_nothing(
+    tmp_path: pathlib.Path, spawner: SpawnerFactory
+):
+    spawner(
+        FakeProc(returncode=1),  # probe: the target exists
+        FakeProc(returncode=2, stdout=_NO_TESTS + b'make: *** [Makefile:3: unit] Error 5\n'),
+    )
+    result = await runners.MakeRunner().run(tmp_path, 'unit')
+    assert result.status is runners.RunStatus.NO_TARGET
 
 
 async def test_make_runner_no_target_from_real_run_output(

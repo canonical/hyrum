@@ -46,10 +46,28 @@ _TOX_NO_VENV_REDIRECT = 'tox.venv_redirect=false'
 # colour at the source — strip it from the captured bytes instead.
 _ANSI_CSI_RE = re.compile(rb'\x1b\[[0-?]*[ -/]*[@-~]')
 
+# The line pytest ends every session with, such as
+# ``=== 3 passed in 0.12s ===`` or ``=== no tests ran in 0.02s ===``. Other
+# banners (``short test summary info``, ``warnings summary``) have no duration.
+_PYTEST_FINAL_RE = re.compile(rb'(?m)^=+ [^\n]*\bin [\d.]+s\b[^\n]*=+\s*$')
+NO_TESTS_RE = re.compile(rb'(?mi)^=+\s*no\s+tests\s+ran\s+in\s+[\d.]+\s*s\s*=+')
+"""Pytest's final line for a session that collected nothing."""
+
 
 def strip_ansi(data: bytes) -> bytes:
     """Remove ANSI CSI escape sequences from captured runner output."""
     return _ANSI_CSI_RE.sub(b'', data)
+
+
+def ran_no_tests(output: bytes) -> bool:
+    """Return True if pytest ran but every session in ``output`` collected nothing.
+
+    pytest exits 4 or 5 when that happens, and the run fails with it, but the
+    charm has no tests for the target rather than failing them. A run where
+    another session did collect tests is a real failure, so that doesn't count.
+    """
+    finals = _PYTEST_FINAL_RE.findall(output)
+    return bool(finals) and all(NO_TESTS_RE.match(line) for line in finals)
 
 
 class RunStatus(enum.StrEnum):
@@ -57,7 +75,7 @@ class RunStatus(enum.StrEnum):
 
     PASSED = 'passed'
     FAILED = 'failed'
-    NO_TARGET = 'no_target'  # tox env or make target does not exist
+    NO_TARGET = 'no_target'  # no such tox env or make target, or it has no tests
     TIMEOUT = 'timeout'
     RUNNER_ERROR = 'runner_error'  # the runner itself could not be launched
 

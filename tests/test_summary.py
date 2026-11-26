@@ -119,6 +119,22 @@ def test_pytest_no_tests_ran():
     assert out == 'pytest: no tests ran'
 
 
+def test_no_target_from_no_tests_says_so():
+    stdout = b'============================ no tests ran in 0.01s =============================\n'
+    assert _s(stdout=stdout, status='no_target', rc=4) == 'pytest: no tests ran'
+
+
+def test_no_target_without_pytest_output():
+    assert (
+        _s(
+            stderr=b'ROOT: HandledError| provided environments not found',
+            status='no_target',
+            rc=254,
+        )
+        == 'target not present'
+    )
+
+
 def test_pytest_missing_path_usage_error():
     stderr = b'ERROR: file or directory not found: /home/x/.cache/hyrum/charms/o/c/tests/unit\n'
     out = _s(stderr=stderr, rc=4)

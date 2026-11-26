@@ -68,10 +68,11 @@ class ToxRunner:
             )
 
         duration = time.monotonic() - started
+        output = base.strip_ansi(output)
         rc = proc.returncode
         if rc == 0:
             status = base.RunStatus.PASSED
-        elif rc == _TOX_NO_ENV_RETURNCODE:
+        elif rc == _TOX_NO_ENV_RETURNCODE or base.ran_no_tests(output):
             status = base.RunStatus.NO_TARGET
         else:
             status = base.RunStatus.FAILED
@@ -82,7 +83,7 @@ class ToxRunner:
             status=status,
             returncode=rc,
             duration_s=duration,
-            output=base.strip_ansi(output),
+            output=output,
         )
 
 

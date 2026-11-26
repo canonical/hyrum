@@ -103,7 +103,7 @@ class MakeRunner:
         rc = proc.returncode
         if rc == 0:
             status = base.RunStatus.PASSED
-        elif _looks_like_missing_target(output):
+        elif _looks_like_missing_target(output) or base.ran_no_tests(output):
             status = base.RunStatus.NO_TARGET
         else:
             status = base.RunStatus.FAILED
