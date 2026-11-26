@@ -151,8 +151,15 @@ _RESOLVER_PATTERNS: tuple[tuple[re.Pattern[bytes], str], ...] = (
         'uv resolve: failed to resolve dependencies',
     ),
     (
+        # Poetry's solver explains a conflict with the same "Because ...
+        # depends on ..." lines as uv's, but ends with this, where uv starts
+        # with "No solution found" (matched above).
+        re.compile(rb'version \s solving \s failed', re.VERBOSE),
+        'poetry resolve: dependency conflict',
+    ),
+    (
         re.compile(rb'Because [^\n]* depends \s on [^\n]*', re.VERBOSE),
-        'uv resolve: dependency conflict',
+        'resolve: dependency conflict',
     ),
     (
         re.compile(rb'SolverProblemError [^\n]*', re.VERBOSE),
