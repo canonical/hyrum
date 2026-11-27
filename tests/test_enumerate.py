@@ -50,6 +50,34 @@ def test_bundle_expands_to_inner_charms(charm_cache: pathlib.Path):
     assert found == ['inner-a', 'inner-b']
 
 
+@pytest.mark.parametrize('nested', [False, True])
+def test_bundle_with_charmcraft_expands_children(
+    owner: pathlib.Path, cache: pathlib.Path, nested: bool
+):
+    bundle = owner / 'repo'
+    if nested:
+        bundle /= 'subproject'
+    bundle.mkdir(parents=True)
+    (bundle / 'charmcraft.yaml').write_text('type: bundle\n')
+    (bundle / 'bundle.yaml').write_text('applications: {}\n')
+    first = make_charm(bundle / 'charms' / 'controller')
+    second = make_charm(bundle / 'charms' / 'worker')
+    assert list(_enumerate.iter_charm_repos(cache)) == [first, second]
+
+
+@pytest.mark.parametrize('nested', [False, True])
+def test_charm_with_deployment_bundle_is_yielded(
+    owner: pathlib.Path, cache: pathlib.Path, nested: bool
+):
+    charm = owner / 'repo'
+    if nested:
+        charm /= 'subproject'
+    charm.mkdir(parents=True)
+    (charm / 'charmcraft.yaml').write_text('type: charm\n')
+    (charm / 'bundle.yaml').write_text('applications: {}\n')
+    assert list(_enumerate.iter_charm_repos(cache)) == [charm]
+
+
 def test_monorepo_with_charm_subdirs(charm_cache: pathlib.Path):
     mono = charm_cache / 'operators'
     mono.mkdir()

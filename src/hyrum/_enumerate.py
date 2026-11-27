@@ -28,6 +28,8 @@ import logging
 import pathlib
 from collections.abc import Iterator
 
+import yaml
+
 from hyrum import _filters as filt
 
 logger = logging.getLogger(__name__)
@@ -74,7 +76,19 @@ def _walkable(path: pathlib.Path) -> bool:
 
 
 def _is_charm_dir(path: pathlib.Path) -> bool:
-    return (path / 'charmcraft.yaml').exists() or (path / 'metadata.yaml').exists()
+    manifest = path / 'charmcraft.yaml'
+    if not manifest.is_file():
+        return (path / 'metadata.yaml').exists()
+    # A charm can ship a deployment bundle. Only expand it when charmcraft
+    # explicitly identifies this directory as the bundle itself.
+    if (path / 'bundle.yaml').is_file():
+        try:
+            doc = yaml.safe_load(manifest.read_text())
+        except (OSError, UnicodeError, yaml.YAMLError):
+            return True
+        if isinstance(doc, dict) and doc.get('type') == 'bundle':
+            return False
+    return True
 
 
 def _is_bundle_dir(path: pathlib.Path) -> bool:
