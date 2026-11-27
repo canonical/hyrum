@@ -69,8 +69,11 @@ def main() -> None:
     if version_input:
         # An explicit version is used as it stands, with no inference.
         version = version_input
-        if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?', version):
-            fail(f"'{version}' is not X.Y.Z or X.Y.Z{{a,b,rc}}N.")
+        # Leading zeros are refused, since `uv version` would normalise them
+        # away and the version would no longer match the tag and changelog.
+        n = r'(0|[1-9][0-9]*)'
+        if not re.fullmatch(rf'{n}\.{n}\.{n}((a|b|rc){n})?', version):
+            fail(f"'{version}' is not X.Y.Z or X.Y.Z{{a,b,rc}}N, without leading zeros.")
     else:
         # `next-version` refuses to count from a pre-release such as 1.1.0b1,
         # since only a person knows whether the next one is b2 or final.
