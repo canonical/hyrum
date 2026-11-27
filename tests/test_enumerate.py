@@ -155,6 +155,12 @@ def test_examples_are_run_when_they_are_the_only_charms(owner: pathlib.Path, cac
     ]
 
 
+def test_an_examples_dir_that_is_a_charm_is_run(owner: pathlib.Path, cache: pathlib.Path):
+    make_charm(owner / 'repo' / 'examples')
+    found = [p.relative_to(cache).as_posix() for p in _enumerate.iter_charm_repos(cache)]
+    assert found == ['canonical/repo/examples']
+
+
 def test_a_library_root_harness_is_not_run_in_place_of_its_examples(
     owner: pathlib.Path, cache: pathlib.Path
 ):

@@ -14,7 +14,7 @@ Handles:
     a Python manifest and none of the charms below it has both, the root is
     yielded in their place,
   * repositories whose only charms are under a top-level ``examples/``, such
-    as canonical/operator.
+    as ``canonical/operator``.
 
 Reactive and classic hook-based charms are dropped by the ``not_legacy``
 filter at the application layer — ``hyrum`` targets ``ops``-based charms.
@@ -134,12 +134,7 @@ def _iter_monorepo(base: pathlib.Path, depth: int) -> Iterator[pathlib.Path]:
 
 
 def _iter_examples(repo: pathlib.Path) -> Iterator[pathlib.Path]:
-    """Yield the charms under the top-level ``examples/`` of ``repo``.
-
-    ``examples`` is pruned from the walk, because in a repository of real
-    charms the examples are fixtures. A repository with no other charms is in
-    the collection *for* its examples, so the caller falls back to this.
-    """
+    """Yield the charms under the top-level ``examples/`` of ``repo``."""
     examples = repo / _EXAMPLES_DIR
     if not _walkable(examples):
         return
@@ -200,11 +195,10 @@ def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
             continue
         charms = list(_iter_monorepo(repo, _MAX_DEPTH))
         if not charms:
-            # A repository listed for its examples alone, such as
-            # canonical/operator, has nothing else to run. Elsewhere the
-            # examples sit beside the real charms and stay pruned. Its root
-            # harness tests the library rather than the examples, so unlike
-            # a monorepo's (below) it's never run in their place.
+            # We might be in a repository that is listed for its examples
+            # alone, such as canonical/operator. If there are example charms,
+            # run them on their own. Don't run the root harness, which tests
+            # the library.
             examples = list(_iter_examples(repo))
             if examples:
                 yield from examples
