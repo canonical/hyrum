@@ -12,9 +12,21 @@ from hyrum._runners import base
 
 logger = logging.getLogger(__name__)
 
-# `tox -e <env>` returns this when the requested environment does not exist
+# tox 4's `tox -e <env>` returns this when the requested environment does not exist
 # in the charm's tox.ini. We treat it as a skip, not a failure.
 _TOX_NO_ENV_RETURNCODE = 254
+
+
+def _tox3_unknown_environment(output: bytes, target: str) -> bool:
+    # A tox 4 host may print provisioning steps before handing off to tox 3.
+    # Once a test command has run, its own output must not trigger fallback.
+    lines = output.splitlines()
+    diagnostic = f"ERROR: unknown environment '{target}'".encode()
+    return (
+        bool(lines)
+        and lines[-1] == diagnostic
+        and all(line.startswith(b'ROOT: ') for line in lines[:-1])
+    )
 
 
 class ToxRunner:
@@ -68,10 +80,13 @@ class ToxRunner:
             )
 
         duration = time.monotonic() - started
+        output = base.strip_ansi(output)
         rc = proc.returncode
         if rc == 0:
             status = base.RunStatus.PASSED
-        elif rc == _TOX_NO_ENV_RETURNCODE:
+        elif rc == _TOX_NO_ENV_RETURNCODE or (
+            rc == 1 and _tox3_unknown_environment(output, target)
+        ):
             status = base.RunStatus.NO_TARGET
         else:
             status = base.RunStatus.FAILED
@@ -82,7 +97,7 @@ class ToxRunner:
             status=status,
             returncode=rc,
             duration_s=duration,
-            output=base.strip_ansi(output),
+            output=output,
         )
 
 
