@@ -9,7 +9,7 @@
 
 * Serialise two runs that share a charms directory ([#140](https://github.com/canonical/hyrum/pull/140))
 * Merge runner stderr into stdout so logs keep their order ([#128](https://github.com/canonical/hyrum/pull/128))
-* Make show's markdown a table, and its text work without a target ([#152](https://github.com/canonical/hyrum/pull/152))
+* Make `show`'s markdown a table, and its text work without a target ([#152](https://github.com/canonical/hyrum/pull/152))
 * Stop tox writing a .venv redirect into charm checkouts ([#163](https://github.com/canonical/hyrum/pull/163))
 * Upload the pages artifact when deploying from canonical/hyrum ([#168](https://github.com/canonical/hyrum/pull/168))
 
@@ -28,19 +28,19 @@
 
 * Extract per-charm failure summaries from runner output ([#81](https://github.com/canonical/hyrum/pull/81))
 * Add `--save-results` and `hyrum compare` for run-to-run diff ([#82](https://github.com/canonical/hyrum/pull/82))
-* Prefer opendev mirrors and add get-charms timeout ([#98](https://github.com/canonical/hyrum/pull/98))
+* Prefer opendev mirrors and add `get-charms` timeout ([#98](https://github.com/canonical/hyrum/pull/98))
 * Polish `hyrum compare`: charm-set drift, JSON output, exit codes ([#83](https://github.com/canonical/hyrum/pull/83))
 * Say where the run saved its results and logs ([#126](https://github.com/canonical/hyrum/pull/126))
 * Report each status as a share of the runs as well as of the fleet ([#138](https://github.com/canonical/hyrum/pull/138))
 * Add `hyrum show PATH`, which prints a saved run's status summary ([#149](https://github.com/canonical/hyrum/pull/149))
 * Narrow `get-charms` with `--repo` and `--limit` ([#143](https://github.com/canonical/hyrum/pull/143))
-* Add a clean subcommand to reclaim per-charm build artefacts ([#139](https://github.com/canonical/hyrum/pull/139))
+* Add a `clean` subcommand to reclaim per-charm build artefacts ([#139](https://github.com/canonical/hyrum/pull/139))
 
 ## Fixes
 
 * Strip ANSI and collapse $HOME in captured runner output ([#79](https://github.com/canonical/hyrum/pull/79))
 * Make OpsSourcePatcher idempotent on existing [tool.uv.sources] ([#80](https://github.com/canonical/hyrum/pull/80))
-* Bound get-charms concurrency to avoid FD exhaustion ([#88](https://github.com/canonical/hyrum/pull/88))
+* Bound `get-charms` concurrency to avoid FD exhaustion ([#88](https://github.com/canonical/hyrum/pull/88))
 * Stop treating Charmhub bugs-url as a git remote ([#89](https://github.com/canonical/hyrum/pull/89))
 * Three defects in dependency patching and fault attribution ([#97](https://github.com/canonical/hyrum/pull/97))
 * Patching ops to a PyPI version emits one comparison operator ([#123](https://github.com/canonical/hyrum/pull/123))
@@ -48,7 +48,7 @@
 * Make report percentages unambiguous about their denominator ([#127](https://github.com/canonical/hyrum/pull/127))
 * Skip charm-list rows that duplicate an earlier row's checkout ([#125](https://github.com/canonical/hyrum/pull/125))
 * Inject the patched poetry dep into the group it came from ([#135](https://github.com/canonical/hyrum/pull/135))
-* Make the check help readable in a terminal ([#137](https://github.com/canonical/hyrum/pull/137))
+* Make the `check` help readable in a terminal ([#137](https://github.com/canonical/hyrum/pull/137))
 * Make the verbosity rungs cumulative, and add `--brief` ([#133](https://github.com/canonical/hyrum/pull/133))
 * Find the charms nested deeper than one directory level ([#134](https://github.com/canonical/hyrum/pull/134))
 * Soft-wrap the body of the charm-list refresh PR ([#142](https://github.com/canonical/hyrum/pull/142))
