@@ -24,6 +24,7 @@ canal
 canonical-kubernetes-canal
 canonical-livepatch-onprem
 canonical-livepatch-server
+canonical-livepatch-server-k8s
 capsule-k8s
 cassandra
 ceilometer
@@ -84,6 +85,7 @@ hacluster
 haproxy
 hardware-observer
 heat
+heimdall
 hello-juju
 influxdb
 ironic-api
