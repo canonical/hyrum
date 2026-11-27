@@ -12,7 +12,9 @@ Handles:
     :data:`_MAX_DEPTH`,
   * monorepos whose tests run from the root: when the root has a runner and
     a Python manifest and none of the charms below it has both, the root is
-    yielded in their place.
+    yielded in their place,
+  * repositories whose only charms are under a top-level ``examples/``, such
+    as ``canonical/operator``.
 
 Reactive and classic hook-based charms are dropped by the ``not_legacy``
 filter at the application layer — ``hyrum`` targets ``ops``-based charms.
@@ -40,6 +42,8 @@ logger = logging.getLogger(__name__)
 # charms anyone wants to run.
 _MAX_DEPTH = 3
 
+_EXAMPLES_DIR = 'examples'
+
 # Directory names never worth descending into: build output, virtualenvs,
 # vendored dependencies, the charm libraries under ``lib/charms/`` (which are
 # other people's charms, not this repository's), and the test trees where a
@@ -52,7 +56,7 @@ _PRUNED_DIRS = frozenset({
     'dist',
     'docs',
     'example',
-    'examples',
+    _EXAMPLES_DIR,
     'fixtures',
     'lib',
     'node_modules',
@@ -129,6 +133,17 @@ def _iter_monorepo(base: pathlib.Path, depth: int) -> Iterator[pathlib.Path]:
             yield from _iter_monorepo(child, depth - 1)
 
 
+def _iter_examples(repo: pathlib.Path) -> Iterator[pathlib.Path]:
+    """Yield the charms under the top-level ``examples/`` of ``repo``."""
+    examples = repo / _EXAMPLES_DIR
+    if not _walkable(examples):
+        return
+    if _is_charm_dir(examples):
+        yield examples
+        return
+    yield from _iter_monorepo(examples, _MAX_DEPTH - 1)
+
+
 def _iter_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
     """Yield the repository directories in the cache folder ``base``.
 
@@ -180,6 +195,14 @@ def iter_charm_repos(base: pathlib.Path) -> Iterator[pathlib.Path]:
             continue
         charms = list(_iter_monorepo(repo, _MAX_DEPTH))
         if not charms:
+            # We might be in a repository that is listed for its examples
+            # alone, such as canonical/operator. If there are example charms,
+            # run them on their own. Don't run the root harness, which tests
+            # the library.
+            examples = list(_iter_examples(repo))
+            if examples:
+                yield from examples
+                continue
             logger.warning(
                 'No charm found in %s (no charmcraft.yaml or metadata.yaml '
                 'within %d directory levels)',
